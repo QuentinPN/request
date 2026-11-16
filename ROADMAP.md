@@ -12,9 +12,9 @@ Chaque jalon se termine par une démonstration (captures 1440 et 390 px pour l'i
 
 ## Phase 1 — Socle
 
-[ ] Initialisation : Vite + React + TS strict, Fastify, Biome, Vitest, Playwright, `npm run verify` (lint, types, tests, build) → vérif : la commande passe à vide
-[ ] Tokens d'Hub, correspondance shadcn, composants de base (bouton, carte, affiche, pastille de statut, dialogue, squelette) → vérif : page de démonstration des composants, captures
-[ ] SQLite + Drizzle, migrations, chiffrement des secrets, réglages typés Zod → vérif : tests de migration et de lecture/écriture chiffrée
+[x] Initialisation : Vite + React + TS strict, Fastify, Biome, Vitest, Playwright, `npm run verify` (lint, types, tests, build) → vérif : la commande passe à vide
+[x] Tokens d'Hub, correspondance shadcn, composants de base (bouton, carte, affiche, pastille de statut, dialogue, squelette) → vérif : page de démonstration des composants, captures
+[x] SQLite + Drizzle, migrations, chiffrement des secrets, réglages typés Zod → vérif : tests de migration et de lecture/écriture chiffrée
 [ ] Shell : navigation pilule et barre mobile, routes, `Ctrl+K`, états globaux → vérif : Playwright clavier + axe
 
 ## Phase 2 — Configuration et connexion

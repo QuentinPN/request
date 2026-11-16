@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
-import { buildApp } from './src/server/app.ts';
+import { buildApp, dataDir } from './src/server/app.ts';
+import { openDataDir } from './src/server/db/index.ts';
 
 const root = import.meta.dirname;
 
@@ -12,7 +13,7 @@ function api(): Plugin {
   return {
     name: 'request-api',
     async configureServer(server) {
-      const app = await buildApp();
+      const app = await buildApp({ data: openDataDir(dataDir) });
       await app.ready();
       server.middlewares.use((req, res, next) => (req.url?.startsWith('/api/') ? app.routing(req, res) : next()));
     },
