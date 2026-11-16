@@ -1,0 +1,78 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "./tokens.css";
+
+/* Thème sombre par défaut (tokens d'Hub), clair via data-theme="light". */
+@custom-variant dark (&:where(:root:not([data-theme="light"]) *));
+
+/* Variables shadcn dérivées des tokens : aucune valeur dupliquée (voir DESIGN.md). */
+:root {
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface-1);
+  --card-foreground: var(--text);
+  --popover: var(--glass-dialog);
+  --popover-foreground: var(--text);
+  --primary: var(--fill-selected);
+  --primary-foreground: var(--text-inverse);
+  --secondary: var(--glass-pill);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-2);
+  --accent: var(--surface-3);
+  --accent-foreground: var(--text);
+  --destructive: var(--danger-fill);
+  --border: var(--border-1);
+  --input: var(--border-2);
+  --ring: var(--border-focus);
+  --radius: var(--r-button);
+  --brand: var(--accent-play);
+}
+
+@theme inline {
+  --font-sans: var(--font);
+  --font-heading: var(--font);
+  --font-mono: var(--font-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-ok: var(--status-online);
+  --color-warn: var(--status-degraded);
+  --color-danger: var(--status-down);
+  --color-unknown: var(--status-unknown);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-card: var(--r-card);
+  --radius-poster: var(--r-poster);
+  --radius-pill: var(--r-pill);
+  --ease-request: var(--ease);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}

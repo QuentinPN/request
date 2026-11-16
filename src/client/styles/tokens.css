@@ -1,0 +1,288 @@
+/* Design system A — Cinematic TV. Source : DESIGN.md, « Direction retenue ».
+   Thème sombre par défaut ; le thème clair (validé le 2026-11-07, canevas
+   https://claude.ai/artifact/1H6nKmfFW2RpcNcrMijhMn) redéfinit les couleurs plus bas. */
+:root {
+	color-scheme: dark;
+	--bg: #07080a;
+	--surface-0: rgba(255, 255, 255, 0.03);
+	--surface-1: rgba(255, 255, 255, 0.05);
+	--surface-2: rgba(255, 255, 255, 0.08);
+	--surface-3: rgba(255, 255, 255, 0.12);
+	/* Creux dans une carte : code, journaux, listes encadrées. */
+	--surface-inset: rgba(0, 0, 0, 0.25);
+	--code-bg: rgba(0, 0, 0, 0.45);
+	--code-text: #e6e6ea;
+	--dialog-bg: #15181b;
+	--field-bg: #1c1f24;
+	--scrim: rgba(0, 0, 0, 0.6);
+	--border-1: rgba(255, 255, 255, 0.07);
+	--border-2: rgba(255, 255, 255, 0.14);
+	--border-dashed: rgba(255, 255, 255, 0.25);
+	--border-focus: rgba(255, 255, 255, 0.4);
+	/* Rail des barres de progression, des interrupteurs éteints, des pastilles. */
+	--track: rgba(255, 255, 255, 0.12);
+	--track-soft: rgba(255, 255, 255, 0.06);
+	--track-strong: rgba(255, 255, 255, 0.16);
+	--text: #f5f5f7;
+	--text-2: #a1a1a6;
+	--text-inverse: #0a0a0c;
+	/* Fond d'un élément choisi ou au focus (menu, pilule active), sous --text-inverse. */
+	--fill-selected: rgba(255, 255, 255, 0.92);
+	/* Accent en aplat (barres, coches) et en texte : le clair a besoin d'un texte plus foncé. */
+	--accent-play: #e8c9a6;
+	--accent-text: #e8c9a6;
+
+	--status-online: #30d158;
+	--status-degraded: #ffd60a;
+	--status-down: #ff453a;
+	--status-unknown: #8e8e93;
+	/* Texte écrit dans une couleur d'état, lisible sur le fond (4,5:1). */
+	/* Part de la couleur d'état dans un texte qui la reprend (pastilles), mêlée à --text. */
+	--tone-ink: 100%;
+	--text-ok: #30d158;
+	--text-warn: #ffd60a;
+	--text-danger: #ff8a80;
+	--text-danger-2: #ffb4ae;
+	--danger-fill: #ff8a80;
+	--on-danger: #1a0b0a;
+	--on-warn: #07080a;
+	/* Cadres teintés : succès, avertissement, erreur, accent. */
+	--tint-ok-bg: rgba(48, 209, 88, 0.07);
+	--tint-ok-bg-strong: rgba(48, 209, 88, 0.12);
+	--tint-ok-border: rgba(48, 209, 88, 0.3);
+	--tint-warn-bg: rgba(255, 214, 10, 0.06);
+	--tint-warn-bg-strong: rgba(255, 214, 10, 0.12);
+	--tint-warn-border: rgba(255, 214, 10, 0.3);
+	--tint-danger-bg: rgba(255, 69, 58, 0.07);
+	--tint-danger-bg-strong: rgba(255, 69, 58, 0.12);
+	--tint-danger-border: rgba(255, 69, 58, 0.32);
+	--tint-accent-bg: rgba(232, 201, 166, 0.07);
+	--tint-accent-bg-strong: rgba(232, 201, 166, 0.12);
+	--tint-accent-border: rgba(232, 201, 166, 0.27);
+	--tint-accent-border-strong: rgba(232, 201, 166, 0.4);
+	--hatch: repeating-linear-gradient(
+		135deg,
+		rgba(255, 255, 255, 0.03) 0 10px,
+		rgba(255, 255, 255, 0.05) 10px 20px
+	);
+
+	/* Haut des pages. --tint (couleur d'un service ou d'une section) y est mêlé au fond. */
+	--hero-warm: #3a2a1c;
+	--hero-top: #14202b;
+	--hero-mid: #0c1218;
+	--hero-glow: #1b2430;
+	--hero-fade: #0f1218;
+	--hero-meta: #b9d3f0;
+	--tint-mix: 100%;
+
+	/* Sur une affiche ou une couleur de service : identique dans les deux thèmes. */
+	--on-color: #fff;
+	--on-media: #f5f5f7;
+	--on-media-2: #d1d1d6;
+	--media-chip: rgba(0, 0, 0, 0.6);
+	--media-shade: rgba(0, 0, 0, 0.88);
+	--media-base: #0d0f12;
+
+	--shadow-knob: 0 2px 4px rgba(0, 0, 0, 0.3);
+	--shadow-focus: 0 18px 36px rgba(0, 0, 0, 0.45);
+	--shadow-card: 0 30px 60px rgba(0, 0, 0, 0.45);
+
+	--font: 'Inter Variable', -apple-system, 'SF Pro Display', system-ui, sans-serif;
+	--font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+	--fs-hero: clamp(2.5rem, 5vw, 4rem);
+	--fs-h2: 1.375rem;
+	--fs-body: 1rem;
+	--fs-small: 0.8125rem;
+
+	--r-card: 20px;
+	--r-poster: 16px;
+	--r-button: 14px;
+	--r-pill: 999px;
+
+	--space-page: clamp(16px, 4.5vw, 64px);
+	--blur: blur(20px);
+	--blur-strong: blur(24px);
+	--blur-backdrop: blur(8px);
+	/* Verre des barres et des fenêtres ; plein quand la transparence est réduite. */
+	--glass: rgba(28, 28, 32, 0.72);
+	--glass-dialog: rgba(28, 30, 36, 0.94);
+	--glass-pill: rgba(255, 255, 255, 0.08);
+	--glass-scrim: rgba(0, 0, 0, 0.35);
+
+	/* Tuiles : services (app), affiches (poster). Réglages > Apparence > Densité. */
+	--app-w: 232px;
+	--app-h: 148px;
+	--app-pad: 18px;
+	--poster-w: 168px;
+	--poster-h: 252px;
+	--card-min: 260px;
+	--grid-cols-mobile: 2;
+	--shadow-lift: 0 26px 50px rgba(0, 0, 0, 0.55);
+
+	--ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--dur: 220ms;
+	--focus-scale: 1.06;
+}
+
+/* Thème clair. Contraste mesuré : --text 15:1 et --text-2 5,8:1 sur --bg, 5,1:1 au pire sur le
+   haut des pages ; textes d'état et d'accent au moins 4,5:1. */
+:root[data-theme='light'] {
+	color-scheme: light;
+	--bg: #f2f2f5;
+	--surface-0: rgba(0, 0, 0, 0.02);
+	--surface-1: #ffffff;
+	--surface-2: #ffffff;
+	--surface-3: rgba(0, 0, 0, 0.07);
+	--surface-inset: rgba(0, 0, 0, 0.04);
+	--code-bg: #f2f2f5;
+	--code-text: #1d1d1f;
+	--dialog-bg: #ffffff;
+	--field-bg: #f2f2f5;
+	--scrim: rgba(0, 0, 0, 0.3);
+	--border-1: rgba(0, 0, 0, 0.08);
+	--border-2: rgba(0, 0, 0, 0.14);
+	--border-dashed: rgba(0, 0, 0, 0.28);
+	--border-focus: rgba(0, 0, 0, 0.3);
+	--track: rgba(0, 0, 0, 0.1);
+	--track-soft: rgba(0, 0, 0, 0.06);
+	--track-strong: rgba(0, 0, 0, 0.18);
+	--text: #1d1d1f;
+	--text-2: #5e5e63;
+	--text-inverse: #ffffff;
+	--fill-selected: #1d1d1f;
+	--accent-play: #b07a45;
+	--accent-text: #7a4e22;
+
+	--status-online: #34c759;
+	--status-degraded: #ffcc00;
+	--status-down: #ff3b30;
+	--status-unknown: #8e8e93;
+	--tone-ink: 40%;
+	--text-ok: #1a6e30;
+	--text-warn: #8a5300;
+	--text-danger: #b3261e;
+	--text-danger-2: #8c1d18;
+	--danger-fill: #b3261e;
+	--on-danger: #ffffff;
+	--on-warn: #1d1d1f;
+	--tint-ok-bg: #eaf6ed;
+	--tint-ok-bg-strong: #dcf0e1;
+	--tint-ok-border: rgba(26, 110, 48, 0.3);
+	--tint-warn-bg: #fff8db;
+	--tint-warn-bg-strong: #fff1bd;
+	--tint-warn-border: rgba(138, 83, 0, 0.3);
+	--tint-danger-bg: #fdecea;
+	--tint-danger-bg-strong: #fbdcd9;
+	--tint-danger-border: rgba(179, 38, 30, 0.28);
+	--tint-accent-bg: #f8f0e6;
+	--tint-accent-bg-strong: #f3e6d5;
+	--tint-accent-border: rgba(122, 78, 34, 0.25);
+	--tint-accent-border-strong: rgba(122, 78, 34, 0.4);
+	--hatch: repeating-linear-gradient(
+		135deg,
+		rgba(0, 0, 0, 0.025) 0 10px,
+		rgba(0, 0, 0, 0.05) 10px 20px
+	);
+
+	--hero-warm: #f3e7d8;
+	--hero-top: #e4eaf0;
+	--hero-mid: #edf0f3;
+	--hero-glow: #dfe7f0;
+	--hero-fade: #e8ecef;
+	--hero-meta: #5e5e63;
+	--tint-mix: 20%;
+
+	--glass: rgba(255, 255, 255, 0.82);
+	--glass-dialog: rgba(255, 255, 255, 0.96);
+	--glass-pill: rgba(255, 255, 255, 0.72);
+	--glass-scrim: rgba(255, 255, 255, 0.66);
+
+	--shadow-lift: 0 22px 40px rgba(0, 0, 0, 0.14);
+	--shadow-focus: 0 12px 24px rgba(0, 0, 0, 0.12);
+	--shadow-card: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 720px) {
+	:root {
+		--app-w: 148px;
+		--app-h: 104px;
+		--app-pad: 12px;
+		--poster-w: 118px;
+		--poster-h: 176px;
+	}
+}
+
+/* Compacte : environ un quart de tuiles en plus par rangée. */
+:root[data-density='compact'] {
+	--app-w: 184px;
+	--app-h: 120px;
+	--app-pad: 14px;
+	--poster-w: 132px;
+	--poster-h: 198px;
+	--card-min: 210px;
+}
+@media (max-width: 720px) {
+	:root[data-density='compact'] {
+		--app-w: 112px;
+		--app-h: 88px;
+		--app-pad: 10px;
+		--poster-w: 92px;
+		--poster-h: 138px;
+		--grid-cols-mobile: 3;
+	}
+}
+
+/* Moins de transparence : réglage de l'appareil, ou forcé pour Hub. */
+@media (prefers-reduced-transparency: reduce) {
+	:root:not([data-theme='light']) {
+		--blur: none;
+		--blur-strong: none;
+		--blur-backdrop: none;
+		--glass: #1c1c20;
+		--glass-dialog: #1c1e24;
+		--glass-pill: #1d1e21;
+		--glass-scrim: #0d0e10;
+	}
+}
+:root[data-transparency='reduce']:not([data-theme='light']) {
+	--blur: none;
+	--blur-strong: none;
+	--blur-backdrop: none;
+	--glass: #1c1c20;
+	--glass-dialog: #1c1e24;
+	--glass-pill: #1d1e21;
+	--glass-scrim: #0d0e10;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+	:root[data-theme='light'] {
+		--blur: none;
+		--blur-strong: none;
+		--blur-backdrop: none;
+		--glass: #ffffff;
+		--glass-dialog: #ffffff;
+		--glass-pill: #ffffff;
+		--glass-scrim: #ffffff;
+	}
+}
+:root[data-theme='light'][data-transparency='reduce'] {
+	--blur: none;
+	--blur-strong: none;
+	--blur-backdrop: none;
+	--glass: #ffffff;
+	--glass-dialog: #ffffff;
+	--glass-pill: #ffffff;
+	--glass-scrim: #ffffff;
+}
+
+/* Réduire les animations : réglage de l'appareil, ou forcé pour Hub. */
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--dur: 0ms;
+		--focus-scale: 1;
+	}
+}
+:root[data-motion='reduce'] {
+	--dur: 0ms;
+	--focus-scale: 1;
+}
