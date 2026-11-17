@@ -1,3 +1,4 @@
+import type { Capabilities } from '@shared/roles.ts';
 import type { LinkProps } from '@tanstack/react-router';
 import { Check, Clapperboard, House, List, type LucideIcon, Tv, User } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
@@ -13,7 +14,8 @@ export type NavItem = {
   mobileLabel?: string;
   icon: LucideIcon;
   in: readonly NavPlace[];
-  adminOnly?: boolean;
+  /** Droit requis pour voir l'entrée. */
+  capability?: keyof Capabilities;
 };
 
 // Seule définition de la navigation, lue par la pilule et par la barre d'onglets.
@@ -28,14 +30,16 @@ export const navItems: readonly NavItem[] = [
     mobileLabel: 'Approuver',
     icon: Check,
     in: ['pill', 'tabs'],
-    adminOnly: true,
+    capability: 'canManageRequests',
   },
   { to: '/compte', label: 'Compte', icon: User, in: ['tabs', 'account'] },
 ];
 
 export function useNavItems(place: NavPlace): NavItem[] {
-  const { isAdmin } = useViewer();
-  return navItems.filter((item) => item.in.includes(place) && (isAdmin || !item.adminOnly));
+  const viewer = useViewer();
+  return navItems.filter(
+    (item) => item.in.includes(place) && (!item.capability || viewer?.capabilities[item.capability] === true),
+  );
 }
 
 // « / » ne doit être actif que sur l'accueil, pas sur toutes les pages.

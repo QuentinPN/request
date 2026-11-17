@@ -129,7 +129,7 @@ export function ComposantsPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Demander une série</DialogTitle>
-                <DialogDescription>Choisis les saisons. Il te reste 4 demandes cette semaine.</DialogDescription>
+                <DialogDescription>Choisissez les saisons. Il vous reste 4 demandes cette semaine.</DialogDescription>
               </DialogHeader>
               <fieldset className="space-y-2">
                 <legend className="sr-only">Saisons</legend>

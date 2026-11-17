@@ -1,7 +1,9 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { Search } from 'lucide-react';
+import { useViewer } from '@/hooks/use-viewer';
 import { AppName } from './app-name';
+import { Avatar } from './avatar';
 import { activeFill, activeOptions, focusRing, roundButton, useNavItems } from './nav-items';
 import { Notifications } from './notifications';
 import { searchShortcut, useOpenSearch } from './search';
@@ -16,6 +18,7 @@ export function DesktopNav() {
   const pill = useNavItems('pill');
   const account = useNavItems('account');
   const openSearch = useOpenSearch();
+  const viewer = useViewer();
 
   return (
     <header className="absolute inset-x-(--space-page) top-6 z-40 hidden grid-cols-[1fr_auto_1fr] items-center gap-6 lg:grid">
@@ -44,7 +47,7 @@ export function DesktopNav() {
         <Notifications />
         {account.map((item) => (
           <Link key={item.to} to={item.to} aria-label={item.label} className={cn(roundButton, activeFill)}>
-            <item.icon aria-hidden className="size-[18px]" />
+            {viewer ? <Avatar viewer={viewer} /> : <item.icon aria-hidden className="size-[18px]" />}
           </Link>
         ))}
       </div>

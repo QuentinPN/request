@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/api.ts';
 
 test('la feuille de demande s’ouvre au clavier et se ferme avec Échap', async ({ page }) => {
   await page.goto('/composants');
