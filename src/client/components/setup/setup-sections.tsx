@@ -12,6 +12,7 @@ import { IntegrationSection } from './integration-section';
 import { settingQuery } from './queries';
 import { RulesSection } from './rules-section';
 import { SectionFrame, type SectionFrameProps } from './section-frame';
+import { SeerrImportSection } from './seerr-import-section';
 import { WebhooksSection } from './webhooks-section';
 
 /** Amorçage : sans propriétaire, seule la section Emby est accessible. */
@@ -26,7 +27,7 @@ function nextTodo(setup: SetupState, from = 0): SetupSection | null {
 /**
  * Les cinq sections de l'assistant, en accordéon. Mêmes composants pour l'assistant (`wizard` : l'enregistrement
  * ouvre la section suivante à faire) et pour les réglages (chaque section s'enregistre et reste ouverte ; le
- * propriétaire y trouve aussi les webhooks).
+ * propriétaire y trouve aussi les webhooks et l'import des demandes de Seerr).
  */
 export function SetupSections({ wizard }: { wizard: boolean }) {
   const queryClient = useQueryClient();
@@ -58,6 +59,7 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
       {!wizard && viewer?.capabilities.isOwner && (
         <>
           <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
+          <SeerrImportSection section="seerr" open={open === 'seerr'} onToggle={() => toggle('seerr')} />
           <DiscordSection section="discord" open={open === 'discord'} onToggle={() => toggle('discord')} />
         </>
       )}

@@ -10,11 +10,16 @@ const _complete: Exclude<SetupSection, (typeof sectionOrder)[number]> extends ne
 void _complete;
 
 /**
- * Sections de Réglages : celles de l'assistant, plus les webhooks et Discord (propriétaire, hors assistant : l'un n'a
- * rien à enregistrer, l'autre est facultatif).
+ * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord et l'import facultatif des demandes de Seerr
+ * (propriétaire, hors assistant : rien à tester ou facultatif).
  */
-export type SectionId = SetupSection | 'webhooks' | 'discord';
-export const settingsSectionOrder = [...sectionOrder, 'webhooks', 'discord'] as const satisfies readonly SectionId[];
+export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord';
+export const settingsSectionOrder = [
+  ...sectionOrder,
+  'webhooks',
+  'seerr',
+  'discord',
+] as const satisfies readonly SectionId[];
 
 export const webhookLabels: Record<WebhookService, string> = { radarr: 'Radarr', sonarr: 'Sonarr' };
 
@@ -34,6 +39,7 @@ export const sectionText: Record<SectionId, { title: string; description: string
   sonarr: { title: 'Sonarr', description: 'Séries : profil de qualité, dossier racine et type' },
   rules: { title: 'Règles et quotas', description: 'Quotas de demandes par défaut des membres' },
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
+  seerr: { title: 'Importer depuis Seerr', description: 'Reprendre une fois les demandes de Jellyseerr ou Overseerr' },
   discord: { title: 'Notifications Discord', description: 'Facultatif : les évènements des demandes dans un salon' },
 };
 
@@ -63,6 +69,10 @@ export const connectionText: Record<
     apiKeyHint: 'Sonarr › Paramètres › Général',
   },
 };
+
+/** Adresse saisie d'un service (vérification locale, avant l'appel au serveur). */
+export const isHttpUrl = (value: string) => /^https?:\/\/[^\s/]+/i.test(value.trim());
+export const URL_ERROR = 'Adresse invalide : elle doit commencer par http:// ou https://';
 
 export const minimumAvailabilityLabels: Record<(typeof minimumAvailabilities)[number], string> = {
   announced: 'Annoncé',

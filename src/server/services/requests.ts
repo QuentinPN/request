@@ -121,6 +121,8 @@ const selectRows = (db: Pick<Db, 'select'>) =>
 
 const inStatuses = (statuses: readonly RequestStatus[]) => inArray(requests.status, [...statuses]);
 const isActive = inStatuses(activeRequestStatuses);
+/** Demandes en cours d'un titre, version ordinaire : une demande 4K (importée de Seerr) ne la couvre pas. */
+const activeOrdinaryOn = (mediaId: number) => and(eq(requests.mediaId, mediaId), eq(requests.is4k, false), isActive);
 
 /** Périmètre d'une liste : les demandes d'un membre (`userId`) ou toutes, éventuellement d'un seul titre. */
 export interface ListScope {
@@ -197,14 +199,17 @@ function addEvent(
   notifyRequestEvent(tx, { requestId, type, actorId, detail, at });
 }
 
-/** Titre connu de l'appli (créé au besoin, statut à calculer) ; l'id TVDB de la fiche est gardé pour Sonarr. */
-function upsertMedia(tx: Writer, details: MediaDetails): number {
+/**
+ * Titre connu de l'appli (créé au besoin, statut à calculer) ; l'id TVDB (fiche TMDB, import Seerr) est gardé pour
+ * Sonarr. Aussi utilisé par l'import Seerr.
+ */
+export function upsertMedia(tx: Writer, title: { type: MediaType; tmdbId: number; tvdbId: number | null }): number {
   return tx
     .insert(media)
     .values({
-      type: details.type,
-      tmdbId: details.tmdbId,
-      tvdbId: details.externalIds.tvdb,
+      type: title.type,
+      tmdbId: title.tmdbId,
+      tvdbId: title.tvdbId,
       // Date nulle : le statut de bibliothèque sera recalculé à la prochaine lecture.
       statusUpdatedAt: new Date(0),
     })
@@ -303,6 +308,8 @@ export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date)
     .where(
       and(
         eq(requests.status, 'sent'),
+        // Le cache ne connaît que la bibliothèque ordinaire : une demande 4K (importée de Seerr) n'arrive pas avec elle.
+        eq(requests.is4k, false),
         inArray(requests.mediaId, [...mediaIds]),
         or(eq(media.status, 'available'), and(eq(media.type, 'tv'), everySeasonArrived)),
       ),
@@ -563,8 +570,14 @@ export function createRequests(
     });
   }
 
+  /** Pas de Radarr/Sonarr 4K : une demande 4K (importée de Seerr) ne part jamais vers l'instance ordinaire. */
+  function assertNot4k(row: RequestRow) {
+    if (row.is4k) throw new HttpError(409, 'Les demandes 4K ne sont pas prises en charge');
+  }
+
   async function approve(id: number, actor: User, choice: ApproveRequestInput = {}): Promise<RequestDetail> {
     const row = requireRow(id);
+    assertNot4k(row);
     await assertSendChoice(data, row.type, choice);
     // Valeurs envoyées gardées sur la demande (une relance les reprend) ; à défaut, celles des réglages.
     const sonarr = row.type === 'tv' ? getSetting(db, cryptoKey, 'sonarr') : null;
@@ -584,6 +597,7 @@ export function createRequests(
   }
 
   async function retry(id: number, actor: User): Promise<RequestDetail> {
+    assertNot4k(requireRow(id));
     db.transaction((tx) => {
       transition(tx, id, ['failed'], { status: 'approved' }, 'Seule une demande en échec peut être relancée');
       addEvent(tx, id, 'retried', actor.id, new Date(now()));
@@ -633,7 +647,11 @@ export function createRequests(
     const outcome = db.transaction(
       (tx) => {
         const at = new Date(now());
-        const mediaId = upsertMedia(tx, details);
+        const mediaId = upsertMedia(tx, {
+          type: details.type,
+          tmdbId: details.tmdbId,
+          tvdbId: details.externalIds.tvdb,
+        });
         const own = ownActive(tx, mediaId, user.id, input.type === 'movie' ? activeRequestStatuses : undefined);
 
         const insert = (seasons: number[]) => {
@@ -659,13 +677,7 @@ export function createRequests(
 
         if (input.type === 'movie') {
           if (own) return { id: own.id, created: false };
-          if (
-            tx
-              .select({ id: requests.id })
-              .from(requests)
-              .where(and(eq(requests.mediaId, mediaId), isActive))
-              .get()
-          )
+          if (tx.select({ id: requests.id }).from(requests).where(activeOrdinaryOn(mediaId)).get())
             throw new HttpError(409, 'Ce titre est déjà demandé');
           assertQuota(tx, viewer, 'movies', 1);
           return insert([]);
@@ -676,7 +688,7 @@ export function createRequests(
           .select({ requestId: requestSeasons.requestId, n: requestSeasons.seasonNumber })
           .from(requestSeasons)
           .innerJoin(requests, eq(requests.id, requestSeasons.requestId))
-          .where(and(eq(requests.mediaId, mediaId), isActive))
+          .where(activeOrdinaryOn(mediaId))
           .all();
         const covered = new Set(active.map((s) => s.n));
         const missing = wanted.filter((n) => !covered.has(n));

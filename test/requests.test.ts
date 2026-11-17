@@ -307,6 +307,33 @@ describe('POST /api/requests', () => {
     expect(res.json()).toEqual({ error: 'Ce titre est déjà demandé' });
   });
 
+  it('une demande 4K en cours (importée de Seerr) ne bloque pas la version ordinaire', async () => {
+    const { db, as } = await setup();
+    const member = await as('member', 'a');
+    const fourK = seedRequest(db, { userId: 'a', tmdbId: 603, status: 'sent' });
+    db.update(requests).set({ is4k: true }).where(eq(requests.id, fourK.id)).run();
+    const res = await member.post('/api/requests', { type: 'movie', tmdbId: 603 });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<RequestDetail>().id).not.toBe(fourK.id);
+  });
+
+  it('une demande 4K ne s’approuve ni ne se relance : 409, rien n’est envoyé', async () => {
+    const { db, as, servers } = await setup();
+    await as('member', 'a');
+    const owner = await as('owner', 'proprietaire');
+    for (const status of ['pending', 'failed'] as const) {
+      const { id } = seedRequest(db, { userId: 'a', tmdbId: 603, status });
+      db.update(requests).set({ is4k: true }).where(eq(requests.id, id)).run();
+      const action = status === 'pending' ? 'approve' : 'retry';
+      const res = await owner.post(`/api/requests/${id}/${action}`);
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({ error: 'Les demandes 4K ne sont pas prises en charge' });
+      expect(db.select().from(requests).where(eq(requests.id, id)).get()?.status).toBe(status);
+      db.delete(requests).where(eq(requests.id, id)).run();
+    }
+    expect(posted(servers.radarr, '/api/v3/movie')).toHaveLength(0);
+  });
+
   it('série : les saisons déjà demandées par d’autres sont écartées, les siennes en attente s’enrichissent', async () => {
     const { as } = await setup();
     const a = await as('member', 'a');

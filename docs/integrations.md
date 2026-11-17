@@ -85,6 +85,21 @@ Sources : https://developer.themoviedb.org/docs/authentication-application, http
 - **Langue** : `language=fr-FR`. Si `overview` ou `title` sont vides, refaire la requête en `en-US` pour ces champs. Pour les vidéos : `include_video_language=fr,en,null`.
 - **Mentions** : l'attribution TMDB est obligatoire. Les données de watch/providers viennent de JustWatch.
 
+## Seerr (Jellyseerr, Overseerr) : import des demandes (6.2)
+
+Auth : `X-Api-Key: <clé>` (Paramètres › Général), base `/api/v1`. Sources : code de https://github.com/seerr-team/seerr (branche develop) : `server/routes/request.ts`, `server/entity/User.ts`, `server/constants/media.ts`. L'adresse et la clé servent à l'appel seulement, jamais enregistrées (`POST /api/import/seerr`, propriétaire).
+
+- **Demandes** [V] : `GET /request?take=100&skip=n&filter=all`. Réponse `{ pageInfo: { pages, pageSize, results, page }, results: [] }`, où `pageInfo.results` est le total. `filter=all` (ou absent) couvre les cinq statuts. Plafond éventuel de `take` côté serveur non vu : `skip` avance donc du nombre de demandes reçues [?].
+- **Demande** [V] : `id`, `status`, `type` (`movie`/`tv`), `is4k`, `createdAt`, `updatedAt`, `media` (`mediaType`, `tmdbId`, `tvdbId`, `status`, `status4k`), `seasons[].seasonNumber`, `requestedBy`. Format des dates selon la base (SQLite ou Postgres) [?].
+- **Statuts** [V] : demande 1 en attente, 2 approuvée, 3 refusée, 4 échec, 5 terminée ; média 1 inconnu, 2 en attente, 3 en cours, 4 partiel, 5 disponible, 6 bloqué, 7 supprimé. Les statuts de demande 4 et 5 n'existent que dans Jellyseerr/Seerr récents ; Overseerr s'arrête à 3 [?].
+- **Membre** : `requestedBy` est l'entité `User` chargée en entier [V] : `id`, `email`, `username`, `plexUsername`, `jellyfinUsername`, `jellyfinUserId`, `userType`, `displayName` (= `username` › `plexUsername` › `jellyfinUsername` › `email`). Pas de champ `embyUserId` : un compte Emby range son id Emby dans `jellyfinUserId` [?], format (tirets, casse) [?].
+
+Correspondances (`services/seerr-import.ts`) :
+
+- **Membre** : `jellyfinUserId` comparé à l'id Emby du membre, sans casse ni tirets ; sinon `jellyfinUsername`, `username`, `plexUsername`, `displayName` comparés au nom du membre, sans casse (un nom porté par deux membres ne compte pas). Aucun membre créé : les demandes d'un compte sans correspondance sont écartées et listées.
+- **Statut** : 1 → `pending` ; 2 → `sent` (déjà envoyée par Seerr, jamais renvoyée), ou `available` si le média (`status4k` pour une 4K) vaut 5 ; 3 → `declined` ; 4 → `failed` (relançable) ; 5 → `available`. Autre statut, titre sans `tmdbId`, série sans saison : écartée (« titre non reconnu »).
+- **4K** : gardée (`is_4k = 1`), la colonne existant déjà ; `markAvailable` ne la fait jamais passer disponible avec la version ordinaire.
+
 ## Discord (5.3)
 
 Facultatif, désactivé par défaut. Source : https://discord.com/developers/docs/resources/webhook#execute-webhook

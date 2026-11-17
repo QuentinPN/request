@@ -53,7 +53,7 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 ## Phase 6 — Mise en production
 
 - [ ] **6.1** (P0) Dockerfile `linux/amd64`, `compose.yml` durci, Caddy, healthcheck, sauvegarde de `/data` → image démarrée en local, assistant parcouru de bout en bout
-- [ ] **6.2** (P2) Import facultatif des demandes de Seerr
+- [x] **6.2** (P2) Import facultatif des demandes de Seerr (Réglages › Importer depuis Seerr : aperçu, puis import idempotent)
 - [ ] **6.3** (P0) Déploiement sur le mini-PC à côté de Seerr, essai avec de vrais membres, puis arrêt de Seerr (avec l'accord du propriétaire)
 
 ## Après le MVP

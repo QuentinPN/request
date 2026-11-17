@@ -38,7 +38,7 @@ export type SectionFrameProps<S extends SectionId = SectionId> = {
   disabled?: boolean;
   /** Libellé de « Testé » pour une section sans test (règles). */
   doneLabel?: string;
-  /** Libellé de « À faire » pour une section facultative (Discord : « Désactivé »). */
+  /** Libellé de « À faire » pour une section facultative (Seerr, Discord : « Désactivé »). */
   todoLabel?: string;
 };
 

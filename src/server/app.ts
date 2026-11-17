@@ -12,6 +12,7 @@ import { catalogueRoutes } from './routes/catalogue.ts';
 import { discordRoutes } from './routes/discord.ts';
 import { embyRoutes } from './routes/emby.ts';
 import { imageRoutes } from './routes/images.ts';
+import { importRoutes } from './routes/import.ts';
 import { notificationsRoutes } from './routes/notifications.ts';
 import { requestsRoutes } from './routes/requests.ts';
 import { setupRoutes } from './routes/setup.ts';
@@ -124,6 +125,7 @@ export async function buildApp({
   notificationsRoutes(app);
   discordRoutes(app, discord);
   webhookRoutes(app, sync);
+  importRoutes(app);
   await app.register(catalogueRoutes);
   await app.register(embyRoutes);
   await app.register(

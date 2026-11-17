@@ -16,10 +16,12 @@ import { apiSend } from '@/lib/http';
 import {
   connectionText,
   formatBytes,
+  isHttpUrl,
   libraryTypeLabels,
   minimumAvailabilityLabels,
   seriesTypeLabels,
   testSummary,
+  URL_ERROR,
 } from './config';
 import { useSaveSetting } from './queries';
 import { actionClass, SectionActions, SectionFrame, type SectionFrameProps, sectionStatus } from './section-frame';
@@ -117,9 +119,6 @@ function prefill(key: IntegrationKey, v: Values, result: TestResults[Integration
   }
   return v;
 }
-
-const isHttpUrl = (value: string) => /^https?:\/\/[^\s/]+/i.test(value.trim());
-const URL_ERROR = 'Adresse invalide : elle doit commencer par http:// ou https://';
 
 /** Adresse publique d'Emby : facultative, mais valide si elle est renseignée. */
 const publicUrlError = (key: IntegrationKey, v: Values) =>

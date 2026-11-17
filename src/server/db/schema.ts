@@ -172,6 +172,8 @@ export const requests = sqliteTable(
     seriesType: text({ enum: seriesTypes }),
     /** Réservé aux demandes 4K (toujours `false` pour l'instant). */
     is4k: integer('is_4k', { mode: 'boolean' }).notNull().default(false),
+    /** Origine d'une demande importée (`seerr:<id>`) : un nouvel import la reconnaît ; `NULL` = créée dans l'appli. */
+    externalRef: text(),
     createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
     updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   },
@@ -189,6 +191,8 @@ export const requests = sqliteTable(
     // Statut affiché d'un titre (demandes par média) ; sert aussi la clé étrangère.
     index('requests_media_id_status_idx').on(table.mediaId, table.status),
     index('requests_decided_by_idx').on(table.decidedBy).where(sql`${table.decidedBy} IS NOT NULL`),
+    // Import idempotent (6.2) : une demande importée ne l'est qu'une fois (SQLite tient les `NULL` pour distincts).
+    uniqueIndex('requests_external_ref_unique').on(table.externalRef),
   ],
 );
 
