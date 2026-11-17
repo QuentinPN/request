@@ -2,7 +2,7 @@ import { and, eq, exists, isNotNull, isNull, lt, not, or, type SQL } from 'drizz
 import type { MediaKey } from '../../shared/media.ts';
 import type { WebhookResult, WebhookService } from '../../shared/webhooks.ts';
 import type { Data, Db } from '../db/index.ts';
-import { media, requests } from '../db/schema.ts';
+import { issues, media, requests } from '../db/schema.ts';
 import type { ArrWebhookEvent } from '../integrations/arr.ts';
 import { latestEmbyItems } from '../integrations/emby.ts';
 import { parseRadarrWebhook } from '../integrations/radarr.ts';
@@ -39,14 +39,26 @@ const hasRequest = (db: Db, where?: SQL) =>
       .where(and(eq(requests.mediaId, media.id), where)),
   );
 
+/** Un signalement retient son titre (clé étrangère `RESTRICT`). */
+const hasIssue = (db: Db) => exists(db.select({ one }).from(issues).where(eq(issues.mediaId, media.id)));
+
 /**
- * Supprime les titres sans statut (absents d'Emby, Radarr et Sonarr), sans aucune demande et pas recalculés depuis
- * `before` : les affiches vues une fois s'accumuleraient sinon. Leurs saisons partent en cascade.
+ * Supprime les titres sans statut, normal ni 4K (absents d'Emby, Radarr et Sonarr), sans aucune demande ni
+ * signalement et pas recalculés depuis `before` : les affiches vues une fois s'accumuleraient sinon. Leurs saisons
+ * partent en cascade.
  */
 export function purgeMedia(db: Db, before: Date): number {
   return db
     .delete(media)
-    .where(and(isNull(media.status), lt(media.statusUpdatedAt, before), not(hasRequest(db))))
+    .where(
+      and(
+        isNull(media.status),
+        isNull(media.status4k),
+        lt(media.statusUpdatedAt, before),
+        not(hasRequest(db)),
+        not(hasIssue(db)),
+      ),
+    )
     .run().changes;
 }
 

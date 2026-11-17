@@ -84,3 +84,14 @@ export function requireEmby({ db, cryptoKey }: Data): Setting<'emby'> {
   if (!emby) throw new HttpError(409, "Emby n'est pas encore configuré");
   return emby;
 }
+
+/**
+ * Serveur multimédia configuré, ou `null`. Migration à la lecture : tant que `mediaServer` n'a jamais été enregistré,
+ * l'ancien réglage `emby` en tient lieu (type `emby`), sans rien réécrire en base.
+ */
+export function getMediaServer(db: Db, cryptoKey: Buffer): Setting<'mediaServer'> | null {
+  const stored = getSetting(db, cryptoKey, 'mediaServer');
+  if (stored) return stored;
+  const emby = getSetting(db, cryptoKey, 'emby');
+  return emby && { kind: 'emby', ...emby };
+}

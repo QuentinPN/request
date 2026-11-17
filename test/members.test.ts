@@ -32,18 +32,34 @@ describe('rôles', () => {
       canManageUsers: false,
       isOwner: false,
       quotaExempt: false,
+      canRequest4k: true,
+      autoApprove4k: false,
+      canManageIssues: false,
+      canRequestOnBehalf: false,
+      canManageBlocklist: false,
+      canViewStats: false,
     });
     expect(capabilitiesOf('auto_approve')).toMatchObject({
       autoApprove: true,
+      autoApprove4k: true,
       canManageRequests: false,
+      canManageIssues: false,
       quotaExempt: false,
     });
+    const managerRights = {
+      canManageIssues: true,
+      canRequestOnBehalf: true,
+      canManageBlocklist: true,
+      canViewStats: true,
+    };
     expect(capabilitiesOf('manager')).toMatchObject({
       autoApprove: true,
       canManageRequests: true,
       canManageUsers: false,
       quotaExempt: true,
+      ...managerRights,
     });
+    expect(capabilitiesOf('owner')).toMatchObject(managerRights);
     expect(capabilitiesOf('owner')).toMatchObject({
       canManageRequests: true,
       canManageUsers: true,

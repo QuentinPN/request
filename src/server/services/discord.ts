@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import type { NotificationKind } from '../../shared/notifications.ts';
+import type { RequestNotificationKind } from '../../shared/notifications.ts';
 import type { Data } from '../db/index.ts';
 import { media, requestEvents, requests, users } from '../db/schema.ts';
 import {
@@ -16,7 +16,7 @@ import { notificationMessage, type RequestEventFact } from './notifications.ts';
 import { getSetting } from './settings.ts';
 import { loadSummaries } from './tmdb.ts';
 
-const COLORS: Record<NotificationKind | 'test', number> = {
+const COLORS: Record<RequestNotificationKind | 'test', number> = {
   requested: 0xf0b232,
   approved: 0x3ba55d,
   declined: 0xed4245,
@@ -26,7 +26,7 @@ const COLORS: Record<NotificationKind | 'test', number> = {
 };
 
 /** Libellé du détail de l'évènement dans le message (motif du refus, raison de l'échec). */
-const DETAIL_LABELS: Partial<Record<NotificationKind, string>> = { declined: 'Motif', failed: 'Raison' };
+const DETAIL_LABELS: Partial<Record<RequestNotificationKind, string>> = { declined: 'Motif', failed: 'Raison' };
 
 /** Un échec d'envoi se journalise sans adresse : le jeton du webhook est dans son chemin. */
 const logFailure = (error: unknown) =>
@@ -57,7 +57,7 @@ export function createDiscord(data: Data, deps: { tmdb: () => TmdbClient; baseUr
       .get();
 
   async function deliver(event: RequestEventFact) {
-    const kind = event.type as NotificationKind;
+    const kind = event.type as RequestNotificationKind;
     const config = getSetting(db, cryptoKey, 'discord');
     if (!config?.enabled || !config.webhookUrl || !config.events.includes(kind)) return;
     const row = committed(event);

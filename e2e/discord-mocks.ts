@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { DISCORD_SETTINGS_PATH, DISCORD_TEST_PATH } from '@shared/discord.ts';
-import { notificationKinds } from '@shared/notifications.ts';
+import { requestNotificationKinds } from '@shared/notifications.ts';
 import type { MaskedSetting, SettingInput } from '@shared/settings.ts';
 
 // Faux réglages Discord (`/api/settings/discord`) : écritures et messages de test gardés pour les assertions.
@@ -10,7 +10,7 @@ export const WEBHOOK = 'https://discord.com/api/webhooks/123456/jeton-secret';
 /** Réglages Discord du faux serveur : les écritures du formulaire et les messages de test s'y enregistrent. */
 export async function mockDiscord(page: Page, initial?: Partial<MaskedSetting<'discord'>>) {
   const state = {
-    saved: { webhookUrl: { set: false }, enabled: false, events: [...notificationKinds], ...initial },
+    saved: { webhookUrl: { set: false }, enabled: false, events: [...requestNotificationKinds], ...initial },
     puts: [] as SettingInput<'discord'>[],
     tests: [] as unknown[],
     testReply: { status: 200, json: { ok: true } as object },
@@ -26,7 +26,7 @@ export async function mockDiscord(page: Page, initial?: Partial<MaskedSetting<'d
     state.saved = {
       webhookUrl: { set: Boolean(body.webhookUrl) || state.saved.webhookUrl.set },
       enabled: body.enabled ?? false,
-      events: body.events ?? [...notificationKinds],
+      events: body.events ?? [...requestNotificationKinds],
     };
     return route.fulfill({ json: state.saved });
   });

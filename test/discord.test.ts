@@ -4,7 +4,7 @@ import { openDataDir } from '../src/server/db/index.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { createSync } from '../src/server/services/sync.ts';
 import { DISCORD_SETTINGS_PATH, DISCORD_TEST_PATH } from '../src/shared/discord.ts';
-import { type NotificationKind, notificationKinds } from '../src/shared/notifications.ts';
+import { type RequestNotificationKind, requestNotificationKinds } from '../src/shared/notifications.ts';
 import type { RequestDetail } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { status } from './fake-server.ts';
@@ -43,7 +43,7 @@ interface DiscordMessage {
 }
 
 /** Appli branchée sur de faux TMDB, Radarr et Discord ; le webhook n'est enregistré que si `discord` est fourni. */
-async function setup(discord?: { enabled?: boolean; events?: readonly NotificationKind[]; reply?: number }) {
+async function setup(discord?: { enabled?: boolean; events?: readonly RequestNotificationKind[]; reply?: number }) {
   const radarrState = { movies: [] as Array<{ id: number; tmdbId: number; hasFile: boolean }>, down: false };
   const tmdb = await startServer({ 'GET /movie/603': matrix });
   const radarr = await startServer({
@@ -215,7 +215,7 @@ describe('réglages Discord', () => {
   it('par défaut : désactivé, tous les évènements, aucune adresse', async () => {
     const { as } = await setup();
     const response = await (await as('owner')).get(DISCORD_SETTINGS_PATH);
-    expect(response.json()).toEqual({ webhookUrl: { set: false }, enabled: false, events: notificationKinds });
+    expect(response.json()).toEqual({ webhookUrl: { set: false }, enabled: false, events: requestNotificationKinds });
   });
 
   it('propriétaire seulement', async () => {

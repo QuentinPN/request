@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { decrypt, encrypt, loadOrCreateKey } from '../src/server/crypto.ts';
 import { openDataDir, openDb } from '../src/server/db/index.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
-import { notificationKinds } from '../src/shared/notifications.ts';
+import { requestNotificationKinds } from '../src/shared/notifications.ts';
 import { trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
@@ -22,7 +22,7 @@ describe('migrations', () => {
 
     const again = openDataDir(dir);
     const applied = again.db.$client.prepare('select count(*) as n from __drizzle_migrations').get() as { n: number };
-    expect(applied.n).toBe(10);
+    expect(applied.n).toBe(11);
     expect(again.db.$client.pragma('journal_mode', { simple: true })).toBe('wal');
     again.db.$client.close();
   });
@@ -94,7 +94,7 @@ describe('réglages', () => {
   it('renvoient null si absents et appliquent les valeurs par défaut', () => {
     const db = openDb(':memory:');
     expect(getSetting(db, cryptoKey, 'emby')).toBeNull();
-    const discord = { webhookUrl: null, enabled: false, events: notificationKinds };
+    const discord = { webhookUrl: null, enabled: false, events: requestNotificationKinds };
     expect(setSetting(db, cryptoKey, 'discord', {})).toEqual(discord);
     expect(getSetting(db, cryptoKey, 'discord')).toEqual(discord);
   });

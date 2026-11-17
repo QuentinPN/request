@@ -42,6 +42,11 @@ const toQueue: Record<NotificationKind, boolean> = {
   approved: false,
   declined: false,
   available: false,
+  requested_on_behalf: false,
+  issue_created: false,
+  issue_commented: false,
+  issue_resolved: false,
+  issue_reopened: false,
 };
 
 /** Destination d'une notification : la file d'approbation, ou la fiche du titre ; `null` si la demande n'existe plus. */

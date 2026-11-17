@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { type ArrKind, arrKindLabels } from '../../shared/arr-servers.ts';
 import type { MediaType } from '../../shared/media.ts';
 import type { ArrTestResult } from '../../shared/setup.ts';
 import { createClient, IntegrationError } from './http.ts';
@@ -9,9 +10,9 @@ export interface ArrConfig {
   apiKey: string;
 }
 
-export type ArrKind = 'radarr' | 'sonarr';
+export type { ArrKind };
 
-export const ARR_SERVICE: Record<ArrKind, string> = { radarr: 'Radarr', sonarr: 'Sonarr' };
+export const ARR_SERVICE = arrKindLabels;
 
 /** Service qui reçoit un titre : Radarr pour un film, Sonarr pour une série. */
 export const arrKindOf = (type: MediaType): ArrKind => (type === 'movie' ? 'radarr' : 'sonarr');

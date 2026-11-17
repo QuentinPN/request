@@ -1,4 +1,5 @@
-import type { NotificationKind } from '@shared/notifications.ts';
+import { arrKindLabels } from '@shared/arr-servers.ts';
+import type { RequestNotificationKind } from '@shared/notifications.ts';
 import type { IntegrationKey, minimumAvailabilities, seriesTypes } from '@shared/settings.ts';
 import type { ArrTestResult, SetupSection, TestResults } from '@shared/setup.ts';
 import type { WebhookService } from '@shared/webhooks.ts';
@@ -21,10 +22,10 @@ export const settingsSectionOrder = [
   'discord',
 ] as const satisfies readonly SectionId[];
 
-export const webhookLabels: Record<WebhookService, string> = { radarr: 'Radarr', sonarr: 'Sonarr' };
+export const webhookLabels: Record<WebhookService, string> = arrKindLabels;
 
 /** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande. */
-export const discordEventLabels: Record<NotificationKind, string> = {
+export const discordEventLabels: Record<RequestNotificationKind, string> = {
   requested: 'Nouvelle demande à approuver',
   approved: 'Demande approuvée',
   declined: 'Demande refusée',

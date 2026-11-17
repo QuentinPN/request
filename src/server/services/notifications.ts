@@ -2,13 +2,14 @@ import { and, count, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-or
 import type { z } from 'zod';
 import { keyOf } from '../../shared/media.ts';
 import {
-  isNotificationKind,
+  isRequestNotificationKind,
   type markNotificationsReadSchema,
   NOTIFICATIONS_PAGE_SIZE,
   type NotificationKind,
   type NotificationPage,
   type NotificationsRead,
   type notificationListQuerySchema,
+  type RequestNotificationKind,
 } from '../../shared/notifications.ts';
 import { capabilitiesOf, roles } from '../../shared/roles.ts';
 import type { RequestEventType } from '../../shared/status.ts';
@@ -64,13 +65,23 @@ export function notificationMessage(
         title: 'Échec de l’envoi',
         body: `L’envoi${ofTitle}${requesterName ? `, demandé par ${requesterName},` : ''} a échoué${detail ? ` : ${detail}` : '.'}`,
       };
+    case 'requested_on_behalf':
+      return { title: 'Demande faite pour vous', body: `${quoted ?? 'Un titre'} a été demandé pour vous.` };
+    case 'issue_created':
+      return { title: 'Nouveau signalement', body: `Un problème a été signalé sur ${quoted ?? 'un titre'}.` };
+    case 'issue_commented':
+      return { title: 'Nouveau commentaire', body: `Le signalement sur ${quoted ?? 'un titre'} a été commenté.` };
+    case 'issue_resolved':
+      return { title: 'Signalement résolu', body: `Votre signalement sur ${quoted ?? 'un titre'} a été résolu.` };
+    case 'issue_reopened':
+      return { title: 'Signalement rouvert', body: `Votre signalement sur ${quoted ?? 'un titre'} a été rouvert.` };
   }
 }
 
 // --- Écriture (dans la transaction de l'évènement) ---
 
 /** Qui reçoit chaque notification. */
-const RECIPIENTS: Record<NotificationKind, 'requester' | 'managers'> = {
+const RECIPIENTS: Record<RequestNotificationKind, 'requester' | 'managers'> = {
   requested: 'managers',
   failed: 'managers',
   approved: 'requester',
@@ -110,7 +121,7 @@ export function onRequestEvent(listener: RequestEventListener): () => void {
  */
 export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: RequestEventFact) {
   const { type: kind, requestId, actorId, detail, at } = event;
-  if (!isNotificationKind(kind)) return;
+  if (!isRequestNotificationKind(kind)) return;
   const request = tx
     .select({ userId: requests.userId, role: users.role })
     .from(requests)

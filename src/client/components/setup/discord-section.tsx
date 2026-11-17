@@ -1,5 +1,5 @@
 import { DISCORD_SETTINGS_PATH, DISCORD_TEST_PATH } from '@shared/discord.ts';
-import { type NotificationKind, notificationKinds } from '@shared/notifications.ts';
+import { type RequestNotificationKind, requestNotificationKinds } from '@shared/notifications.ts';
 import { type MaskedSetting, type SettingInput, settingSchemas } from '@shared/settings.ts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
@@ -24,7 +24,7 @@ function DiscordForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedS
   // Vide : garder l'adresse enregistrée (elle ne revient jamais du serveur).
   const [url, setUrl] = useState('');
   const [enabled, setEnabled] = useState(stored.enabled);
-  const [events, setEvents] = useState<NotificationKind[]>(stored.events);
+  const [events, setEvents] = useState<RequestNotificationKind[]>(stored.events);
 
   const save = useMutation({
     mutationFn: (value: SettingInput<'discord'>) =>
@@ -51,8 +51,8 @@ function DiscordForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedS
     save.reset();
     test.reset();
   };
-  const toggleEvent = (kind: NotificationKind, on: boolean) =>
-    edit(() => setEvents((current) => notificationKinds.filter((k) => (k === kind ? on : current.includes(k)))));
+  const toggleEvent = (kind: RequestNotificationKind, on: boolean) =>
+    edit(() => setEvents((current) => requestNotificationKinds.filter((k) => (k === kind ? on : current.includes(k)))));
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -107,7 +107,7 @@ function DiscordForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedS
         <fieldset>
           <legend className="mb-2 text-[13px] font-semibold">Évènements envoyés</legend>
           <div className="grid gap-2 sm:grid-cols-2">
-            {notificationKinds.map((kind) => (
+            {requestNotificationKinds.map((kind) => (
               <label
                 key={kind}
                 className="flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm"

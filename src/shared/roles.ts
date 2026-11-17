@@ -23,18 +23,39 @@ export type Capabilities = {
   isOwner: boolean;
   /** Hors quotas de demandes. */
   quotaExempt: boolean;
+  /** Peut demander en 4K (bouton visible seulement si un serveur 4K du bon type existe). */
+  canRequest4k: boolean;
+  /** Ses demandes 4K sont approuvées sans validation. */
+  autoApprove4k: boolean;
+  /** Voit tous les signalements, les commente, les résout et les rouvre. */
+  canManageIssues: boolean;
+  /** Peut demander un titre à la place d'un membre (quota et notifications du membre). */
+  canRequestOnBehalf: boolean;
+  /** Peut bloquer des titres et des mots-clés. */
+  canManageBlocklist: boolean;
+  /** Voit la page Statistiques. */
+  canViewStats: boolean;
 };
 
 /** Droits dérivés du rôle : l'unique endroit où le rôle est traduit en permissions. */
 export function capabilitiesOf(role: Role): Capabilities {
   const rank = roles.indexOf(role);
+  const autoApprove = rank >= roles.indexOf('auto_approve');
+  const manager = rank >= roles.indexOf('manager');
   return {
     canRequest: true,
-    autoApprove: rank >= roles.indexOf('auto_approve'),
-    canManageRequests: rank >= roles.indexOf('manager'),
+    autoApprove,
+    canManageRequests: manager,
     canManageUsers: role === 'owner',
     isOwner: role === 'owner',
-    quotaExempt: rank >= roles.indexOf('manager'),
+    quotaExempt: manager,
+    // Tout membre peut demander en 4K : celles d'un rôle sans approbation automatique attendent un gestionnaire.
+    canRequest4k: true,
+    autoApprove4k: autoApprove,
+    canManageIssues: manager,
+    canRequestOnBehalf: manager,
+    canManageBlocklist: manager,
+    canViewStats: manager,
   };
 }
 
