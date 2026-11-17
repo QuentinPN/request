@@ -1,5 +1,6 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { eq, lte } from 'drizzle-orm';
+import { sha256Hex } from '../crypto.ts';
 import type { Db } from '../db/index.ts';
 import { sessions, users } from '../db/schema.ts';
 import type { User } from './users.ts';
@@ -9,7 +10,7 @@ export const SESSION_TTL_MS = 30 * 24 * 3600_000;
 export const SESSION_REFRESH_MS = 3600_000;
 
 /** Le jeton ne quitte jamais le cookie : la base ne garde que son empreinte SHA-256. */
-const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+const hashToken = sha256Hex;
 
 /** Ouvre une session. Le jeton en clair n'est renvoyé qu'ici, une seule fois. */
 export function createSession(

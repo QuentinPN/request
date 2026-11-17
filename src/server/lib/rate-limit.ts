@@ -22,21 +22,30 @@ export function createRateLimiter({
     for (const [key, times] of hits) if (times.every((t) => now - t >= windowMs)) hits.delete(key);
   }
 
+  /** Essais encore dans la fenêtre pour cette clé. */
+  const recentOf = (key: string, now: number) => (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+  const retryAfter = (recent: number[], now: number) => {
+    const oldest = recent[0];
+    return recent.length >= limit && oldest !== undefined ? { retryAfterMs: oldest + windowMs - now } : null;
+  };
+
   /** Compte un essai ; renvoie le délai d'attente en ms si la limite est déjà atteinte (l'essai n'est alors pas compté). */
   function hit(key: string, now = Date.now()): { retryAfterMs: number } | null {
     sweep(now);
-    const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    const recent = recentOf(key, now);
     hits.delete(key);
-    const oldest = recent[0];
-    const blocked = recent.length >= limit && oldest !== undefined;
+    const blocked = retryAfter(recent, now);
     if (!blocked) recent.push(now);
     hits.set(key, recent);
     for (const stale of hits.keys()) {
       if (hits.size <= maxKeys) break;
       hits.delete(stale);
     }
-    return blocked ? { retryAfterMs: oldest + windowMs - now } : null;
+    return blocked;
   }
 
-  return { hit, size: () => hits.size };
+  /** La limite est-elle atteinte pour cette clé ? Ne compte rien : permet de ne compter que les échecs (voir `hit`). */
+  const peek = (key: string, now = Date.now()) => retryAfter(recentOf(key, now), now);
+
+  return { hit, peek, size: () => hits.size };
 }

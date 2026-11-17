@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
 import { setupStateQuery } from '@/lib/session';
+import { ApiKeysSection } from './api-keys-section';
 import { type SectionId, sectionOrder } from './config';
 import { DiscordSection } from './discord-section';
 import { IntegrationSection } from './integration-section';
@@ -61,6 +62,7 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
           <SeerrImportSection section="seerr" open={open === 'seerr'} onToggle={() => toggle('seerr')} />
           <DiscordSection section="discord" open={open === 'discord'} onToggle={() => toggle('discord')} />
+          <ApiKeysSection section="api" open={open === 'api'} onToggle={() => toggle('api')} />
         </>
       )}
     </div>

@@ -1,7 +1,6 @@
-import { WEBHOOK_TOKEN_PATH, type WebhookService, type WebhookSettings, webhookServices } from '@shared/webhooks.ts';
+import { WEBHOOK_TOKEN_PATH, type WebhookSettings, webhookServices } from '@shared/webhooks.ts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { Notice } from '@/components/notice';
 import { ErrorState } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -13,61 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input, Label } from '@/components/ui/field';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiSend } from '@/lib/http';
 import { webhookLabels } from './config';
+import { CopyField } from './copy-field';
 import { webhooksQuery } from './queries';
 import { actionClass, SectionActions, SectionFrame, type SectionFrameProps, sectionStatus } from './section-frame';
-
-/** Le presse-papiers n'existe qu'en contexte sécurisé (https ou localhost) : sur le réseau local en http, on se rabat sur la sélection. */
-const canCopy = () => typeof navigator !== 'undefined' && navigator.clipboard !== undefined;
-
-function UrlRow({ service, url }: { service: WebhookService; url: string }) {
-  const id = useId();
-  const [copied, setCopied] = useState(false);
-  const label = webhookLabels[service];
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Refusé par le navigateur : l'adresse reste sélectionnable dans le champ.
-    }
-  };
-
-  return (
-    <div>
-      <Label htmlFor={id}>{label}</Label>
-      <div className="flex gap-2">
-        <Input
-          id={id}
-          readOnly
-          spellCheck={false}
-          autoComplete="off"
-          value={url}
-          onFocus={(e) => e.currentTarget.select()}
-          className="min-w-0 font-mono text-[13px]"
-        />
-        {canCopy() && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="lg"
-            className="shrink-0 border-input"
-            aria-label={`Copier l’adresse ${label}`}
-            onClick={() => void copy()}
-          >
-            <Copy data-icon="inline-start" />
-            {copied ? 'Copié' : 'Copier'}
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function RegenerateDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const queryClient = useQueryClient();
@@ -140,7 +90,12 @@ export function WebhooksSection(frame: SectionFrameProps) {
           adresse : sur Docker, « localhost » ne convient pas.
         </p>
         {webhookServices.map((service) => (
-          <UrlRow key={service} service={service} url={query.data.urls[service]} />
+          <CopyField
+            key={service}
+            label={webhookLabels[service]}
+            copyLabel={`Copier l’adresse ${webhookLabels[service]}`}
+            value={query.data.urls[service]}
+          />
         ))}
         <div role="status" className="empty:hidden">
           {regenerated && (

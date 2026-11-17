@@ -1,3 +1,4 @@
+import { API_KEYS_PATH, type ApiKey } from '@shared/api-keys.ts';
 import { DISCORD_SETTINGS_PATH } from '@shared/discord.ts';
 import type { MaskedSetting, SettingInput } from '@shared/settings.ts';
 import type { SetupSection } from '@shared/setup.ts';
@@ -31,6 +32,12 @@ export const webhooksQuery = queryOptions({
 export const discordQuery = queryOptions({
   queryKey: ['settings', 'discord'],
   queryFn: ({ signal }) => apiGet<MaskedSetting<'discord'>>(DISCORD_SETTINGS_PATH, undefined, signal),
+});
+
+/** Clés d'API publiques, révoquées comprises, sans leur secret (propriétaire seulement). */
+export const apiKeysQuery = queryOptions({
+  queryKey: ['settings', 'api-keys'],
+  queryFn: ({ signal }) => apiGet<ApiKey[]>(API_KEYS_PATH, undefined, signal),
 });
 
 /** Enregistre une section (le serveur refait le test de connexion), puis rafraîchit l'état de l'installation. */

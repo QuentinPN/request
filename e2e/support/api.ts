@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test as base, expect, type Page, type Route } from '@playwright/test';
+import { API_KEYS_PATH, type ApiKey, type ApiKeyCreated, apiKeyPath } from '../../src/shared/api-keys.ts';
 import type { Viewer } from '../../src/shared/auth.ts';
 import { EMBY_LINK_PATH, type EmbyLink } from '../../src/shared/emby.ts';
 import type { NotificationPage } from '../../src/shared/notifications.ts';
@@ -72,7 +73,12 @@ type MockState = {
   /** Adresse publique d'Emby et id du serveur : `null` tant qu'aucune adresse publique n'est réglée. */
   embyLink: EmbyLink | null;
   webhooks: WebhookSettings;
+  /** Clés d'API (Réglages › API), vide par défaut ; la création en ajoute une, la révocation la marque révoquée. */
+  apiKeys: ApiKey[];
 };
+
+/** Secret renvoyé par la création factice d'une clé d'API. */
+export const API_KEY_SECRET = 'ur_Zk3pQ9vXw2LrT7nMb4YcA8dEfGhJ1sUo5iVxN6qWtPe';
 
 const json = (route: Route, status: number, body?: unknown) =>
   status === 204 ? route.fulfill({ status }) : route.fulfill({ status, json: body });
@@ -84,6 +90,7 @@ export class ApiMock {
     settings: {},
     embyLink: null,
     webhooks: webhookSettingsOf('jeton-initial'),
+    apiKeys: [],
   };
 
   readonly page: Page;
@@ -118,6 +125,26 @@ export class ApiMock {
     if (method === 'POST' && pathname === WEBHOOK_TOKEN_PATH) {
       state.webhooks = webhookSettingsOf('jeton-regenere');
       return json(route, 200, state.webhooks);
+    }
+    if (method === 'GET' && pathname === API_KEYS_PATH) return json(route, 200, state.apiKeys);
+    if (method === 'POST' && pathname === API_KEYS_PATH) {
+      const { name } = route.request().postDataJSON() as { name: string };
+      const apiKey: ApiKey = {
+        id: state.apiKeys.length + 1,
+        name,
+        prefix: API_KEY_SECRET.slice(0, 8),
+        createdByName: state.viewer?.name ?? 'Quentin',
+        createdAt: new Date().toISOString(),
+        lastUsedAt: null,
+        revokedAt: null,
+      };
+      state.apiKeys.unshift(apiKey);
+      return json(route, 201, { apiKey, secret: API_KEY_SECRET } satisfies ApiKeyCreated);
+    }
+    const revoked = state.apiKeys.find((key) => apiKeyPath(key.id) === pathname);
+    if (method === 'DELETE' && revoked) {
+      revoked.revokedAt = new Date().toISOString();
+      return json(route, 204);
     }
     const setting = pathname.match(/^\/api\/settings\/(\w+)$/)?.[1] as SetupSection | undefined;
     if (method === 'GET' && setting) {

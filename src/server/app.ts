@@ -7,6 +7,7 @@ import type { Data } from './db/index.ts';
 import type { TmdbClient } from './integrations/tmdb.ts';
 import { apiErrorHandler, HttpError } from './lib/api-errors.ts';
 import { registerAuth } from './plugins/auth.ts';
+import { apiKeysRoutes } from './routes/api-keys.ts';
 import { authRoutes } from './routes/auth.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
 import { discordRoutes } from './routes/discord.ts';
@@ -126,6 +127,7 @@ export async function buildApp({
   notificationsRoutes(app);
   discordRoutes(app, discord);
   webhookRoutes(app, sync);
+  apiKeysRoutes(app);
   importRoutes(app);
   statsRoutes(app);
   await app.register(catalogueRoutes);

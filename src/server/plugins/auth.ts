@@ -1,16 +1,21 @@
 import { createHmac } from 'node:crypto';
 import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { API_KEY_HEADER } from '../../shared/api-keys.ts';
 import { CSRF_HEADER, CSRF_VALUE } from '../../shared/auth.ts';
 import { type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
 import { webhookPath, webhookServices } from '../../shared/webhooks.ts';
 import { HttpError } from '../lib/api-errors.ts';
+import { createRateLimiter } from '../lib/rate-limit.ts';
+import { authenticateApiKey } from '../services/api-keys.ts';
 import { createSession, revokeSession, SESSION_TTL_MS, validateSession } from '../services/sessions.ts';
 import { hasOwner, type User } from '../services/users.ts';
 
 export interface SessionViewer {
   user: User;
   capabilities: Capabilities;
+  /** Comment la requête s'est authentifiée : cookie de session, ou clé d'API (`X-Api-Key`). */
+  via: 'session' | 'apiKey';
 }
 
 declare module 'fastify' {
@@ -90,7 +95,42 @@ function sessionToken(req: FastifyRequest): string | null {
 function readViewer(req: FastifyRequest): SessionViewer | null {
   const token = sessionToken(req);
   const user = token ? validateSession(req.server.data.db, token) : null;
-  return user ? { user, capabilities: capabilitiesOf(user.role) } : null;
+  return user ? { user, capabilities: capabilitiesOf(user.role), via: 'session' } : null;
+}
+
+// --- Clé d'API ---
+
+/** Essais de clé d'API invalide par adresse IP ; au-delà, toute clé invalide de cette adresse reçoit 429. */
+export const API_KEY_LIMIT = { limit: 10, windowMs: 5 * 60_000 };
+
+/**
+ * Requête à clé d'API : la clé est le seul justificatif, jamais combiné à un cookie de session (refus 400, sans
+ * repli de l'un sur l'autre). Pas de cookie, donc pas de CSRF ni d'origine à contrôler. Clé inconnue, révoquée ou
+ * dont le créateur n'est plus propriétaire : essai compté pour l'IP, 401, ou 429 si la limite est atteinte. Une clé
+ * valide passe toujours, sans consulter la limite. S'applique à toute route `/api`, publiques comprises.
+ */
+function authenticateWithApiKey(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  limiter: ReturnType<typeof createRateLimiter>,
+): FastifyReply | undefined {
+  if (req.cookies[SESSION_COOKIE] !== undefined)
+    return reply
+      .code(400)
+      .send({ error: 'Cookie de session et clé d’API ne se combinent pas : n’envoyez que l’un des deux' });
+  const secret = req.headers[API_KEY_HEADER];
+  const user = typeof secret === 'string' ? authenticateApiKey(req.server.data.db, secret) : null;
+  if (user) {
+    req.viewer = { user, capabilities: capabilitiesOf(user.role), via: 'apiKey' };
+    return undefined;
+  }
+  const blocked = limiter.peek(req.ip);
+  limiter.hit(req.ip);
+  if (blocked) {
+    reply.header('retry-after', Math.ceil(blocked.retryAfterMs / 1000));
+    return reply.code(429).send({ error: 'Trop de clés d’API invalides, réessayez dans quelques minutes' });
+  }
+  return reply.code(401).send({ error: 'Clé d’API invalide' });
 }
 
 /** Ouvre une session pour ce membre et pose le cookie. */
@@ -128,9 +168,15 @@ export const requireCapability = (capability: keyof Capabilities) => async (req:
   if (!req.viewer?.capabilities[capability]) throw new HttpError(403, 'Accès refusé');
 };
 
+/** preHandler : 403 si la requête s'est authentifiée par clé d'API (réservé à la session : une clé ne crée pas de clé). */
+export const forbidApiKey = async (req: FastifyRequest) => {
+  if (req.viewer?.via === 'apiKey') throw new HttpError(403, 'Cette route n’accepte pas les clés d’API');
+};
+
 /**
- * Cookies signés, membre de la session sur `req.viewer`, et garde global de `/api` : toute route est protégée
- * par défaut (401), les exceptions sont listées ci-dessus. Les écritures passent le contrôle CSRF (403).
+ * Cookies signés, membre de la session (ou de la clé d'API) sur `req.viewer`, et garde global de `/api` : toute
+ * route est protégée par défaut (401), les exceptions sont listées ci-dessus. Les écritures de session passent le
+ * contrôle CSRF (403).
  * Une adresse sans route garde son 404.
  */
 export async function registerAuth(app: FastifyInstance) {
@@ -139,9 +185,14 @@ export async function registerAuth(app: FastifyInstance) {
   await app.register(fastifyCookie, { secret });
   app.decorateRequest('viewer', null);
 
+  // Par instance : chaque application (et chaque test) a son propre compteur.
+  const apiKeyLimiter = createRateLimiter(API_KEY_LIMIT);
+
   app.addHook('onRequest', async (req, reply) => {
     const url = req.routeOptions.url;
     if (!url?.startsWith('/api/') || WEBHOOK_ROUTES.has(routeKey(req))) return;
+    // Avant le CSRF : une requête à clé n'a pas de cookie à protéger.
+    if (req.headers[API_KEY_HEADER] !== undefined) return authenticateWithApiKey(req, reply, apiKeyLimiter);
     if (!passesCsrf(req)) return reply.code(403).send({ error: 'Requête refusée' });
     req.viewer = readViewer(req);
     if (!req.viewer && !isPublic(req)) return reply.code(401).send({ error: 'Connexion requise' });

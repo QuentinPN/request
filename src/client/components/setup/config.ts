@@ -11,15 +11,16 @@ const _complete: Exclude<SetupSection, (typeof sectionOrder)[number]> extends ne
 void _complete;
 
 /**
- * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord et l'import facultatif des demandes de Seerr
- * (propriétaire, hors assistant : rien à tester ou facultatif).
+ * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord, l'import facultatif des demandes de Seerr
+ * et les clés d'API (propriétaire, hors assistant : rien à tester ou facultatif).
  */
-export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord';
+export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord' | 'api';
 export const settingsSectionOrder = [
   ...sectionOrder,
   'webhooks',
   'seerr',
   'discord',
+  'api',
 ] as const satisfies readonly SectionId[];
 
 export const webhookLabels: Record<WebhookService, string> = arrKindLabels;
@@ -42,6 +43,7 @@ export const sectionText: Record<SectionId, { title: string; description: string
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
   seerr: { title: 'Importer depuis Seerr', description: 'Reprendre une fois les demandes de Jellyseerr ou Overseerr' },
   discord: { title: 'Notifications Discord', description: 'Facultatif : les évènements des demandes dans un salon' },
+  api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
 };
 
 /** Champs de connexion de chaque intégration ; `url: null` = clé seule (TMDB). */
