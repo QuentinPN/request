@@ -36,7 +36,8 @@ src/
   shared/       schémas Zod, types, constantes de statuts et de droits (une seule définition)
 test/           vitest + fixtures des API externes
 e2e/            Playwright
-deploy/         Dockerfile, compose.yml, Caddyfile
+scripts/        outils d'exploitation (backup.ts)
+Dockerfile, compose.yml, Caddyfile, .env.example, .dockerignore   (à la racine : le contexte de build est le dépôt)
 ```
 
 ## Modèle de données (première version)
@@ -59,7 +60,15 @@ Chaque intégration est un module unique, typé, avec délai d'expiration, nouve
 
 ## Déploiement
 
-Comme Hub : image Docker `linux/amd64` (GHCR), `compose.yml` avec un seul service, conteneur `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, volume `/data` (base SQLite, clé de chiffrement, cache d'images éventuel), healthcheck `/api/health`, derrière Caddy en HTTPS. Joint Radarr, Sonarr et Emby par le réseau Docker de l'hôte. Migration depuis Seerr : import facultatif des demandes existantes (lecture de sa base SQLite) en fin de MVP.
+Procédure complète : [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).
+
+- **Image** : `Dockerfile` multi-étapes, `linux/amd64`, `node:26-slim` (glibc). Le binaire natif de better-sqlite3 est compilé dans une étape à part avec les outils de build, puis vérifié ; l'image finale n'a que les dépendances de production, `src/server`, `src/shared`, `scripts/` et `dist/client`. Elle tourne en utilisateur `node` (uid 1000) avec `node src/server/index.ts` (SIGTERM/SIGINT ferment l'appli proprement : balayage fini, base fermée). Construite en CI (build seul, sans publication).
+- **`compose.yml`** : le service `request` (`read_only`, tmpfs `/tmp`, `cap_drop: [ALL]`, `no-new-privileges`, `restart: unless-stopped`, volume nommé `/data`, `expose` sans port publié) et `caddy` (HTTPS automatique pour `DOMAIN`, ports 80/443, `Caddyfile` à la racine). Healthcheck de l'image : `GET /api/health` (public, hors garde de session), qui exécute aussi une requête triviale sur la base (503 sinon).
+- **Volume `/data`** : `request.db` (SQLite WAL), `secret.key` (clé de chiffrement des secrets, créée au premier lancement, indispensable pour lire une sauvegarde), `cache/images/` et `backups/`.
+- **Variables** : `PORT` (3000), `DATA_DIR` (`/data`), `HOST`, `TRUST_PROXY`, `IMAGE_CACHE_MAX_MB` (500), `BACKUP_KEEP` (7, 0 = pas de sauvegarde planifiée).
+- **Sauvegarde** : API de sauvegarde en ligne de SQLite (`services/backup.ts`) vers `/data/backups/request-AAAAMMJJ-HHMMSS.db`, planifiée une fois par jour dans le processus (comme les balayages, jamais dans les tests) et à la demande par `scripts/backup.ts` (`npm run backup`). Seules les `BACKUP_KEEP` plus récentes sont gardées.
+- **Cache d'images borné** : `services/images.ts` garde le cache sous `IMAGE_CACHE_MAX_MB`. Chaque lecture rafraîchit la date de modification du fichier, et après une écriture (au plus une fois par minute) les fichiers les moins récemment utilisés sont supprimés ; les fichiers temporaires sont ignorés.
+- Joint Radarr, Sonarr et Emby de l'hôte par `host.docker.internal`. Migration depuis Seerr : import facultatif des demandes existantes (lecture de sa base SQLite) en fin de MVP.
 
 Proxy de confiance : par défaut, l'appli ne croit les en-têtes `X-Forwarded-For`, `X-Forwarded-Proto` et `X-Forwarded-Host` que venant de la boucle locale (`127.0.0.1`, `::1`). Derrière Caddy dans un autre conteneur, renseigner la variable facultative `TRUST_PROXY` avec son adresse ou son sous-réseau (adresses ou CIDR séparés par des virgules, ex. `TRUST_PROXY=172.18.0.2`). Elle est lue une fois au démarrage. Ces en-têtes donnent l'IP du client (limite des tentatives de connexion), le HTTPS (cookie `secure`) et l'hôte (contrôle d'origine CSRF) ; venant d'une autre adresse, ils sont ignorés.
 

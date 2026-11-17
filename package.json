@@ -17,6 +17,7 @@
     "e2e": "playwright test",
     "captures": "playwright test captures",
     "verify": "npm run lint && npm run check && npm test && npm run build && npm run e2e",
+    "backup": "node scripts/backup.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

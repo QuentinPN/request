@@ -499,7 +499,7 @@ describe('planification', () => {
     const data = openDataDir(tempDir());
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const app = await buildApp({ data, schedule: true });
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2); // balayages et sauvegardes
     await app.close();
     expect(vi.getTimerCount()).toBe(0);
     const quiet = await buildApp({ data: openDataDir(tempDir()) });

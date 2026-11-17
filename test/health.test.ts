@@ -14,4 +14,14 @@ describe('GET /api/health', () => {
     expect(healthSchema.parse(res.json()).status).toBe('ok');
     await app.close();
   });
+
+  it('répond 503 sans session quand la base ne répond plus', async () => {
+    const data = openDataDir(tempDir());
+    const app = await buildApp({ data });
+    data.db.$client.close();
+    const res = await app.inject({ method: 'GET', url: '/api/health' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: 'Base de données indisponible' });
+    await app.close().catch(() => {});
+  });
 });

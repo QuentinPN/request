@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 import type { Health } from '../shared/health.ts';
 import type { Data } from './db/index.ts';
 import type { TmdbClient } from './integrations/tmdb.ts';
-import { apiErrorHandler } from './lib/api-errors.ts';
+import { apiErrorHandler, HttpError } from './lib/api-errors.ts';
 import { registerAuth } from './plugins/auth.ts';
 import { authRoutes } from './routes/auth.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
@@ -17,7 +17,8 @@ import { setupRoutes } from './routes/setup.ts';
 import { usersRoutes } from './routes/users.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
 import { type AvailabilityService, createAvailability } from './services/availability.ts';
-import { createImageCache } from './services/images.ts';
+import { parseBackupKeep, startBackups } from './services/backup.ts';
+import { createImageCache, parseImageCacheMaxBytes } from './services/images.ts';
 import { failOrphanJobs } from './services/jobs.ts';
 import { failInterruptedSends } from './services/requests.ts';
 import { createSync, startScheduler } from './services/sync.ts';
@@ -81,16 +82,26 @@ export async function buildApp({
   failInterruptedSends(data.db);
   const sync = createSync(data, { availability: app.availability });
   const scheduler = schedule ? startScheduler(sync, data.db) : null;
-  // Le balayage en cours finit avant la fermeture de la base.
+  const backups = schedule ? startBackups(data.db.$client, data.dir, parseBackupKeep(process.env.BACKUP_KEEP)) : null;
+  // Le balayage et la sauvegarde en cours finissent avant la fermeture de la base.
   app.addHook('onClose', async () => {
     await scheduler?.stop();
+    await backups?.stop();
     data.db.$client.close();
   });
   app.setErrorHandler(apiErrorHandler);
   // Avant toute route : le garde de /api couvre aussi les plugins enregistrés ensuite (catalogue, images).
   await registerAuth(app);
 
-  app.get('/api/health', async (): Promise<Health> => ({ status: 'ok', version }));
+  // Santé : le processus répond et la base aussi (requête triviale), pour le HEALTHCHECK de l'image.
+  app.get('/api/health', async (): Promise<Health> => {
+    try {
+      data.db.$client.prepare('select 1').get();
+    } catch {
+      throw new HttpError(503, 'Base de données indisponible');
+    }
+    return { status: 'ok', version };
+  });
   authRoutes(app);
   setupRoutes(app);
   usersRoutes(app);
@@ -100,7 +111,13 @@ export async function buildApp({
   await app.register(catalogueRoutes);
   await app.register(embyRoutes);
   await app.register(
-    imageRoutes(createImageCache({ dir: data.dir, ...(upstreams.imagesUrl && { upstreamUrl: upstreams.imagesUrl }) })),
+    imageRoutes(
+      createImageCache({
+        dir: data.dir,
+        maxBytes: parseImageCacheMaxBytes(process.env.IMAGE_CACHE_MAX_MB),
+        ...(upstreams.imagesUrl && { upstreamUrl: upstreams.imagesUrl }),
+      }),
+    ),
   );
 
   const hasClient = clientDir !== undefined && existsSync(clientDir);

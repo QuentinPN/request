@@ -1,0 +1,68 @@
+# Request derrière Caddy (HTTPS automatique). Voir docs/DEPLOIEMENT.md.
+#   cp .env.example .env   puis renseigner DOMAIN
+#   docker compose up -d --build
+name: request
+
+services:
+  request:
+    build: .
+    image: request:local
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Caddy est le seul proxy de confiance : son adresse est dans ce sous-réseau (voir `networks`).
+      TRUST_PROXY: ${PROXY_SUBNET:-172.28.80.0/24}
+      IMAGE_CACHE_MAX_MB: ${IMAGE_CACHE_MAX_MB:-500}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+    volumes:
+      - data:/data
+    # Aucun port publié : seul Caddy joint l'appli, par le réseau `proxy`.
+    expose:
+      - "3000"
+    # Joindre Radarr, Sonarr et Emby publiés sur l'hôte : http://host.docker.internal:<port> dans l'assistant.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - proxy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DOMAIN: ${DOMAIN:?Renseigner DOMAIN dans .env (ex. demandes.example.com)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificats : à conserver
+      - caddy_config:/config
+    depends_on:
+      request:
+        condition: service_healthy
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: ${PROXY_SUBNET:-172.28.80.0/24}
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:

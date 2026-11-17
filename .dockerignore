@@ -1,0 +1,15 @@
+# Contexte de build : seulement ce que l'image utilise.
+.git
+.claude
+.github
+node_modules
+dist
+data
+.env
+.env.*
+test-results
+playwright-report
+*.log
+e2e
+docs
+*.md
