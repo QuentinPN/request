@@ -1,6 +1,6 @@
 import type { Capabilities } from '@shared/roles.ts';
 import type { LinkProps } from '@tanstack/react-router';
-import { Check, Clapperboard, House, List, type LucideIcon, Tv, User } from 'lucide-react';
+import { ChartColumn, Check, Clapperboard, House, List, type LucideIcon, Tv, User } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { useViewer } from '@/hooks/use-viewer';
 
@@ -35,6 +35,8 @@ export const navItems: readonly NavItem[] = [
     capability: 'canManageRequests',
     count: 'pendingApprovals',
   },
+  // Sur mobile, la barre d'onglets est pleine : la page s'ouvre depuis Compte.
+  { to: '/statistiques', label: 'Statistiques', icon: ChartColumn, in: ['pill'], capability: 'canViewStats' },
   { to: '/compte', label: 'Compte', icon: User, in: ['tabs', 'account'] },
 ];
 

@@ -1,7 +1,7 @@
 import { roleLabels } from '@shared/roles.ts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { LogOut, Settings } from 'lucide-react';
+import { ChartColumn, LogOut, Settings } from 'lucide-react';
 import { Notice } from '@/components/notice';
 import { Page } from '@/components/page';
 import { Avatar } from '@/components/shell/avatar';
@@ -35,6 +35,12 @@ export function ComptePage() {
           <p className="text-sm text-muted-foreground">{roleLabels[viewer.role]}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {viewer.capabilities.canViewStats && (
+            <Link to="/statistiques" className={buttonVariants({ variant: 'secondary' })}>
+              <ChartColumn data-icon="inline-start" />
+              Statistiques
+            </Link>
+          )}
           {viewer.capabilities.isOwner && (
             <Link to="/reglages" className={buttonVariants({ variant: 'secondary' })}>
               <Settings data-icon="inline-start" />

@@ -101,6 +101,7 @@ const routeTree = rootRoute.addChildren([
     createRoute(page('/plateforme/$type/$id', () => import('@/pages/plateforme'), 'PlateformePage')),
     createRoute(page('/demandes', () => import('@/pages/demandes'), 'DemandesPage')),
     createRoute(page('/approbations', () => import('@/pages/approbations'), 'ApprobationsPage')),
+    createRoute(page('/statistiques', () => import('@/pages/statistiques'), 'StatistiquesPage')),
     createRoute(page('/compte', () => import('@/pages/compte'), 'ComptePage')),
     createRoute(page('/reglages', () => import('@/pages/reglages'), 'ReglagesPage')),
     createRoute(page('/composants', () => import('@/pages/composants'), 'ComposantsPage')),

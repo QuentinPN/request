@@ -16,6 +16,7 @@ import { importRoutes } from './routes/import.ts';
 import { notificationsRoutes } from './routes/notifications.ts';
 import { requestsRoutes } from './routes/requests.ts';
 import { setupRoutes } from './routes/setup.ts';
+import { statsRoutes } from './routes/stats.ts';
 import { usersRoutes } from './routes/users.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
 import { type AvailabilityService, createAvailability } from './services/availability.ts';
@@ -126,6 +127,7 @@ export async function buildApp({
   discordRoutes(app, discord);
   webhookRoutes(app, sync);
   importRoutes(app);
+  statsRoutes(app);
   await app.register(catalogueRoutes);
   await app.register(embyRoutes);
   await app.register(

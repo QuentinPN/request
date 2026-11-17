@@ -1,7 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 import { expect, expectNoAxeViolations, test } from './support/api.ts';
 
-const pillLinks = ['Découvrir', 'Films', 'Séries', 'Demandes', 'Approbations'];
+const pillLinks = ['Découvrir', 'Films', 'Séries', 'Demandes', 'Approbations', 'Statistiques'];
 
 const searchDialog = (page: Page) => page.getByRole('dialog', { name: 'Rechercher' });
 
