@@ -22,7 +22,7 @@ const keyed =
 const fakeEmby = () =>
   serve({
     'GET /System/Info': keyed('x-emby-token', EMBY_KEY, systemInfoFixture),
-    'GET /Library/VirtualFolders': keyed('x-emby-token', EMBY_KEY, librariesFixture),
+    'GET /Library/VirtualFolders/Query': keyed('x-emby-token', EMBY_KEY, librariesFixture),
   });
 
 const fakeRadarr = () =>

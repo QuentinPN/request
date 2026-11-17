@@ -130,8 +130,9 @@ describe('messages Discord des évènements', () => {
       movie: { tmdbId: 603 },
     });
 
+    // Les envois sont simultanés : l'ordre d'arrivée n'est pas garanti.
     const titles = (await sent()).map((m) => m.message.embeds[0]?.title);
-    expect(titles).toEqual(['Nouvelle demande à approuver', 'Demande approuvée', 'Disponible dans Emby']);
+    expect(titles.sort()).toEqual(['Demande approuvée', 'Disponible dans Emby', 'Nouvelle demande à approuver']);
   });
 
   it('refusée avec son motif, puis échec d’envoi avec sa raison', async () => {
@@ -142,16 +143,18 @@ describe('messages Discord des évènements', () => {
     radarrState.down = true;
     await owner.post(`/api/requests/${(await requestMovie(member)).id}/approve`);
 
+    // Les envois sont simultanés : on retrouve chaque message par son titre.
     const embeds = (await sent()).flatMap((m) => m.message.embeds);
-    expect(embeds.map((e) => e.title)).toEqual([
-      'Nouvelle demande à approuver',
+    expect(embeds.map((e) => e.title).sort()).toEqual([
+      'Demande approuvée',
       'Demande refusée',
       'Nouvelle demande à approuver',
-      'Demande approuvée',
+      'Nouvelle demande à approuver',
       'Échec de l’envoi',
     ]);
-    expect(embeds[1]?.fields).toContainEqual({ name: 'Motif', value: 'Déjà en VO' });
-    expect(embeds[4]?.fields.map((f) => f.name)).toEqual(['Demandé par', 'Raison']);
+    const byTitle = (title: string) => embeds.find((e) => e.title === title);
+    expect(byTitle('Demande refusée')?.fields).toContainEqual({ name: 'Motif', value: 'Déjà en VO' });
+    expect(byTitle('Échec de l’envoi')?.fields.map((f) => f.name)).toEqual(['Demandé par', 'Raison']);
   });
 
   it('une demande d’un rôle à approbation automatique n’est pas « à approuver »', async () => {

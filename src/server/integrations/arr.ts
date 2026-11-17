@@ -179,12 +179,12 @@ export interface ArrWebhookEvent {
 }
 
 /**
- * `eventType` (en minuscules) → évènement. Radarr [V] : `MovieDelete`, `MovieFileDelete`. Sonarr [?] : `SeriesDelete`,
- * `EpisodeFileDelete`, et `ImportComplete` (v4 récent, fin d'import d'un lot).
+ * `eventType` (en minuscules) → évènement, d'après `WebhookEventType` de Radarr 7.0.3 et Sonarr 4.0.20 [V]. La fin
+ * d'import d'un lot de Sonarr (« On Import Complete ») arrive avec `eventType: "Download"`, sans `isUpgrade` : il
+ * n'existe pas d'`eventType` `ImportComplete`.
  */
 const EVENTS: Record<string, ArrWebhookEvent['event']> = {
   download: 'download',
-  importcomplete: 'download',
   grab: 'grab',
   moviedelete: 'deleted',
   moviefiledelete: 'deleted',
