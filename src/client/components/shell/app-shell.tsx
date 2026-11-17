@@ -10,10 +10,11 @@ export function AppShell() {
     <SearchProvider>
       <div className="relative min-h-dvh">
         <DesktopNav />
-        <header className="flex h-14 items-center px-(--space-page) lg:hidden">
+        {/* Posé sur le contenu comme la pilule : les visuels plein cadre remontent jusqu'en haut (utilitaire bleed). */}
+        <header className="absolute inset-x-0 top-0 z-40 flex h-14 items-center px-(--space-page) lg:hidden">
           <AppName className="text-base" />
         </header>
-        <main className="px-(--space-page) pt-4 pb-[calc(120px+env(safe-area-inset-bottom))] lg:pt-32 lg:pb-16">
+        <main className="px-(--space-page) pt-(--main-pt) pb-[calc(120px+env(safe-area-inset-bottom))] lg:pb-16">
           <Outlet />
         </main>
         <MobileNav />

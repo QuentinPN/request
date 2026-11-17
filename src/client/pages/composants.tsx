@@ -92,8 +92,15 @@ export function ComposantsPage() {
 
       <Section title="Affiches">
         <div className="-mx-(--space-page) flex gap-4 overflow-x-auto px-(--space-page) pt-2 pb-6">
-          {posters.map((p) => (
-            <Poster key={p.title} {...p} onRequest={() => {}} />
+          {posters.map((p, i) => (
+            <Poster
+              key={p.title}
+              title={p.title}
+              subtitle={String(p.year)}
+              status={p.status}
+              to={{ type: 'movie', id: i + 1 }}
+              onRequest={() => {}}
+            />
           ))}
           <PosterSkeleton />
         </div>

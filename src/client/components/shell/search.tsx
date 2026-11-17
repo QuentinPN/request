@@ -1,7 +1,6 @@
-import { Search } from 'lucide-react';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { EmptyState } from '@/components/states';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { SearchPanel } from './search-panel';
 
 const SearchContext = createContext<(() => void) | null>(null);
 
@@ -36,21 +35,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent initialFocus={inputRef} className="top-[12vh] translate-y-0 gap-0 p-0 sm:max-w-xl">
           <DialogTitle className="sr-only">Rechercher</DialogTitle>
-          <label className="flex items-center gap-3 border-b border-border py-4 focus-within:border-ring pr-14 pl-5">
-            <Search aria-hidden className="size-5 shrink-0 text-muted-foreground" />
-            <span className="sr-only">Rechercher un film, une série ou une personne</span>
-            <input
-              ref={inputRef}
-              type="search"
-              placeholder="Titre, acteur, réalisateur…"
-              className="w-full bg-transparent text-base outline-none placeholder:text-muted-foreground"
-            />
-          </label>
-          <EmptyState
-            className="border-0"
-            title="Cherchez un film, une série ou une personne"
-            description="Les résultats s’afficheront ici dès que le catalogue sera relié."
-          />
+          <SearchPanel inputRef={inputRef} onNavigate={() => setOpen(false)} />
         </DialogContent>
       </Dialog>
     </SearchContext>

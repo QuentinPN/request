@@ -1,13 +1,5 @@
-import { Page } from '@/components/page';
-import { EmptyState } from '@/components/states';
+import { GenreBrowser } from '@/components/media/genre-browser';
 
 export function FilmsPage() {
-  return (
-    <Page title="Films">
-      <EmptyState
-        title="Aucun film à afficher pour l’instant"
-        description="Les films du catalogue, avec leur disponibilité sur Emby, apparaîtront ici."
-      />
-    </Page>
-  );
+  return <GenreBrowser type="movie" title="Films" path="/films" />;
 }

@@ -12,6 +12,7 @@ import {
 } from '@tanstack/react-router';
 import { AppShell } from '@/components/shell/app-shell';
 import { ErrorState, LoadingState } from '@/components/states';
+import { genreSearchSchema } from '@/lib/catalogue';
 import { guardRedirect, safeReturnPath, setupStateQuery, viewerQuery } from '@/lib/session';
 import { IntrouvablePage } from '@/pages/introuvable';
 
@@ -78,24 +79,31 @@ const assistantRoute = createRoute({
 // Pages de l'appli, dans la navigation (la connexion et l'assistant s'affichent seuls).
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: AppShell });
 
+// Options d'une page de l'appli ; les paramètres de chemin (`$type`, `$id`) sont validés par la page.
 const page = <TPath extends string, TModule extends Record<string, RouteComponent>>(
   path: TPath,
   load: () => Promise<TModule>,
   name: keyof TModule & string,
-) => createRoute({ getParentRoute: () => appRoute, path, component: lazy(load, name) });
+) => ({ getParentRoute: () => appRoute, path, component: lazy(load, name) });
 
 const routeTree = rootRoute.addChildren([
   connexionRoute,
   assistantRoute,
   appRoute.addChildren([
-    page('/', () => import('@/pages/decouvrir'), 'DecouvrirPage'),
-    page('/films', () => import('@/pages/films'), 'FilmsPage'),
-    page('/series', () => import('@/pages/series'), 'SeriesPage'),
-    page('/demandes', () => import('@/pages/demandes'), 'DemandesPage'),
-    page('/approbations', () => import('@/pages/approbations'), 'ApprobationsPage'),
-    page('/compte', () => import('@/pages/compte'), 'ComptePage'),
-    page('/reglages', () => import('@/pages/reglages'), 'ReglagesPage'),
-    page('/composants', () => import('@/pages/composants'), 'ComposantsPage'),
+    createRoute(page('/', () => import('@/pages/decouvrir'), 'DecouvrirPage')),
+    // Films et Séries gardent le genre choisi dans l'adresse (`?genre=`), pour le retour depuis une fiche.
+    createRoute({ ...page('/films', () => import('@/pages/films'), 'FilmsPage'), validateSearch: genreSearchSchema }),
+    createRoute({
+      ...page('/series', () => import('@/pages/series'), 'SeriesPage'),
+      validateSearch: genreSearchSchema,
+    }),
+    createRoute(page('/titre/$type/$id', () => import('@/pages/fiche'), 'FichePage')),
+    createRoute(page('/plateforme/$type/$id', () => import('@/pages/plateforme'), 'PlateformePage')),
+    createRoute(page('/demandes', () => import('@/pages/demandes'), 'DemandesPage')),
+    createRoute(page('/approbations', () => import('@/pages/approbations'), 'ApprobationsPage')),
+    createRoute(page('/compte', () => import('@/pages/compte'), 'ComptePage')),
+    createRoute(page('/reglages', () => import('@/pages/reglages'), 'ReglagesPage')),
+    createRoute(page('/composants', () => import('@/pages/composants'), 'ComposantsPage')),
   ]),
 ]);
 

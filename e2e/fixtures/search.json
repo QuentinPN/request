@@ -1,0 +1,41 @@
+{
+  "page": 1,
+  "totalPages": 1,
+  "results": [
+    {
+      "tmdbId": 126308,
+      "type": "tv",
+      "title": "Shōgun",
+      "year": 2024,
+      "posterPath": "/poster-tv-126308.jpg",
+      "backdropPath": "/backdrop-tv-126308.jpg",
+      "overview": "Au Japon, en 1600, le seigneur Toranaga lutte pour sa survie alors que ses ennemis au Conseil des régents s’unissent contre lui."
+    },
+    {
+      "tmdbId": 2017,
+      "type": "tv",
+      "title": "Slow Horses",
+      "year": 2022,
+      "posterPath": "/poster-tv-2017.jpg",
+      "backdropPath": "/backdrop-tv-2017.jpg",
+      "overview": ""
+    },
+    {
+      "tmdbId": 1010,
+      "type": "movie",
+      "title": "Oppenheimer",
+      "year": 2023,
+      "posterPath": "/poster-movie-1010.jpg",
+      "backdropPath": "/backdrop-movie-1010.jpg",
+      "overview": ""
+    }
+  ],
+  "people": [
+    {
+      "id": 500,
+      "name": "Hiroyuki Sanada",
+      "profilePath": "/profile-500.jpg",
+      "knownFor": ["Shōgun", "John Wick 4", "Le Dernier Samouraï"]
+    }
+  ]
+}

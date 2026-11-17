@@ -77,6 +77,38 @@
   }
 }
 
+/* Haut du contenu, sous la navigation posée par-dessus (en-tête mobile 56 px, pilule de l'ordinateur). */
+:root {
+  --main-pt: 4.5rem;
+}
+@media (width >= 64rem) {
+  :root {
+    --main-pt: 8rem;
+  }
+}
+
+/* Plein cadre : annule les marges de <main> pour qu'un fond (hero, fiche) touche les bords et le haut. */
+@utility bleed {
+  margin-inline: calc(var(--space-page) * -1);
+  margin-top: calc(var(--main-pt) * -1);
+}
+
+/* Voiles des fonds de titre (maquette request.css), tirés de --bg pour suivre le thème. */
+@utility veil-l {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg) 96%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 72%, transparent) 34%,
+    transparent 64%
+  );
+}
+@utility veil-b {
+  background: linear-gradient(0deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 60%, transparent) 26%, transparent 52%);
+}
+@utility veil-t {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 70%, transparent), transparent);
+}
+
 /* Verre des barres de navigation (maquette request.css, .glass) ; plein si la transparence est réduite. */
 @utility glass {
   background: var(--glass);

@@ -3,7 +3,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/index.css';
-import { ApiError, AuthRequiredError } from './lib/http.ts';
+import { AuthRequiredError, shouldRetry } from './lib/http.ts';
 import { forgetSession } from './lib/session.ts';
 import { router } from './router.tsx';
 
@@ -19,12 +19,7 @@ const queryClient: QueryClient = new QueryClient({
   queryCache: new QueryCache({ onError: (error, query) => onAuthLost(error, query.meta) }),
   mutationCache: new MutationCache({ onError: (error, _v, _c, mutation) => onAuthLost(error, mutation.meta) }),
   defaultOptions: {
-    queries: {
-      // Une réponse 4xx ne changera pas en réessayant.
-      retry: (count, error) => count < 1 && !(error instanceof ApiError && error.status >= 400 && error.status < 500),
-      staleTime: 30_000,
-      refetchOnWindowFocus: false,
-    },
+    queries: { retry: shouldRetry, staleTime: 30_000, refetchOnWindowFocus: false },
   },
 });
 

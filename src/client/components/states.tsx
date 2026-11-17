@@ -21,6 +21,24 @@ export function LoadingState({ label = 'Chargement…' }: { label?: string }) {
   );
 }
 
+/** Squelette sur mesure annoncé aux lecteurs d'écran (rangées, grilles, fiche, résultats). */
+export function Loading({
+  label = 'Chargement…',
+  className,
+  children,
+}: {
+  label?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div role="status" className={className}>
+      <span className="sr-only">{label}</span>
+      {children}
+    </div>
+  );
+}
+
 type EmptyStateProps = { title: string; description?: string; action?: ReactNode; className?: string };
 
 export function EmptyState({ title, description, action, className }: EmptyStateProps) {

@@ -1,0 +1,298 @@
+{
+  "rows": [
+    {
+      "id": "trending",
+      "title": "Tendances",
+      "items": [
+        {
+          "tmdbId": 126308,
+          "type": "tv",
+          "title": "Shōgun",
+          "year": 2024,
+          "posterPath": "/poster-tv-126308.jpg",
+          "backdropPath": "/backdrop-tv-126308.jpg",
+          "overview": "Au Japon, en 1600, le seigneur Toranaga lutte pour sa survie alors que ses ennemis au Conseil des régents s’unissent contre lui."
+        },
+        {
+          "tmdbId": 1002,
+          "type": "movie",
+          "title": "Le Robot sauvage",
+          "year": 2024,
+          "posterPath": "/poster-movie-1002.jpg",
+          "backdropPath": "/backdrop-movie-1002.jpg",
+          "overview": "Après un naufrage, un robot échoue sur une île sauvage et apprend à survivre."
+        },
+        {
+          "tmdbId": 1003,
+          "type": "movie",
+          "title": "Conclave",
+          "year": 2024,
+          "posterPath": "/poster-movie-1003.jpg",
+          "backdropPath": "/backdrop-movie-1003.jpg",
+          "overview": "Le cardinal Lawrence organise l’élection d’un nouveau pape."
+        },
+        {
+          "tmdbId": 2004,
+          "type": "tv",
+          "title": "Severance",
+          "year": 2022,
+          "posterPath": "/poster-tv-2004.jpg",
+          "backdropPath": "/backdrop-tv-2004.jpg",
+          "overview": "Des employés ont subi une opération qui sépare leurs souvenirs de travail et personnels."
+        },
+        {
+          "tmdbId": 1005,
+          "type": "movie",
+          "title": "Gladiator II",
+          "year": 2024,
+          "posterPath": "/poster-movie-1005.jpg",
+          "backdropPath": "/backdrop-movie-1005.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2006,
+          "type": "tv",
+          "title": "Arcane",
+          "year": 2021,
+          "posterPath": "/poster-tv-2006.jpg",
+          "backdropPath": "/backdrop-tv-2006.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1007,
+          "type": "movie",
+          "title": "Flow",
+          "year": 2024,
+          "posterPath": "/poster-movie-1007.jpg",
+          "backdropPath": "/backdrop-movie-1007.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2008,
+          "type": "tv",
+          "title": "The Bear",
+          "year": 2022,
+          "posterPath": "/poster-tv-2008.jpg",
+          "backdropPath": "/backdrop-tv-2008.jpg",
+          "overview": ""
+        }
+      ]
+    },
+    {
+      "id": "popular-movies",
+      "title": "Films populaires",
+      "items": [
+        {
+          "tmdbId": 1009,
+          "type": "movie",
+          "title": "Dune : Deuxième partie",
+          "year": 2024,
+          "posterPath": "/poster-movie-1009.jpg",
+          "backdropPath": "/backdrop-movie-1009.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1010,
+          "type": "movie",
+          "title": "Oppenheimer",
+          "year": 2023,
+          "posterPath": "/poster-movie-1010.jpg",
+          "backdropPath": "/backdrop-movie-1010.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1011,
+          "type": "movie",
+          "title": "Anatomie d’une chute",
+          "year": 2023,
+          "posterPath": "/poster-movie-1011.jpg",
+          "backdropPath": "/backdrop-movie-1011.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1012,
+          "type": "movie",
+          "title": "Furiosa",
+          "year": 2024,
+          "posterPath": "/poster-movie-1012.jpg",
+          "backdropPath": "/backdrop-movie-1012.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1013,
+          "type": "movie",
+          "title": "Le Comte de Monte-Cristo",
+          "year": 2024,
+          "posterPath": "/poster-movie-1013.jpg",
+          "backdropPath": "/backdrop-movie-1013.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1014,
+          "type": "movie",
+          "title": "Vice-versa 2",
+          "year": 2024,
+          "posterPath": "/poster-movie-1014.jpg",
+          "backdropPath": "/backdrop-movie-1014.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1015,
+          "type": "movie",
+          "title": "Civil War",
+          "year": 2024,
+          "posterPath": "/poster-movie-1015.jpg",
+          "backdropPath": "/backdrop-movie-1015.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1016,
+          "type": "movie",
+          "title": "Le Règne animal",
+          "year": 2023,
+          "posterPath": "/poster-movie-1016.jpg",
+          "backdropPath": "/backdrop-movie-1016.jpg",
+          "overview": ""
+        }
+      ]
+    },
+    {
+      "id": "popular-tv",
+      "title": "Séries populaires",
+      "items": [
+        {
+          "tmdbId": 2017,
+          "type": "tv",
+          "title": "Slow Horses",
+          "year": 2022,
+          "posterPath": "/poster-tv-2017.jpg",
+          "backdropPath": "/backdrop-tv-2017.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2018,
+          "type": "tv",
+          "title": "Andor",
+          "year": 2022,
+          "posterPath": "/poster-tv-2018.jpg",
+          "backdropPath": "/backdrop-tv-2018.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2019,
+          "type": "tv",
+          "title": "Le Problème à 3 corps",
+          "year": 2024,
+          "posterPath": "/poster-tv-2019.jpg",
+          "backdropPath": "/backdrop-tv-2019.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2020,
+          "type": "tv",
+          "title": "Fallout",
+          "year": 2024,
+          "posterPath": "/poster-tv-2020.jpg",
+          "backdropPath": "/backdrop-tv-2020.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2021,
+          "type": "tv",
+          "title": "La Maison du dragon",
+          "year": 2022,
+          "posterPath": "/poster-tv-2021.jpg",
+          "backdropPath": "/backdrop-tv-2021.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2022,
+          "type": "tv",
+          "title": "Le Bureau des légendes",
+          "year": 2015,
+          "posterPath": "/poster-tv-2022.jpg",
+          "backdropPath": "/backdrop-tv-2022.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2023,
+          "type": "tv",
+          "title": "Baby Reindeer",
+          "year": 2024,
+          "posterPath": "/poster-tv-2023.jpg",
+          "backdropPath": "/backdrop-tv-2023.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 2024,
+          "type": "tv",
+          "title": "Mercredi",
+          "year": 2022,
+          "posterPath": "/poster-tv-2024.jpg",
+          "backdropPath": "/backdrop-tv-2024.jpg",
+          "overview": ""
+        }
+      ]
+    },
+    {
+      "id": "upcoming",
+      "title": "Prochainement",
+      "items": [
+        {
+          "tmdbId": 1025,
+          "type": "movie",
+          "title": "Mickey 17",
+          "year": 2025,
+          "posterPath": "/poster-movie-1025.jpg",
+          "backdropPath": "/backdrop-movie-1025.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1026,
+          "type": "movie",
+          "title": "Superman",
+          "year": 2025,
+          "posterPath": "/poster-movie-1026.jpg",
+          "backdropPath": "/backdrop-movie-1026.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1027,
+          "type": "movie",
+          "title": "Avatar : De feu et de cendres",
+          "year": 2025,
+          "posterPath": "/poster-movie-1027.jpg",
+          "backdropPath": "/backdrop-movie-1027.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1028,
+          "type": "movie",
+          "title": "Le Mage du Kremlin",
+          "year": null,
+          "posterPath": "/poster-movie-1028.jpg",
+          "backdropPath": "/backdrop-movie-1028.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1029,
+          "type": "movie",
+          "title": "Frankenstein",
+          "year": 2025,
+          "posterPath": "/poster-movie-1029.jpg",
+          "backdropPath": "/backdrop-movie-1029.jpg",
+          "overview": ""
+        },
+        {
+          "tmdbId": 1030,
+          "type": "movie",
+          "title": "Zootopie 2",
+          "year": 2025,
+          "posterPath": "/poster-movie-1030.jpg",
+          "backdropPath": "/backdrop-movie-1030.jpg",
+          "overview": ""
+        }
+      ]
+    }
+  ]
+}

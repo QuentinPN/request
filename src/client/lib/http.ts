@@ -21,7 +21,22 @@ export class AuthRequiredError extends ApiError {
   }
 }
 
-async function request<T>(method: string, path: string, body: unknown, schema?: ResponseParser<T>): Promise<T> {
+/** 503 : un service (TMDB…) n'a pas encore ses réglages. */
+export const isNotConfigured = (error: unknown) => error instanceof ApiError && error.status === 503;
+export const isNotFound = (error: unknown) => error instanceof ApiError && error.status === 404;
+
+/** Un seul nouvel essai, jamais pour une 4xx ni un 503 (réglage manquant) : la réponse ne changerait pas. */
+export const shouldRetry = (failureCount: number, error: unknown) =>
+  failureCount < 1 &&
+  !(error instanceof ApiError && ((error.status >= 400 && error.status < 500) || error.status === 503));
+
+async function request<T>(
+  method: string,
+  path: string,
+  body: unknown,
+  schema?: ResponseParser<T>,
+  signal?: AbortSignal,
+): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json' };
   if (method !== 'GET') Object.assign(headers, CSRF_HEADERS);
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -32,8 +47,11 @@ async function request<T>(method: string, path: string, body: unknown, schema?: 
       headers,
       credentials: 'same-origin',
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
-  } catch {
+  } catch (error) {
+    // Annulation voulue (TanStack Query abandonne une requête devenue inutile) : ce n'est pas une panne.
+    if (signal?.aborted) throw error;
     throw new ApiError(0, 'Le serveur ne répond pas. Vérifiez votre connexion.');
   }
   // 204 (déconnexion) : pas de corps à lire.
@@ -48,7 +66,9 @@ async function request<T>(method: string, path: string, body: unknown, schema?: 
   return schema ? schema.parse(data) : (data as T);
 }
 
-export const apiGet = <T>(path: string, schema?: ResponseParser<T>) => request('GET', path, undefined, schema);
+/** `signal` : celui de TanStack Query, pour annuler une requête dont plus personne n'attend la réponse. */
+export const apiGet = <T>(path: string, schema?: ResponseParser<T>, signal?: AbortSignal) =>
+  request('GET', path, undefined, schema, signal);
 
 export const apiSend = <T>(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
