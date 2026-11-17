@@ -9,8 +9,8 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 - [x] **0.1** (P0) Trois directions de design, comparatif, recommandation → [canevas des maquettes](https://claude.ai/artifact/UVig26hmQYFHEsaaqDoL3H)
 - [x] **0.2** (P0) Validation d'une direction : page « Recommandation » du canevas (détail dans DESIGN.md, « Direction validée »)
 - [x] **0.3** (P1) Variante Base UI de shadcn confirmée (`@base-ui/react` installé, composants de base en place)
-- [ ] **0.4** (P0, avant la phase 2) Lire le README de Seerr ; confirmer ou ajuster la liste MVP / plus tard de PRODUCT.md
-- [ ] **0.5** (P0, avant la phase 2) API réelles : Emby (authentification, recherche par id TMDB, webhooks), Radarr et Sonarr v3 (ajout, file, webhooks), TMDB ; versions installées sur le mini-PC à fournir par le propriétaire, sans rien modifier
+- [x] **0.4** (P0, avant la phase 2) Lire le README de Seerr ; confirmer ou ajuster la liste MVP / plus tard de PRODUCT.md
+- [~] **0.5** (P0, avant la phase 2) API réelles : Emby (authentification, recherche par id TMDB, webhooks), Radarr et Sonarr v3 (ajout, file, webhooks), TMDB ; versions installées sur le mini-PC à fournir par le propriétaire, sans rien modifier. Référence documentaire faite : [docs/integrations.md](docs/integrations.md) ; restent les points [?] à confirmer sur les vraies instances
 
 ## Phase 1 — Socle
 

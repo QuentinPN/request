@@ -22,7 +22,7 @@ Un portail de demandes de films et de séries pour les membres de mon serveur Em
 
 1. **Assistant de configuration** : connexion à Emby (URL et clé d'API, choix des bibliothèques à surveiller), Radarr et Sonarr (URL, clé, profil de qualité, dossier racine et, pour Sonarr, type de série par défaut, lus depuis leurs API), TMDB (clé ou jeton). Le premier compte Emby administrateur qui se connecte devient propriétaire.
 2. **Connexion** avec les identifiants Emby (l'appli vérifie auprès d'Emby, garde une session à elle, jamais le mot de passe). Import des utilisateurs Emby à la demande.
-3. **Découvrir** : rangées Tendances, Films populaires, Séries populaires, Prochainement, Ajoutés récemment dans Emby, par genre et par plateforme de streaming (TMDB).
+3. **Découvrir** : rangées Tendances, Films populaires, Séries populaires, Prochainement, Ajoutés récemment dans Emby, par genre et par plateforme de streaming (TMDB). Affiches et fonds servis par l'appli avec un cache disque (chargement rapide, pas de dépendance directe du navigateur à TMDB).
 4. **Recherche** globale (`Ctrl+K`) : films, séries et personnes, avec statut sur chaque résultat.
 5. **Fiche titre** : fond, affiche, synopsis, distribution, bande-annonce, où regarder, saisons et leur statut, recommandations et titres similaires. Bouton « Demander » ou « Regarder dans Emby » si disponible.
 6. **Demandes** : film ou saisons choisies ; approbation automatique par droit ; quotas par membre (N films et N saisons sur X jours) ; file d'approbation pour l'admin, avec modification du profil et du dossier avant envoi ; refus avec motif.
@@ -34,7 +34,7 @@ Un portail de demandes de films et de séries pour les membres de mon serveur Em
 
 ## Plus tard (hors MVP)
 
-Signalement de problèmes sur un titre, demandes 4K (second Radarr/Sonarr), liste de souhaits et import de listes (Trakt, Letterboxd), Jellyfin et Plex, plusieurs serveurs Radarr/Sonarr, notifications courriel et push web, blocage de titres, statistiques, application mobile installable (PWA). Compléter cette liste à partir du README de Seerr au début de la phase 0.
+Signalement de problèmes sur un titre, demandes 4K (second Radarr/Sonarr), liste de souhaits et import de listes (Trakt, Letterboxd), Jellyfin et Plex, plusieurs serveurs Radarr/Sonarr, notifications courriel et push web, blocage de titres, statistiques, application mobile installable (PWA), demander à la place d'un membre, masquer dans Découvrir les titres disponibles ou déjà demandés, blocage par mot-clé, exemption de quota au cas par cas, clé d'API publique de l'appli. Liste complétée à partir de Seerr le 2026-11-17 (tâche 0.4).
 
 ## Ce que l'appli ne fait pas
 

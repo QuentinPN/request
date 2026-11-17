@@ -18,6 +18,7 @@ Opus 5.5 main session plans + signs off
 - Implementation → `coder`, on a complete brief (files, rules, chosen design, definition of done). Sonnet by default; pass `model: "opus"` for heavy tasks. The configured advisor (`advisorModel`) carries over to subagents.
 - Every `coder` or `fixer` pass → `checker`, with the brief (reviews it against its callers and the request) before sign-off.
 - Localized `checker` finding → `fixer` (smallest patch). Design-level finding → resume the same `coder` with `SendMessage`. Two correction rounds at most, then the main session takes over and says so.
+- **Parallel by default when independent** (pattern of superpowers `dispatching-parallel-agents`): before delegating, split the work into independent domains (research topics, modules with disjoint files, separate lots) and send all their `Agent` calls in the same message. Each parallel `coder` runs in its own worktree (`isolation: "worktree"`) on its own branch; never two agents editing the same files or sharing one working tree. Keep sequential what shares files, state or a not-yet-built foundation (build the shared base first, then fan out). One `checker` per lot, run in the background while the next work starts; after integration, a full `npm run verify`.
 - Every subagent gets its own context window. The main session never reads raw output (logs, full files, diffs) when a subagent can summarize it.
 - Never take a subagent's "done" on trust: check `git diff --stat` before signing off.
 
@@ -25,7 +26,7 @@ Opus 5.5 main session plans + signs off
 
 This file, the project's own `.claude/skills/` and the agents above take precedence over generic plugins such as Superpowers.
 
-- Delegation goes through `explorer` / `coder` / `checker` / `fixer`, not `subagent-driven-development` or `dispatching-parallel-agents`.
+- Delegation goes through `explorer` / `coder` / `checker` / `fixer`, not `subagent-driven-development`. The parallel pattern of `dispatching-parallel-agents` applies, with these agents (see Orchestration).
 - Use the session's existing worktree and the Git rules below, not `using-git-worktrees` (no `.worktrees/` folder).
 - `brainstorming` and `writing-plans` are fine, but specs and plans go in the PR or a scratch folder, never in a commit (no `docs/superpowers/`).
 - A project skill that verifies or ships work (tests, PR, merge) replaces `verification-before-completion`, `finishing-a-development-branch` and `requesting-code-review`.
