@@ -302,6 +302,8 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
   const { db, cryptoKey } = data;
   const now = deps.now ?? Date.now;
   const lists = new TtlLru({ maxEntries: 32 });
+  /** Listes « derniers ajouts » par membre : à part, pour ne pas évincer les listes de Radarr/Sonarr. */
+  const latestLists = new TtlLru({ maxEntries: 256 });
   /** Clé `service:url` : changer l'adresse d'un service (réglages) lève tout de suite sa mise à l'écart. */
   const backoff = new Map<string, number>();
 
@@ -325,8 +327,14 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
   }
 
   const listKey = (service: Service, url: string, what: string) => `${service}:${url}:${what}`;
-  const cachedList = <T>(service: Service, url: string, what: string, ttl: number, load: () => Promise<T>) =>
-    attempt(service, url, () => lists.getOrLoad(listKey(service, url, what), ttl, load) as Promise<T>);
+  const cachedList = <T>(
+    service: Service,
+    url: string,
+    what: string,
+    ttl: number,
+    load: () => Promise<T>,
+    cache = lists,
+  ) => attempt(service, url, () => cache.getOrLoad(listKey(service, url, what), ttl, load) as Promise<T>);
 
   const radarrMovies = (c: Setting<'radarr'>) =>
     cachedList('radarr', c.url, 'movies', ARR_LIST_TTL_MS, () => listMovies(c));
@@ -654,16 +662,22 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
   }
 
   /**
-   * Rangée « Ajoutés récemment dans Emby » : derniers films et séries des bibliothèques suivies, résumés par TMDB
+   * Rangée « Ajoutés récemment dans Emby » : derniers films et séries des bibliothèques suivies que ce membre peut
+   * voir dans Emby (accès aux bibliothèques et contrôle parental, admins compris), gardés par membre, résumés par TMDB
    * (un appel en cache par titre). `null` (rangée omise) si Emby n'est pas configuré ou ne répond pas : comme pour les
    * statuts, une panne n'est retentée qu'après `BACKOFF_MS`, Découvrir n'attend pas un Emby muet à chaque visite.
    */
-  async function recentlyAdded(): Promise<MediaSummary[] | null> {
+  async function recentlyAdded(userId: string): Promise<MediaSummary[] | null> {
     const emby = getSetting(db, cryptoKey, 'emby');
     if (!emby) return null;
     const tmdb = deps.tmdb();
-    const latest = await cachedList('emby', emby.url, `latest:${emby.libraryIds.join(',')}`, LATEST_TTL_MS, () =>
-      latestEmbyItems(emby, { libraryIds: emby.libraryIds, limit: LATEST_LIMIT }),
+    const latest = await cachedList(
+      'emby',
+      emby.url,
+      `latest:${userId}:${emby.libraryIds.join(',')}`,
+      LATEST_TTL_MS,
+      () => latestEmbyItems(emby, { libraryIds: emby.libraryIds, limit: LATEST_LIMIT, userId }),
+      latestLists,
     );
     if (!latest) return null;
     const settled = await Promise.allSettled(latest.map(({ type, tmdbId }) => tmdb.summary(type, tmdbId)));

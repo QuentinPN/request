@@ -11,6 +11,7 @@ import {
 } from '../../shared/catalogue.ts';
 import { type MediaSummary, mediaSearchResultsSchema } from '../../shared/media.ts';
 import { parseRequest, parseUpstream } from '../lib/api-errors.ts';
+import { viewerOf } from '../plugins/auth.ts';
 import { withStatus } from '../services/availability.ts';
 import { loadDetails } from '../services/tmdb.ts';
 
@@ -18,15 +19,16 @@ const SERVICE = 'TMDB';
 
 /** API du catalogue TMDB : rangées Découvrir, genres, plateformes, recherche et fiches, avec le statut de chaque titre. */
 export const catalogueRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/api/discover', async () => {
+  app.get('/api/discover', async (req) => {
     const tmdb = app.tmdb();
+    const { id: userId } = viewerOf(req).user;
     // Ordre de PRODUCT.md ; « Ajoutés récemment dans Emby » est omise tant qu'Emby n'est pas configuré (`null`).
     const rows: Array<{ id: string; title: string; load: () => Promise<MediaSummary[] | null> }> = [
       { id: 'trending', title: 'Tendances', load: () => tmdb.trendingAll('week') },
       { id: 'popular-movies', title: 'Films populaires', load: () => tmdb.popular('movie') },
       { id: 'popular-tv', title: 'Séries populaires', load: () => tmdb.popular('tv') },
       { id: 'upcoming', title: 'Prochainement', load: () => tmdb.upcoming() },
-      { id: 'emby-recent', title: 'Ajoutés récemment dans Emby', load: () => app.availability.recentlyAdded() },
+      { id: 'emby-recent', title: 'Ajoutés récemment dans Emby', load: () => app.availability.recentlyAdded(userId) },
     ];
     const settled = await Promise.allSettled(
       rows.map(async ({ id, title, load }) => {
