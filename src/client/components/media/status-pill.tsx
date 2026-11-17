@@ -22,16 +22,21 @@ const shortLabel = (status: MediaStatus, progress: Availability['progress']) => 
   return percent === undefined ? mediaStatusShortLabel[status] : `${percent} %`;
 };
 
-/** Pastille de statut. `onMedia` : posée sur une image (verre sombre identique dans les deux thèmes, libellé court). */
+/**
+ * Pastille de statut. `onMedia` : posée sur une image (verre sombre identique dans les deux thèmes, libellé court).
+ * `label` remplace le libellé du statut, qui ne donne plus que la teinte (statut d'une demande).
+ */
 export function StatusPill({
   status,
   onMedia = false,
   progress,
+  label,
   className,
 }: {
   status: MediaStatus;
   onMedia?: boolean;
   progress?: Availability['progress'];
+  label?: string;
   className?: string;
 }) {
   return (
@@ -46,7 +51,7 @@ export function StatusPill({
       )}
     >
       <span aria-hidden className={cn('size-2 rounded-full', dot[status])} />
-      {onMedia ? shortLabel(status, progress) : mediaStatusLabel[status]}
+      {label ?? (onMedia ? shortLabel(status, progress) : mediaStatusLabel[status])}
     </span>
   );
 }

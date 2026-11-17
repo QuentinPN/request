@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import { useViewer } from '@/hooks/use-viewer';
 import { AppName } from './app-name';
 import { Avatar } from './avatar';
+import { NavBadge } from './nav-badge';
 import { activeFill, activeOptions, focusRing, roundButton, useNavItems } from './nav-items';
 import { Notifications } from './notifications';
 import { searchShortcut, useOpenSearch } from './search';
@@ -27,6 +28,7 @@ export function DesktopNav() {
         {pill.map((item) => (
           <Link key={item.to} to={item.to} activeOptions={activeOptions(item.to)} className={cn(pillLink, activeFill)}>
             {item.label}
+            <NavBadge item={item} />
           </Link>
         ))}
         <button

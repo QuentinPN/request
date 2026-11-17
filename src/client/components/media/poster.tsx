@@ -5,6 +5,7 @@ import { imageUrl, type MediaSummary, type MediaType } from '../../../shared/med
 import type { Availability } from '../../../shared/status.ts';
 import { summaryMeta } from '../../lib/catalogue.ts';
 import { canRequest } from '../../lib/status.ts';
+import { useRequestAction } from '../requests/request-sheet.tsx';
 import { Button } from '../ui/button.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { DownloadBar, StatusPill } from './status-pill.tsx';
@@ -85,8 +86,12 @@ export function Poster({
   );
 }
 
-/** Affiche d'un titre du catalogue TMDB, avec son statut calculé par le serveur (absent : ni en bibliothèque ni demandé). */
+/**
+ * Affiche d'un titre du catalogue TMDB, avec son statut calculé par le serveur (absent : ni en bibliothèque ni demandé)
+ * et « Demander » quand le membre peut le demander.
+ */
 export function MediaPoster({ media, layout }: { media: MediaSummary; layout?: PosterLayout }) {
+  const onRequest = useRequestAction(media);
   return (
     <Poster
       title={media.title}
@@ -96,6 +101,7 @@ export function MediaPoster({ media, layout }: { media: MediaSummary; layout?: P
       progress={media.progress}
       to={{ type: media.type, id: media.tmdbId }}
       layout={layout}
+      onRequest={onRequest}
     />
   );
 }

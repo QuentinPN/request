@@ -62,4 +62,11 @@ describe('guardRedirect', () => {
     expect(guard('/compte', setup, 'member')).toBeNull();
     expect(guard('/demandes', setup, 'member')).toBeNull();
   });
+
+  it('file d’approbation : réservée à qui gère les demandes', () => {
+    const setup = setupOf(true, true, true);
+    for (const role of ['member', 'auto_approve'] as const)
+      expect(guard('/approbations', setup, role)).toEqual({ to: '/' });
+    for (const role of ['manager', 'owner'] as const) expect(guard('/approbations', setup, role)).toBeNull();
+  });
 });

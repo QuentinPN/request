@@ -8,13 +8,13 @@ import { DownloadBar, StatusPill } from '@/components/media/status-pill';
 import { Backdrop, GlassPill, MetaLine, RequestButton } from '@/components/media/title-parts';
 import { Page } from '@/components/page';
 import { QueryState } from '@/components/query-state';
+import { RequestTracking } from '@/components/requests/request-timeline';
 import { roundButton } from '@/components/shell/nav-items';
 import { Loading } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { detailsMeta, mediaQuery, regularSeasons, seasonMeta, seasonTitle } from '@/lib/catalogue';
-import { canRequest } from '@/lib/status';
 import { typeIdParamsSchema } from '../../shared/catalogue.ts';
 import {
   type CastMember,
@@ -250,7 +250,7 @@ function Fiche({ media }: { media: MediaDetails }) {
         {media.status && <StatusPill status={media.status} />}
         {media.overview && <p className="text-muted-foreground lg:text-[17px]">{media.overview}</p>}
         <div className="flex flex-wrap gap-3 pt-2">
-          {canRequest(media.status) && <RequestButton className="grow sm:grow-0" />}
+          <RequestButton media={media} className="grow sm:grow-0" />
           {isYoutubeKey(media.trailerKey) && <TrailerButton title={media.title} trailerKey={media.trailerKey} />}
         </div>
       </FicheFrame>
@@ -258,7 +258,8 @@ function Fiche({ media }: { media: MediaDetails }) {
       <div className="mt-12 space-y-10 lg:mt-16 lg:space-y-12">
         <div className="flex flex-col gap-10 lg:flex-row lg:gap-6">
           <Seasons media={media} />
-          <div className={media.seasons.length > 0 ? 'lg:w-[420px] lg:shrink-0' : ''}>
+          <div className={cn('space-y-10', media.seasons.length > 0 && 'lg:w-[420px] lg:shrink-0')}>
+            <RequestTracking media={media} />
             <WhereToWatch providers={media.watchProviders} />
           </div>
         </div>

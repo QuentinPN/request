@@ -71,5 +71,7 @@ export function guardRedirect(
   // Configuration inachevée : le propriétaire garde /compte pour se déconnecter.
   if (isOwner && !setup.complete && path !== '/compte') return { to: '/assistant' };
   if (path === '/reglages' && !isOwner) return { to: '/' };
+  // Le serveur ne ferme pas la liste aux membres (ils y voient leurs demandes) : la file d'approbation n'est pas pour eux.
+  if (path === '/approbations' && viewer.capabilities.canManageRequests !== true) return { to: '/' };
   return null;
 }

@@ -11,8 +11,7 @@ test('Découvrir : hero du n° 1 des tendances, rangées et plateformes', async 
   await page.goto('/');
   const une = page.getByRole('region', { name: 'À la une' });
   await expect(une.getByRole('heading', { name: hero?.title })).toBeVisible();
-  await expect(une.getByRole('button', { name: 'Demander' })).toHaveAttribute('aria-disabled', 'true');
-  await expect(une.getByRole('button', { name: 'Demander' })).toHaveAccessibleDescription('Disponible bientôt');
+  await expect(une.getByRole('button', { name: 'Demander' })).toBeEnabled();
   for (const row of [...fixtures.discover.rows.map((r) => r.title), 'Par plateforme']) {
     await expect(page.getByRole('heading', { level: 2, name: row })).toBeVisible();
   }

@@ -2,11 +2,12 @@ import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { type LucideIcon, Search } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { NavBadge } from './nav-badge';
 import { activeOptions, focusRing, useNavItems } from './nav-items';
 import { searchShortcut, useOpenSearch } from './search';
 
 const tab = cn(
-  'flex min-h-11 w-16 flex-col items-center justify-center gap-1 rounded-2xl py-1 text-[10px] font-semibold text-muted-foreground aria-[current=page]:text-foreground',
+  'relative flex min-h-11 w-16 flex-col items-center justify-center gap-1 rounded-2xl py-1 text-[10px] font-semibold text-muted-foreground aria-[current=page]:text-foreground',
   focusRing,
 );
 
@@ -26,6 +27,7 @@ export function MobileNav() {
   const link = (item: NonNullable<typeof home>) => (
     <Link key={item.to} to={item.to} activeOptions={activeOptions(item.to)} className={tab}>
       <TabContent icon={item.icon}>{item.mobileLabel ?? item.label}</TabContent>
+      <NavBadge item={item} className="absolute -top-1.5 right-2 h-[18px] min-w-[18px] text-[10px]" />
     </Link>
   );
 

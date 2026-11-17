@@ -16,6 +16,8 @@ export type NavItem = {
   in: readonly NavPlace[];
   /** Droit requis pour voir l'entrée. */
   capability?: keyof Capabilities;
+  /** Compteur affiché à côté du libellé. */
+  count?: 'pendingApprovals';
 };
 
 // Seule définition de la navigation, lue par la pilule et par la barre d'onglets.
@@ -31,6 +33,7 @@ export const navItems: readonly NavItem[] = [
     icon: Check,
     in: ['pill', 'tabs'],
     capability: 'canManageRequests',
+    count: 'pendingApprovals',
   },
   { to: '/compte', label: 'Compte', icon: User, in: ['tabs', 'account'] },
 ];

@@ -80,7 +80,8 @@ export const mediaTypePlural: Record<MediaType, string> = { movie: 'Films', tv: 
 /** « Aucun film » / « Aucune série » : le genre du nom compte. */
 export const mediaTypeNone: Record<MediaType, string> = { movie: 'Aucun film', tv: 'Aucune série' };
 
-const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
+/** « 1 épisode », « 3 épisodes ». */
+export const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
 
 /** 166 → « 2 h 46 », 45 → « 45 min ». */
 export function formatRuntime(minutes: number): string {

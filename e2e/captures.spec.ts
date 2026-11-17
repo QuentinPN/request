@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { fixtures, mockCatalogue, tvWithEverySeasonStatus } from './catalogue-mocks.ts';
+import { makeRequest, mediaNamed, mockRequests } from './requests-mocks.ts';
 import { expect, field, sonarrTest, test, viewerAs } from './support/api.ts';
 
 // Captures de docs/captures, hors `npm run verify` : `npm run captures` pour les régénérer.
@@ -88,4 +89,51 @@ test('captures du catalogue (3.1)', async ({ page }, { project }) => {
   await expect(page.getByRole('option').first()).toBeVisible();
   await settleImages(page);
   await page.screenshot({ path: `${dir}/recherche-${width}.png` });
+});
+
+test('captures des demandes (4.3)', async ({ page, api }, { project }) => {
+  const dir = 'docs/captures/4.3';
+  const width = widthOf(project);
+  api.state.viewer = viewerAs('member');
+  const shogun = {
+    ...fixtures.tv,
+    seasons: [
+      { seasonNumber: 1, episodeCount: 10, airDate: '2024-02-27', status: 'available' as const },
+      { seasonNumber: 2, episodeCount: 10, airDate: '2025-02-27' },
+      { seasonNumber: 3, episodeCount: 8, airDate: '2099-01-01' },
+    ],
+  };
+  await mockCatalogue(page, { tv: shogun });
+  const requests = await mockRequests(page);
+
+  // Feuille de demande d'une série (maquettes A-Demande et R-Mobile).
+  await page.goto(`/titre/tv/${shogun.tmdbId}`);
+  await page.getByRole('button', { name: 'Demander', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('checkbox').first()).toBeVisible();
+  await settleImages(page);
+  await page.screenshot({ path: `${dir}/feuille-${width}.png` });
+
+  requests.requests = [
+    makeRequest(mediaNamed('Conclave'), 'sent', { events: ['requested', 'approved', 'sent'] }),
+    makeRequest(mediaNamed('Shōgun'), 'sent', { seasons: [2], events: ['requested', 'approved', 'sent'], day: 12 }),
+    makeRequest(mediaNamed('Gladiator II'), 'pending', { day: 11 }),
+    makeRequest(mediaNamed('Le Robot sauvage'), 'available', { day: 9 }),
+    makeRequest(mediaNamed('Arcane'), 'declined', { seasons: [1, 2], declineReason: 'Déjà sur le disque', day: 8 }),
+  ];
+
+  await page.goto('/demandes');
+  await page.getByRole('button', { name: /^Toutes/ }).click();
+  await expect(page.getByRole('list', { name: 'Demandes : toutes' })).toBeVisible();
+  await settleImages(page);
+  await page.screenshot({ path: `${dir}/demandes-${width}.png`, fullPage: true });
+
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Vos demandes en cours' })).toBeVisible();
+  await settleImages(page);
+  await page.screenshot({ path: `${dir}/decouvrir-${width}.png`, fullPage: true });
+
+  await page.goto(`/titre/tv/${shogun.tmdbId}`);
+  await expect(page.getByRole('region', { name: 'Suivi de la demande' })).toBeVisible();
+  await settleImages(page);
+  await page.screenshot({ path: `${dir}/fiche-suivi-${width}.png`, fullPage: true });
 });

@@ -1,7 +1,8 @@
 import { cn } from 'cn';
 import { Plus } from 'lucide-react';
-import { Fragment, type ReactNode, useId } from 'react';
-import { imageUrl } from '../../../shared/media.ts';
+import { Fragment, type ReactNode } from 'react';
+import { imageUrl, type MediaSummary } from '../../../shared/media.ts';
+import { useRequestAction } from '../requests/request-sheet.tsx';
 import { Button } from '../ui/button.tsx';
 
 // Pièces communes au hero de Découvrir et à la fiche titre (maquettes R-Decouvrir et R-Fiche).
@@ -51,25 +52,15 @@ export function GlassPill({ children }: { children: ReactNode }) {
   );
 }
 
-/** « Demander » en attente du parcours de demande (tâche 4.1) : visible, désactivé, raison lue au lecteur d'écran. */
-export function RequestButton({ className }: { className?: string }) {
-  const reason = useId();
+/** « Demander » du hero et de la fiche : ouvre la feuille de demande (rien si le titre n'est pas demandable). */
+export function RequestButton({ media, className }: { media: MediaSummary; className?: string }) {
+  const onRequest = useRequestAction(media);
+  if (!onRequest) return null;
   return (
-    <>
-      <Button
-        size="lg"
-        disabled
-        focusableWhenDisabled
-        aria-describedby={reason}
-        className={cn('aria-disabled:cursor-not-allowed aria-disabled:opacity-50', className)}
-      >
-        <Plus data-icon="inline-start" />
-        Demander
-      </Button>
-      <span id={reason} className="sr-only">
-        Disponible bientôt
-      </span>
-    </>
+    <Button size="lg" onClick={onRequest} className={className}>
+      <Plus data-icon="inline-start" />
+      Demander
+    </Button>
   );
 }
 
@@ -80,7 +71,8 @@ export const chipRow =
 /** Groupe de filtres en pilules, nommé pour les lecteurs d'écran. */
 export function ChipGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <fieldset className={chipRow}>
+    // min-w-0 : un fieldset garde sinon la largeur de ses pilules et déborde de l'écran au lieu de défiler.
+    <fieldset className={cn(chipRow, 'min-w-0')}>
       <legend className="sr-only">{label}</legend>
       {children}
     </fieldset>
