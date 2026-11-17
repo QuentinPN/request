@@ -1,23 +1,37 @@
 import { cn } from 'cn';
-import { type MediaStatus, mediaStatusLabel, mediaStatusShortLabel } from '../../../shared/status.ts';
+import {
+  type Availability,
+  type MediaStatus,
+  mediaStatusLabel,
+  mediaStatusShortLabel,
+} from '../../../shared/status.ts';
+import { downloadPercent } from '../../lib/status.ts';
 
 const dot: Record<MediaStatus, string> = {
   available: 'bg-ok',
-  partial: 'bg-ok/50 ring-1 ring-ok',
-  downloading: 'bg-warn',
+  partial: 'bg-warn',
+  downloading: 'bg-downloading',
   requested: 'bg-brand',
   pending: 'bg-unknown',
   declined: 'bg-danger',
+};
+
+/** Libellé court : le pourcentage quand la progression est connue (« 42 % »). */
+const shortLabel = (status: MediaStatus, progress: Availability['progress']) => {
+  const percent = downloadPercent({ status, progress });
+  return percent === undefined ? mediaStatusShortLabel[status] : `${percent} %`;
 };
 
 /** Pastille de statut. `onMedia` : posée sur une image (verre sombre identique dans les deux thèmes, libellé court). */
 export function StatusPill({
   status,
   onMedia = false,
+  progress,
   className,
 }: {
   status: MediaStatus;
   onMedia?: boolean;
+  progress?: Availability['progress'];
   className?: string;
 }) {
   return (
@@ -31,8 +45,34 @@ export function StatusPill({
         className,
       )}
     >
-      <span aria-hidden className={cn('size-1.5 rounded-full', dot[status])} />
-      {onMedia ? mediaStatusShortLabel[status] : mediaStatusLabel[status]}
+      <span aria-hidden className={cn('size-2 rounded-full', dot[status])} />
+      {onMedia ? shortLabel(status, progress) : mediaStatusLabel[status]}
     </span>
+  );
+}
+
+/**
+ * Barre de progression du téléchargement (rien sans statut `downloading` ni progression) ; `className` la place
+ * (bas d'une affiche, carte de saison). `label` nomme la barre pour les lecteurs d'écran.
+ */
+export function DownloadBar({
+  label,
+  className,
+  ...availability
+}: Availability & { label: string; className?: string }) {
+  const percent = downloadPercent(availability);
+  if (percent === undefined) return null;
+  return (
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      aria-valuetext={`${percent} %`}
+      className={cn('h-1 overflow-hidden bg-(--track)', className)}
+    >
+      <div className="h-full bg-brand" style={{ width: `${percent}%` }} />
+    </div>
   );
 }

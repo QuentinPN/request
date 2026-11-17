@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { ChevronLeft, Film, Play, User, X } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
 import { MediaRail, Rail, SectionHeading } from '@/components/media/rail';
+import { DownloadBar, StatusPill } from '@/components/media/status-pill';
 import { Backdrop, GlassPill, MetaLine, RequestButton } from '@/components/media/title-parts';
 import { Page } from '@/components/page';
 import { QueryState } from '@/components/query-state';
@@ -13,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { detailsMeta, mediaQuery, regularSeasons, seasonMeta, seasonTitle } from '@/lib/catalogue';
+import { canRequest } from '@/lib/status';
 import { typeIdParamsSchema } from '../../shared/catalogue.ts';
 import {
   type CastMember,
@@ -189,12 +191,20 @@ function Seasons({ media }: { media: MediaDetails }) {
       </SectionHeading>
       <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {media.seasons.map((season) => (
-          <li
-            key={season.seasonNumber}
-            className="flex items-baseline justify-between gap-3 rounded-card border border-border bg-card p-5"
-          >
-            <span className="font-semibold">{seasonTitle(season)}</span>
-            <span className="text-[13px] text-muted-foreground">{seasonMeta(season)}</span>
+          <li key={season.seasonNumber} className="space-y-3 rounded-card border border-border bg-card p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="block font-semibold">{seasonTitle(season)}</span>
+                <span className="block text-[13px] text-muted-foreground">{seasonMeta(season)}</span>
+              </div>
+              {season.status && <StatusPill status={season.status} className="shrink-0" />}
+            </div>
+            <DownloadBar
+              status={season.status}
+              progress={season.progress}
+              label={`Téléchargement de ${seasonTitle(season)}`}
+              className="rounded-pill"
+            />
           </li>
         ))}
       </ul>
@@ -237,9 +247,10 @@ function Fiche({ media }: { media: MediaDetails }) {
           {media.title}
         </h1>
         <MetaLine parts={detailsMeta(media)} />
+        {media.status && <StatusPill status={media.status} />}
         {media.overview && <p className="text-muted-foreground lg:text-[17px]">{media.overview}</p>}
         <div className="flex flex-wrap gap-3 pt-2">
-          <RequestButton className="grow sm:grow-0" />
+          {canRequest(media.status) && <RequestButton className="grow sm:grow-0" />}
           {isYoutubeKey(media.trailerKey) && <TrailerButton title={media.title} trailerKey={media.trailerKey} />}
         </div>
       </FicheFrame>

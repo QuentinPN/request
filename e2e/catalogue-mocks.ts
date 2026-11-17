@@ -7,7 +7,7 @@ import {
   pagedMediaSchema,
   providersResponseSchema,
 } from '../src/shared/catalogue.ts';
-import { mediaDetailsSchema, mediaSearchResultsSchema } from '../src/shared/media.ts';
+import { type MediaDetails, mediaDetailsSchema, mediaSearchResultsSchema } from '../src/shared/media.ts';
 
 // Fixtures JSON validées par les schémas partagés : un changement de contrat casse les tests, pas l'écran en silence.
 const load = <T>(name: string, schema: z.ZodType<T>): T =>
@@ -21,6 +21,17 @@ export const fixtures = {
   tv: load('media-tv', mediaDetailsSchema),
   movie: load('media-movie', mediaDetailsSchema),
   search: load('search', mediaSearchResultsSchema),
+};
+
+/** La série avec une saison par cas : disponible, partielle, en téléchargement (42 %) et sans statut. */
+export const tvWithEverySeasonStatus: MediaDetails = {
+  ...fixtures.tv,
+  seasons: [
+    { seasonNumber: 1, episodeCount: 10, airDate: '2024-02-27', status: 'available' },
+    { seasonNumber: 2, episodeCount: 10, airDate: '2025-02-27', status: 'partial' },
+    { seasonNumber: 3, episodeCount: 10, airDate: '2026-02-27', status: 'downloading', progress: 0.42 },
+    { seasonNumber: 4, episodeCount: 10, airDate: null },
+  ],
 };
 
 /** Recherche qui ne trouve rien. */
@@ -45,7 +56,7 @@ function nextPage(page: number) {
 }
 
 /** Réponse du catalogue, ou `null` si la route n'en fait pas partie. */
-function respond(url: URL): { status: number; body: unknown } | null {
+function respond(url: URL, tv: MediaDetails): { status: number; body: unknown } | null {
   const path = url.pathname;
   const notFound = { status: 404, body: { error: 'Introuvable' } };
   if (path === '/api/discover') return { status: 200, body: fixtures.discover };
@@ -62,7 +73,7 @@ function respond(url: URL): { status: number; body: unknown } | null {
   }
   const media = path.match(/^\/api\/media\/(movie|tv)\/(\d+)$/);
   if (media) {
-    const found = [fixtures.tv, fixtures.movie].find((m) => m.type === media[1] && m.tmdbId === Number(media[2]));
+    const found = [tv, fixtures.movie].find((m) => m.type === media[1] && m.tmdbId === Number(media[2]));
     return found ? { status: 200, body: found } : notFound;
   }
   return null;
@@ -71,9 +82,12 @@ function respond(url: URL): { status: number; body: unknown } | null {
 /**
  * Sert l'API du catalogue depuis les fixtures ; le reste (`/api/auth/me`, `/api/setup/state`…) passe au faux serveur
  * de `support/api.ts`. `failWith` renvoie un statut d'erreur à servir à la place (503, 500…) pour le catalogue,
- * relu à chaque requête : un test peut le changer en cours de route (« Réessayer »).
+ * relu à chaque requête : un test peut le changer en cours de route (« Réessayer »). `tv` remplace la fiche de la série.
  */
-export async function mockCatalogue(page: Page, { failWith }: { failWith?: () => number | null } = {}) {
+export async function mockCatalogue(
+  page: Page,
+  { failWith, tv = fixtures.tv }: { failWith?: () => number | null; tv?: MediaDetails } = {},
+) {
   await page.route('https://www.youtube-nocookie.com/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
@@ -84,7 +98,7 @@ export async function mockCatalogue(page: Page, { failWith }: { failWith?: () =>
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/api/images/'))
       return route.fulfill({ contentType: 'image/svg+xml', body: placeholderImage(url.pathname) });
-    const response = respond(url);
+    const response = respond(url, tv);
     if (!response) return route.fallback();
     const status = failWith?.();
     if (status) {

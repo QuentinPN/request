@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { Info } from 'lucide-react';
 import { MediaRail, MediaRailSkeleton, Rail, RailSkeleton } from '@/components/media/rail';
+import { StatusPill } from '@/components/media/status-pill';
 import { Backdrop, MetaLine, RequestButton } from '@/components/media/title-parts';
 import { Page } from '@/components/page';
 import { QueryState } from '@/components/query-state';
@@ -10,6 +11,7 @@ import { Loading } from '@/components/states';
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { discoverQuery, providersQuery, summaryMeta } from '@/lib/catalogue';
+import { canRequest } from '@/lib/status';
 import { imageUrl, type MediaSummary, type WatchProvider } from '../../shared/media.ts';
 
 /** Plateformes affichées : la liste TMDB pour la France est longue, les premières sont les plus regardées. */
@@ -27,9 +29,10 @@ function Hero({ media }: { media: MediaSummary }) {
           {media.title}
         </h2>
         <MetaLine parts={summaryMeta(media)} />
+        {media.status && <StatusPill status={media.status} className="self-start" />}
         {media.overview && <p className="hidden text-[17px] text-muted-foreground sm:line-clamp-3">{media.overview}</p>}
         <div className="mt-2 flex gap-3">
-          <RequestButton className="grow sm:grow-0" />
+          {canRequest(media.status) && <RequestButton className="grow sm:grow-0" />}
           <Link
             to="/titre/$type/$id"
             params={{ type: media.type, id: String(media.tmdbId) }}

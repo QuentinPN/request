@@ -2,7 +2,7 @@ import { Moon, Plus, Sun } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { type MediaStatus, mediaStatuses } from '../../shared/status.ts';
 import { Poster, PosterSkeleton } from '../components/media/poster.tsx';
-import { StatusPill } from '../components/media/status-pill.tsx';
+import { DownloadBar, StatusPill } from '../components/media/status-pill.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import {
@@ -115,16 +115,12 @@ export function ComposantsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <StatusPill status="downloading" />
-              <div
-                className="h-1.5 overflow-hidden rounded-pill bg-(--track)"
-                role="progressbar"
-                aria-label="Progression du téléchargement"
-                aria-valuenow={62}
-                aria-valuemin={0}
-                aria-valuemax={100}
-              >
-                <div className="h-full w-[62%] rounded-pill bg-brand" />
-              </div>
+              <DownloadBar
+                status="downloading"
+                progress={0.62}
+                label="Progression du téléchargement"
+                className="rounded-pill"
+              />
               <p className="text-xs text-muted-foreground">62 % · environ 8 min restantes</p>
             </CardContent>
           </Card>

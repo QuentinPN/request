@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { fixtures, mockCatalogue } from './catalogue-mocks.ts';
+import { fixtures, mockCatalogue, tvWithEverySeasonStatus } from './catalogue-mocks.ts';
 import { expect, field, sonarrTest, test, viewerAs } from './support/api.ts';
 
 // Captures de docs/captures, hors `npm run verify` : `npm run captures` pour les régénérer.
@@ -50,6 +50,22 @@ async function settleImages(page: Page) {
     await document.fonts.ready;
   });
 }
+
+test('captures des pastilles de statut (3.2)', async ({ page }, { project }) => {
+  const dir = 'docs/captures/3.2';
+  const width = widthOf(project);
+  await mockCatalogue(page, { tv: tvWithEverySeasonStatus });
+
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'À la une' })).toBeVisible();
+  await settleImages(page);
+  await page.screenshot({ path: `${dir}/decouvrir-${width}.png`, fullPage: true });
+
+  await page.goto(`/titre/tv/${fixtures.tv.tmdbId}`);
+  await expect(page.getByRole('heading', { level: 1, name: fixtures.tv.title })).toBeVisible();
+  await settleImages(page);
+  await page.screenshot({ path: `${dir}/fiche-tv-${width}.png`, fullPage: true });
+});
 
 test('captures du catalogue (3.1)', async ({ page }, { project }) => {
   const dir = 'docs/captures/3.1';

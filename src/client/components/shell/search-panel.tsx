@@ -6,6 +6,7 @@ import { type KeyboardEvent, type RefObject, useEffect, useId, useState } from '
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { mediaKey, searchQuery, summaryMeta } from '@/lib/catalogue';
 import { imageUrl, type MediaSummary, type PersonSummary } from '../../../shared/media.ts';
+import { StatusPill } from '../media/status-pill.tsx';
 import { QueryState } from '../query-state.tsx';
 import { EmptyState, Loading } from '../states.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
@@ -149,10 +150,11 @@ export function SearchPanel({
                           className="flex items-center gap-3 rounded-xl px-3 py-2 outline-none aria-selected:bg-accent"
                         >
                           <Thumbnail src={imageUrl(item.posterPath, 'profile')} />
-                          <span className="min-w-0">
+                          <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium">{item.title}</span>
                             <span className="block text-xs text-muted-foreground">{summaryMeta(item).join(' · ')}</span>
                           </span>
+                          {item.status && <StatusPill status={item.status} className="shrink-0" />}
                         </Link>
                       ))}
                     </div>

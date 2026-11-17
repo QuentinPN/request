@@ -2,21 +2,20 @@ import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { Film, Plus } from 'lucide-react';
 import { imageUrl, type MediaSummary, type MediaType } from '../../../shared/media.ts';
-import type { MediaStatus } from '../../../shared/status.ts';
+import type { Availability } from '../../../shared/status.ts';
 import { summaryMeta } from '../../lib/catalogue.ts';
+import { canRequest } from '../../lib/status.ts';
 import { Button } from '../ui/button.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
-import { StatusPill } from './status-pill.tsx';
-
-const canRequest = (status?: MediaStatus) => !status || status === 'partial' || status === 'declined';
+import { DownloadBar, StatusPill } from './status-pill.tsx';
 
 /** `rail` : largeur fixe (--poster-w) dans une rangée ; `grid` : remplit la colonne d'une grille. */
 type PosterLayout = 'rail' | 'grid';
 const width: Record<PosterLayout, string> = { rail: 'w-(--poster-w) shrink-0', grid: 'w-full' };
 
 /**
- * Affiche 2:3 : pastille de statut en haut à droite, « Demander » au survol et au focus,
- * toujours visible au toucher. L'élévation au focus suit --focus-scale (1 en mouvement réduit).
+ * Affiche 2:3 : pastille de statut en haut à droite, barre de téléchargement en bas, « Demander » au survol
+ * et au focus, toujours visible au toucher. L'élévation au focus suit --focus-scale (1 en mouvement réduit).
  * Le lien vers la fiche porte le nom accessible ; l'image est décorative (`alt=""`) pour ne pas le répéter.
  */
 export function Poster({
@@ -24,6 +23,7 @@ export function Poster({
   subtitle,
   src,
   status,
+  progress,
   to,
   layout = 'rail',
   onRequest,
@@ -31,7 +31,8 @@ export function Poster({
   title: string;
   subtitle?: string;
   src?: string;
-  status?: MediaStatus;
+  status?: Availability['status'];
+  progress?: Availability['progress'];
   to: { type: MediaType; id: number };
   layout?: PosterLayout;
   onRequest?: () => void;
@@ -53,7 +54,14 @@ export function Poster({
         >
           <span className="sr-only">{subtitle ? `${title} (${subtitle})` : title}</span>
         </Link>
-        {status && <StatusPill status={status} onMedia className="pointer-events-none absolute top-2 right-2" />}
+        {status && (
+          <StatusPill
+            status={status}
+            progress={progress}
+            onMedia
+            className="pointer-events-none absolute top-2 right-2"
+          />
+        )}
         {onRequest && canRequest(status) && (
           <div className="absolute inset-x-2 bottom-2 opacity-0 transition-opacity duration-(--dur) group-focus-within/poster:opacity-100 group-hover/poster:opacity-100 pointer-coarse:opacity-100">
             <Button size="sm" className="w-full" onClick={onRequest} aria-label={`Demander ${title}`}>
@@ -62,6 +70,12 @@ export function Poster({
             </Button>
           </div>
         )}
+        <DownloadBar
+          status={status}
+          progress={progress}
+          label={`Téléchargement de ${title}`}
+          className="pointer-events-none absolute inset-x-0 bottom-0"
+        />
       </div>
       <div aria-hidden className="mt-2 px-0.5">
         <p className="truncate text-sm font-medium">{title}</p>
@@ -71,13 +85,15 @@ export function Poster({
   );
 }
 
-/** Affiche d'un titre du catalogue TMDB (sans statut tant que la disponibilité n'est pas calculée). */
+/** Affiche d'un titre du catalogue TMDB, avec son statut calculé par le serveur (absent : ni en bibliothèque ni demandé). */
 export function MediaPoster({ media, layout }: { media: MediaSummary; layout?: PosterLayout }) {
   return (
     <Poster
       title={media.title}
       subtitle={summaryMeta(media).join(' · ')}
       src={imageUrl(media.posterPath, 'poster') ?? undefined}
+      status={media.status}
+      progress={media.progress}
       to={{ type: media.type, id: media.tmdbId }}
       layout={layout}
     />

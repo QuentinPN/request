@@ -11,7 +11,8 @@
           "year": 2024,
           "posterPath": "/poster-tv-126308.jpg",
           "backdropPath": "/backdrop-tv-126308.jpg",
-          "overview": "Au Japon, en 1600, le seigneur Toranaga lutte pour sa survie alors que ses ennemis au Conseil des régents s’unissent contre lui."
+          "overview": "Au Japon, en 1600, le seigneur Toranaga lutte pour sa survie alors que ses ennemis au Conseil des régents s’unissent contre lui.",
+          "status": "partial"
         },
         {
           "tmdbId": 1002,
@@ -20,7 +21,8 @@
           "year": 2024,
           "posterPath": "/poster-movie-1002.jpg",
           "backdropPath": "/backdrop-movie-1002.jpg",
-          "overview": "Après un naufrage, un robot échoue sur une île sauvage et apprend à survivre."
+          "overview": "Après un naufrage, un robot échoue sur une île sauvage et apprend à survivre.",
+          "status": "available"
         },
         {
           "tmdbId": 1003,
@@ -29,7 +31,9 @@
           "year": 2024,
           "posterPath": "/poster-movie-1003.jpg",
           "backdropPath": "/backdrop-movie-1003.jpg",
-          "overview": "Le cardinal Lawrence organise l’élection d’un nouveau pape."
+          "overview": "Le cardinal Lawrence organise l’élection d’un nouveau pape.",
+          "status": "downloading",
+          "progress": 0.42
         },
         {
           "tmdbId": 2004,
@@ -38,7 +42,8 @@
           "year": 2022,
           "posterPath": "/poster-tv-2004.jpg",
           "backdropPath": "/backdrop-tv-2004.jpg",
-          "overview": "Des employés ont subi une opération qui sépare leurs souvenirs de travail et personnels."
+          "overview": "Des employés ont subi une opération qui sépare leurs souvenirs de travail et personnels.",
+          "status": "requested"
         },
         {
           "tmdbId": 1005,
@@ -47,7 +52,8 @@
           "year": 2024,
           "posterPath": "/poster-movie-1005.jpg",
           "backdropPath": "/backdrop-movie-1005.jpg",
-          "overview": ""
+          "overview": "",
+          "status": "pending"
         },
         {
           "tmdbId": 2006,
@@ -56,7 +62,8 @@
           "year": 2021,
           "posterPath": "/poster-tv-2006.jpg",
           "backdropPath": "/backdrop-tv-2006.jpg",
-          "overview": ""
+          "overview": "",
+          "status": "declined"
         },
         {
           "tmdbId": 1007,
@@ -291,6 +298,62 @@
           "posterPath": "/poster-movie-1030.jpg",
           "backdropPath": "/backdrop-movie-1030.jpg",
           "overview": ""
+        }
+      ]
+    },
+    {
+      "id": "emby-recent",
+      "title": "Ajoutés récemment dans Emby",
+      "items": [
+        {
+          "tmdbId": 1009,
+          "type": "movie",
+          "title": "Dune : Deuxième partie",
+          "year": 2024,
+          "posterPath": "/poster-movie-1009.jpg",
+          "backdropPath": "/backdrop-movie-1009.jpg",
+          "overview": "",
+          "status": "available"
+        },
+        {
+          "tmdbId": 1010,
+          "type": "movie",
+          "title": "Oppenheimer",
+          "year": 2023,
+          "posterPath": "/poster-movie-1010.jpg",
+          "backdropPath": "/backdrop-movie-1010.jpg",
+          "overview": "",
+          "status": "available"
+        },
+        {
+          "tmdbId": 1011,
+          "type": "movie",
+          "title": "Anatomie d’une chute",
+          "year": 2023,
+          "posterPath": "/poster-movie-1011.jpg",
+          "backdropPath": "/backdrop-movie-1011.jpg",
+          "overview": "",
+          "status": "available"
+        },
+        {
+          "tmdbId": 1012,
+          "type": "movie",
+          "title": "Furiosa",
+          "year": 2024,
+          "posterPath": "/poster-movie-1012.jpg",
+          "backdropPath": "/backdrop-movie-1012.jpg",
+          "overview": "",
+          "status": "available"
+        },
+        {
+          "tmdbId": 1013,
+          "type": "movie",
+          "title": "Le Comte de Monte-Cristo",
+          "year": 2024,
+          "posterPath": "/poster-movie-1013.jpg",
+          "backdropPath": "/backdrop-movie-1013.jpg",
+          "overview": "",
+          "status": "available"
         }
       ]
     }

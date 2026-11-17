@@ -1,6 +1,7 @@
 {
   "tmdbId": 126308,
   "type": "tv",
+  "status": "partial",
   "title": "Shōgun",
   "year": 2024,
   "posterPath": "/poster-tv-126308.jpg",
@@ -25,12 +26,15 @@
     {
       "seasonNumber": 1,
       "episodeCount": 10,
-      "airDate": "2024-02-27"
+      "airDate": "2024-02-27",
+      "status": "available"
     },
     {
       "seasonNumber": 2,
       "episodeCount": 10,
-      "airDate": null
+      "airDate": "2026-02-01",
+      "status": "downloading",
+      "progress": 0.42
     }
   ],
   "cast": [
