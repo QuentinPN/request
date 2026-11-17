@@ -28,6 +28,8 @@ interface EmbyEntry {
   tmdb?: number;
   tvdb?: number;
   added?: string;
+  /** Ids Emby des membres qui y ont accès (bibliothèque ou contrôle parental) ; absent = tous. */
+  only?: string[];
   /** Série : épisodes présents par saison. */
   episodes?: Record<number, number>;
 }
@@ -63,6 +65,7 @@ function embyRoutes({ movies = [], series = [] }: EmbyLibrary): FakeRoutes {
       }
       if (q.SortBy === 'DateCreated') {
         const Items = typed
+          .filter((e) => !e.only || e.only.includes(q.UserId ?? ''))
           .sort((a, b) => (b.added ?? '').localeCompare(a.added ?? ''))
           .map((e) => ({ Id: e.id, Type: e.Type, DateCreated: e.added, ProviderIds: providerIds(e) }));
         return status(200, { Items })(req, res);
@@ -513,8 +516,46 @@ describe('statuts dans les réponses du catalogue', () => {
     });
     // Emby : derniers ajouts + une recherche par type pour toute la page.
     const embyCalls = servers.emby?.requests ?? [];
-    expect(embyCalls.filter((r) => r.query.SortBy === 'DateCreated')).toHaveLength(1);
+    const latestCalls = embyCalls.filter((r) => r.query.SortBy === 'DateCreated');
+    expect(latestCalls).toHaveLength(1);
+    expect(latestCalls[0]?.query.UserId).toBe('proprietaire'); // Emby applique l'accès du membre connecté
     expect(embyCalls.filter((r) => r.query.AnyProviderIdEquals)).toHaveLength(3); // films, séries (TMDB, TVDB)
+  });
+
+  it('Découvrir : « Ajoutés récemment dans Emby » ne montre que ce que le membre voit dans Emby, gardé par membre', async () => {
+    const { app, get, servers } = await setupApp({
+      emby: embyRoutes({
+        movies: [
+          { id: 'e101', tmdb: 101, added: '2026-11-10T00:00:00Z', only: ['alice'] },
+          { id: 'e102', tmdb: 102, added: '2026-11-09T00:00:00Z' },
+        ],
+      }),
+      tmdb: {
+        ...discover,
+        'GET /movie/102': { id: 102, title: 'Pour tous', release_date: '2020-01-01' },
+      },
+    });
+    const recentIds = async (headers: Record<string, string>) => {
+      const res = await app.inject({ method: 'GET', url: '/api/discover', headers });
+      const rows = res.json().rows as Array<{ id: string; items: Array<{ tmdbId: number }> }>;
+      return rows.find((r) => r.id === 'emby-recent')?.items.map((i) => i.tmdbId);
+    };
+    const alice = await loginAs(app, 'member', 'alice');
+    const bob = await loginAs(app, 'member', 'bob');
+
+    expect(await recentIds(alice.headers)).toEqual([101, 102]);
+    expect(await recentIds(bob.headers)).toEqual([102]);
+    expect(
+      (await get('/api/discover'))
+        .json()
+        .rows.at(-1)
+        .items.map((i: { tmdbId: number }) => i.tmdbId),
+    ).toEqual([102]); // admin : aussi filtré
+    // Chaque membre a sa liste en cache : revisiter ne réinterroge pas Emby.
+    const latestCalls = () => servers.emby?.requests.filter((r) => r.query.SortBy === 'DateCreated') ?? [];
+    expect(latestCalls().map((r) => r.query.UserId)).toEqual(['alice', 'bob', 'proprietaire']);
+    await recentIds(alice.headers);
+    expect(latestCalls()).toHaveLength(3);
   });
 
   it('recherche, genre et plateforme portent le statut', async () => {

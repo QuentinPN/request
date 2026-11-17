@@ -277,26 +277,36 @@ const latestSchema = z.object({
 
 /**
  * Films et séries les plus récemment ajoutés aux bibliothèques suivies (une requête par bibliothèque), du plus récent
- * au plus ancien. Les éléments sans id TMDB sont écartés : TMDB fournit affiche et résumé.
+ * au plus ancien. Les éléments sans id TMDB sont écartés : TMDB fournit affiche et résumé. Avec `userId` (id Emby
+ * du membre), Emby n'y garde que ce que ce membre peut voir : ses bibliothèques et son contrôle parental.
  */
 export async function latestEmbyItems(
   config: EmbyConfig,
-  { libraryIds, limit }: { libraryIds?: readonly string[]; limit: number },
+  { libraryIds, limit, userId }: { libraryIds?: readonly string[]; limit: number; userId?: string },
 ): Promise<EmbyLatestItem[]> {
   const client = embyClient(config);
-  const pages = await mapBounded(parentsOf(libraryIds), (parentId) =>
-    client.get('/Items', latestSchema, {
-      query: {
-        Recursive: true,
-        IncludeItemTypes: 'Movie,Series',
-        SortBy: 'DateCreated',
-        SortOrder: 'Descending',
-        Fields: 'ProviderIds,DateCreated',
-        Limit: limit,
-        ParentId: parentId,
-      },
-    }),
-  );
+  const pages = await mapBounded(parentsOf(libraryIds), async (parentId) => {
+    try {
+      return await client.get('/Items', latestSchema, {
+        query: {
+          Recursive: true,
+          IncludeItemTypes: 'Movie,Series',
+          SortBy: 'DateCreated',
+          SortOrder: 'Descending',
+          Fields: 'ProviderIds,DateCreated',
+          Limit: limit,
+          ParentId: parentId,
+          UserId: userId,
+        },
+      });
+    } catch (error) {
+      // Comportement d'Emby non vérifié : pour une bibliothèque interdite au membre, il peut répondre 4xx plutôt
+      // qu'une liste vide. Cette bibliothèque est alors ignorée, sans faire échouer toute la rangée.
+      if (userId && error instanceof IntegrationError && [400, 403, 404].includes(error.status ?? 0))
+        return { Items: [] };
+      throw error;
+    }
+  });
   const items = pages
     .flatMap(({ Items }) =>
       Items.flatMap((item): EmbyLatestItem[] => {

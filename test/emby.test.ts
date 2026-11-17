@@ -4,6 +4,7 @@ import {
   findEmbyItems,
   getEmbySeasonAvailability,
   getEmbyServerId,
+  latestEmbyItems,
   listEmbyLibraries,
   listEmbyUsers,
   testEmby,
@@ -204,6 +205,35 @@ describe('findEmbyItems', () => {
     const server = await serve({});
     expect(await findEmbyItems(server.config, { type: 'movie', tmdbIds: [] })).toEqual([]);
     expect(server.requests).toHaveLength(0);
+  });
+});
+
+describe('latestEmbyItems', () => {
+  const libraryIds = ['ouverte', 'interdite'];
+  const added = '2026-11-10T00:00:00Z';
+  const libraries = (denied: number): Parameters<typeof startFakeServer>[0] => ({
+    'GET /Items': (req, res) =>
+      req.query.ParentId === 'interdite'
+        ? status(denied)(req, res)
+        : status(200, { Items: [{ Type: 'Movie', DateCreated: added, ProviderIds: { Tmdb: '603' } }] })(req, res),
+  });
+
+  it('ignore une bibliothèque refusée au membre (403) et garde les autres', async () => {
+    const server = await serve(libraries(403));
+    expect(await latestEmbyItems(server.config, { libraryIds, limit: 20, userId: 'alice' })).toEqual([
+      { type: 'movie', tmdbId: 603, addedAt: Date.parse(added) },
+    ]);
+  });
+
+  it('échoue toujours sur une erreur serveur (500)', async () => {
+    const server = await serve(libraries(500));
+    const error = await failure(latestEmbyItems(server.config, { libraryIds, limit: 20, userId: 'alice' }));
+    expect(error.status).toBe(500);
+  });
+
+  it("n'ignore pas un 403 sans UserId (balayage serveur)", async () => {
+    const server = await serve(libraries(403));
+    expect((await failure(latestEmbyItems(server.config, { libraryIds, limit: 20 }))).status).toBe(403);
   });
 });
 
