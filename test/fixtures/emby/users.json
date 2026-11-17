@@ -1,0 +1,10 @@
+[
+  {
+    "Id": "u-1",
+    "Name": "alice",
+    "PrimaryImageTag": "tag42",
+    "Policy": { "IsAdministrator": true, "IsDisabled": false }
+  },
+  { "Id": "u-2", "Name": "bob", "Policy": { "IsAdministrator": false, "IsDisabled": true } },
+  { "Id": "u-3", "Name": "carol" }
+]

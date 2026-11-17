@@ -1,0 +1,7 @@
+{
+  "ServerName": "Salon",
+  "Version": "4.8.10.0",
+  "Id": "abc123serverid",
+  "OperatingSystem": "Linux",
+  "LocalAddress": "http://192.0.2.10:8096"
+}
