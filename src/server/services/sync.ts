@@ -11,6 +11,7 @@ import { one } from '../lib/sql.ts';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '../lib/time.ts';
 import type { AvailabilityService } from './availability.ts';
 import { lastFailureAt, lastSuccessAt, runJob } from './jobs.ts';
+import { NOTIFICATION_RETENTION_MS, purgeReadNotifications } from './notifications.ts';
 import { getSetting } from './settings.ts';
 
 /** Noms des balayages dans `job_runs` (verrou : une seule exécution `running` par nom). */
@@ -106,10 +107,14 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
       return `${keys.length} titres recalculés`;
     });
 
-  /** Balayage complet : purge d'abord (un recalcul rajeunirait les titres oubliés), puis tout titre suivi. */
+  /**
+   * Balayage complet : purges d'abord (titres oubliés, qu'un recalcul rajeunirait, et notifications lues de plus de
+   * 90 jours), puis tout titre suivi.
+   */
   const fullScan = () =>
     runJob(db, SCAN_JOBS.full, async () => {
       const purged = purgeMedia(db, new Date(now() - PURGE_AFTER_MS));
+      purgeReadNotifications(db, new Date(now() - NOTIFICATION_RETENTION_MS));
       const keys = keysWhere(or(isNotNull(media.status), hasRequest(db)));
       await refreshAll(keys);
       return `${keys.length} titres recalculés, ${purged} supprimés`;

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { check, customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { jobRunStatuses } from '../../shared/jobs.ts';
 import { mediaTypes } from '../../shared/media.ts';
+import { notificationKinds } from '../../shared/notifications.ts';
 import { type QuotaOverride, quotaOverrideSchema, roles } from '../../shared/roles.ts';
 import { seriesTypes } from '../../shared/settings.ts';
 import { mediaStatuses, preSendRequestStatuses, requestEventTypes, requestStatuses } from '../../shared/status.ts';
@@ -221,5 +222,34 @@ export const requestEvents = sqliteTable(
     enumCheck('request_events_type_check', table.type, requestEventTypes),
     index('request_events_request_id_created_at_idx').on(table.requestId, table.createdAt),
     index('request_events_actor_id_idx').on(table.actorId).where(sql`${table.actorId} IS NOT NULL`),
+  ],
+);
+
+/**
+ * Notifications dans l'appli, une ligne par destinataire. Le texte est rendu à la lecture depuis `kind` (titre TMDB,
+ * nom du demandeur) ; `detail` garde la donnée brute de l'évènement (motif du refus, raison de l'échec).
+ */
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: integer().primaryKey(),
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text({ enum: notificationKinds }).notNull(),
+    requestId: integer().references(() => requests.id, { onDelete: 'set null' }),
+    detail: text(),
+    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    /** `NULL` = non lue. */
+    readAt: integer({ mode: 'timestamp' }),
+  },
+  (table) => [
+    enumCheck('notifications_kind_check', table.kind, notificationKinds),
+    // Liste du membre, de la plus récente à la plus ancienne (le rowid termine l'index : `id DESC` départage).
+    index('notifications_user_id_created_at_idx').on(table.userId, table.createdAt),
+    // Pastille des non lues : compte sur l'index partiel, sans lire les notifications déjà lues.
+    index('notifications_unread_idx').on(table.userId).where(sql`${table.readAt} IS NULL`),
+    // Clé étrangère (`SET NULL` à la suppression d'une demande).
+    index('notifications_request_id_idx').on(table.requestId).where(sql`${table.requestId} IS NOT NULL`),
   ],
 );

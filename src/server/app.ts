@@ -11,6 +11,7 @@ import { authRoutes } from './routes/auth.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
 import { embyRoutes } from './routes/emby.ts';
 import { imageRoutes } from './routes/images.ts';
+import { notificationsRoutes } from './routes/notifications.ts';
 import { requestsRoutes } from './routes/requests.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { usersRoutes } from './routes/users.ts';
@@ -94,6 +95,7 @@ export async function buildApp({
   setupRoutes(app);
   usersRoutes(app);
   requestsRoutes(app);
+  notificationsRoutes(app);
   webhookRoutes(app, sync);
   await app.register(catalogueRoutes);
   await app.register(embyRoutes);

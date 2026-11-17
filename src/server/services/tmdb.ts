@@ -1,4 +1,11 @@
-import { type MediaDetails, type MediaType, mediaDetailsSchema } from '../../shared/media.ts';
+import {
+  keyOf,
+  type MediaDetails,
+  type MediaKey,
+  type MediaSummary,
+  type MediaType,
+  mediaDetailsSchema,
+} from '../../shared/media.ts';
 import type { Data } from '../db/index.ts';
 import { IntegrationError } from '../integrations/http.ts';
 import { createTmdb, type TmdbClient } from '../integrations/tmdb.ts';
@@ -13,6 +20,30 @@ export async function loadDetails(tmdb: TmdbClient, type: MediaType, id: number)
     if (err instanceof IntegrationError && err.kind === 'not_found') throw new HttpError(404, 'Titre introuvable');
     throw err;
   }
+}
+
+/**
+ * Résumés TMDB des titres (en cache), indexés par `keyOf` ; un titre (ou TMDB entier, non configuré ou en panne)
+ * en échec est simplement absent. Sert les listes de demandes et les notifications.
+ */
+export async function loadSummaries(
+  tmdbOf: () => TmdbClient,
+  items: readonly MediaKey[],
+): Promise<Map<string, MediaSummary>> {
+  const found = new Map<string, MediaSummary>();
+  let tmdb: TmdbClient;
+  try {
+    tmdb = tmdbOf();
+  } catch {
+    return found;
+  }
+  const keys = [...new Map(items.map((r) => [keyOf(r), { type: r.type, tmdbId: r.tmdbId }])).values()];
+  const settled = await Promise.allSettled(keys.map((k) => tmdb.summary(k.type, k.tmdbId)));
+  settled.forEach((result, i) => {
+    const key = keys[i];
+    if (result.status === 'fulfilled' && key) found.set(keyOf(key), result.value);
+  });
+  return found;
 }
 
 /**

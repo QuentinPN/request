@@ -16,7 +16,7 @@ import {
   sql,
 } from 'drizzle-orm';
 import type { z } from 'zod';
-import { keyOf, type MediaDetails, type MediaSummary, type MediaType } from '../../shared/media.ts';
+import { keyOf, type MediaDetails, type MediaType } from '../../shared/media.ts';
 import {
   type ApproveRequestInput,
   type BatchResult,
@@ -55,9 +55,10 @@ import { one } from '../lib/sql.ts';
 import { DAY_MS } from '../lib/time.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
 import type { AvailabilityService } from './availability.ts';
+import { notifyRequestEvent } from './notifications.ts';
 import { assertSendChoice } from './send-options.ts';
 import { getSetting } from './settings.ts';
-import { loadDetails } from './tmdb.ts';
+import { loadDetails, loadSummaries } from './tmdb.ts';
 import { avatarUrlOf, type User } from './users.ts';
 
 type CreateInput = z.output<typeof createRequestSchema>;
@@ -193,6 +194,7 @@ function addEvent(
   detail: string | null = null,
 ) {
   tx.insert(requestEvents).values({ requestId, type, actorId, detail, createdAt: at }).run();
+  notifyRequestEvent(tx, { requestId, type, actorId, detail, at });
 }
 
 /** Titre connu de l'appli (créé au besoin, statut à calculer) ; l'id TVDB de la fiche est gardé pour Sonarr. */
@@ -409,24 +411,6 @@ export function createRequests(
     return seasonsOf;
   }
 
-  /** Résumés TMDB des titres (en cache) ; un titre (ou TMDB entier) en échec vaut `null`. */
-  async function summaries(rows: RequestRow[]): Promise<Map<string, MediaSummary>> {
-    const found = new Map<string, MediaSummary>();
-    let tmdb: TmdbClient;
-    try {
-      tmdb = deps.tmdb();
-    } catch {
-      return found;
-    }
-    const keys = [...new Map(rows.map((r) => [keyOf(r), { type: r.type, tmdbId: r.tmdbId }])).values()];
-    const settled = await Promise.allSettled(keys.map((k) => tmdb.summary(k.type, k.tmdbId)));
-    settled.forEach((result, i) => {
-      const key = keys[i];
-      if (result.status === 'fulfilled' && key) found.set(keyOf(key), result.value);
-    });
-    return found;
-  }
-
   /** Vues d'une page de demandes : membres, saisons et résumés lus par lot. */
   async function toViews(rows: RequestRow[]): Promise<RequestView[]> {
     if (rows.length === 0) return [];
@@ -445,7 +429,7 @@ export function createRequests(
     const failures = new Map<number, string | null>();
     if (failedIds.length > 0)
       for (const f of lastFailureQuery(db, failedIds).all()) failures.set(f.requestId, f.detail);
-    const titles = await summaries(rows);
+    const titles = await loadSummaries(deps.tmdb, rows);
     const unknown = (id: string): RequestPerson => ({ id, name: id, avatarUrl: null });
     return rows.map((r) => ({
       id: r.id,

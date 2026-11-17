@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import type { Viewer } from '../../src/shared/auth.ts';
 import { EMBY_LINK_PATH, type EmbyLink } from '../../src/shared/emby.ts';
+import type { NotificationPage } from '../../src/shared/notifications.ts';
 import { capabilitiesOf, type Role } from '../../src/shared/roles.ts';
 import { type MaskedSetting, settingSchemas } from '../../src/shared/settings.ts';
 import type { SetupSection, SetupState, TestResults } from '../../src/shared/setup.ts';
@@ -109,6 +110,9 @@ export class ApiMock {
       state.viewer = null;
       return json(route, 204);
     }
+    // Aucune notification par défaut (e2e/notifications.spec.ts en sert d'autres).
+    if (method === 'GET' && pathname === '/api/notifications')
+      return json(route, 200, { page: 1, totalPages: 0, unread: 0, results: [] } satisfies NotificationPage);
     if (method === 'GET' && pathname === EMBY_LINK_PATH) return json(route, 200, { link: state.embyLink });
     if (method === 'GET' && pathname === WEBHOOK_SETTINGS_PATH) return json(route, 200, state.webhooks);
     if (method === 'POST' && pathname === WEBHOOK_TOKEN_PATH) {

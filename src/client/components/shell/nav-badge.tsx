@@ -5,16 +5,10 @@ import { requestCountsQuery } from '@/lib/requests';
 import type { NavItem } from './nav-items';
 
 /**
- * Compteur d'une entrée de navigation (maquettes : `.count`) : demandes en attente d'approbation. Rien tant que le
- * chiffre manque, qu'il est nul ou que le serveur ne répond pas ; ne bloque jamais la navigation. Le chiffre est
- * décoratif, le texte caché le dit aux lecteurs d'écran.
+ * Pastille chiffrée (maquettes : `.count`). Le chiffre est décoratif, `label` le dit aux lecteurs d'écran, à la suite
+ * du libellé du lien ou du bouton.
  */
-export function NavBadge({ item, className }: { item: NavItem; className?: string }) {
-  const canManage = useViewer()?.capabilities.canManageRequests === true;
-  const { data } = useQuery({ ...requestCountsQuery(), enabled: item.count === 'pendingApprovals' && canManage });
-  // Le cache est partagé : sans ce test, chaque entrée de la navigation afficherait le chiffre.
-  const count = item.count === 'pendingApprovals' ? data?.pendingApprovals : null;
-  if (!count) return null;
+export function CountBadge({ count, label, className }: { count: number; label: string; className?: string }) {
   return (
     <>
       <span
@@ -26,7 +20,20 @@ export function NavBadge({ item, className }: { item: NavItem; className?: strin
       >
         {count}
       </span>
-      <span className="sr-only">, {count} en attente</span>
+      <span className="sr-only">, {label}</span>
     </>
   );
+}
+
+/**
+ * Compteur d'une entrée de navigation : demandes en attente d'approbation. Rien tant que le chiffre manque, qu'il est
+ * nul ou que le serveur ne répond pas ; ne bloque jamais la navigation.
+ */
+export function NavBadge({ item, className }: { item: NavItem; className?: string }) {
+  const canManage = useViewer()?.capabilities.canManageRequests === true;
+  const { data } = useQuery({ ...requestCountsQuery(), enabled: item.count === 'pendingApprovals' && canManage });
+  // Le cache est partagé : sans ce test, chaque entrée de la navigation afficherait le chiffre.
+  const count = item.count === 'pendingApprovals' ? data?.pendingApprovals : null;
+  if (!count) return null;
+  return <CountBadge count={count} label={`${count} en attente`} className={className} />;
 }

@@ -38,7 +38,7 @@ export function useRequestAction(media: MediaSummary | undefined): (() => void) 
 }
 
 // Ordinateur : dialogue centré (maquette A-Demande). Mobile : feuille posée en bas de l'écran (maquette R-Mobile).
-const sheet = cn(
+export const bottomSheet = cn(
   'gap-5 overflow-y-auto sm:max-w-none lg:max-w-[560px] lg:p-7',
   'max-lg:top-auto max-lg:bottom-0 max-lg:left-0 max-lg:max-h-[92dvh] max-lg:max-w-none max-lg:translate-x-0 max-lg:translate-y-0',
   'max-lg:rounded-t-[28px] max-lg:rounded-b-none max-lg:px-5 max-lg:pt-3 max-lg:pb-[calc(2rem+env(safe-area-inset-bottom))]',
@@ -61,7 +61,7 @@ export function RequestSheetProvider({ children }: { children: ReactNode }) {
       {children}
       <Dialog open={open} onOpenChange={setOpen}>
         {media && (
-          <DialogContent showCloseButton={false} className={sheet}>
+          <DialogContent showCloseButton={false} className={bottomSheet}>
             <span aria-hidden className="h-[5px] w-10 justify-self-center rounded-full bg-(--track) lg:hidden" />
             <RequestForm key={session} media={media} onClose={() => setOpen(false)} />
           </DialogContent>

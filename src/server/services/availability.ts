@@ -30,6 +30,7 @@ import { listMovies } from '../integrations/radarr.ts';
 import { listSeries } from '../integrations/sonarr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { TtlLru } from '../lib/lru.ts';
+import { notifyRequestEvent } from './notifications.ts';
 import { markAvailable } from './requests.ts';
 import { getSetting } from './settings.ts';
 
@@ -247,7 +248,8 @@ function writeUpdates(db: Db, updates: Update[], now: Date) {
           .values(u.seasons.map((s) => ({ mediaId: row.id, ...s })))
           .run();
     }
-    markAvailable(tx, written, now);
+    for (const requestId of markAvailable(tx, written, now))
+      notifyRequestEvent(tx, { requestId, type: 'available', actorId: null, detail: null, at: now });
   });
 }
 
