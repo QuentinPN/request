@@ -26,20 +26,22 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 
 ## Phase 2 — Configuration et connexion
 
-- [ ] **2.1** (P0) Modules d'intégration Emby, Radarr, Sonarr, TMDB (délai, nouvelles tentatives limitées, erreurs lisibles) → tests contre de faux serveurs
-- [ ] **2.2** (P0) Assistant (une page, sections testées en direct, cf. maquette R-Assistant) → cas d'erreur lisibles
-- [ ] **2.3** (P0) Connexion par compte Emby, sessions, premier admin propriétaire, import des membres → tests de route, cookie httpOnly, origine refusée
-- [ ] **2.4** (P1) Réglages modifiables après coup (mêmes formulaires que l'assistant, aucun doublon)
+- [x] **2.1** (P0) Modules d'intégration Emby, Radarr, Sonarr, TMDB (délai, nouvelles tentatives limitées, erreurs lisibles) → tests contre de faux serveurs
+- [x] **2.2** (P0) Assistant (une page, sections testées en direct, cf. maquette R-Assistant) → cas d'erreur lisibles
+- [x] **2.3** (P0) Connexion par compte Emby, sessions, premier admin propriétaire, import des membres → tests de route, cookie httpOnly, origine refusée
+- [x] **2.4** (P1) Réglages modifiables après coup (mêmes formulaires que l'assistant, aucun doublon)
 
 ## Phase 3 — Découvrir et fiches
 
-- [ ] **3.1** (P0) Client TMDB avec cache, rangées Découvrir, recherche, fiche film et série → fixtures TMDB, captures
-- [ ] **3.2** (P0) Statut de disponibilité calculé côté serveur (Emby + Radarr/Sonarr) et affiché sur chaque affiche → tests par cas (absent, partiel, disponible, en téléchargement)
+- [x] **3.1** (P0) Client TMDB avec cache, rangées Découvrir, recherche, fiche film et série → fixtures TMDB, captures
+- [x] **3.2** (P0) Statut de disponibilité calculé côté serveur (Emby + Radarr/Sonarr) et affiché sur chaque affiche → tests par cas (absent, partiel, disponible, en téléchargement)
+- [ ] **3.3** (P1) Lien « Regarder dans Emby » (adresse publique d'Emby dans les réglages) et nombre d'épisodes présents par saison dans le contrat → affiches et fiche
+- [ ] **3.4** (P1) Logo et favicon : choix du propriétaire entre les finalistes de `docs/logo/round2/final`, puis intégration (en-tête, favicon, icônes)
 
 ## Phase 4 — Demandes
 
-- [ ] **4.1** (P0) Création (film, saisons), droits, approbation automatique, quotas → tests transactionnels, double clic idempotent
-- [ ] **4.2** (P0) Approbations (tableau + panneau sur ordinateur, carte par carte sur mobile), modification avant envoi, refus avec motif, envoi à Radarr/Sonarr → faux Radarr/Sonarr, échec visible et rejouable
+- [~] **4.1** (P0) Création (film, saisons), droits, approbation automatique, quotas → tests transactionnels, double clic idempotent
+- [~] **4.2** (P0) Approbations (tableau + panneau sur ordinateur, carte par carte sur mobile), modification avant envoi, refus avec motif, envoi à Radarr/Sonarr → faux Radarr/Sonarr, échec visible et rejouable
 - [ ] **4.3** (P1) Mes demandes / Toutes les demandes, annulation, bande « Vos demandes en cours » et frise de suivi
 
 ## Phase 5 — Synchronisation et notifications

@@ -4,30 +4,32 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 
 ## Où on en est (2026-11-17)
 
-- **Phase 0** : direction de design validée (DESIGN.md, « Direction validée »). Restent 0.4 (README de Seerr) et 0.5 (API et versions réelles), à faire avant la phase 2.
-- **Phase 1** : 1.1 à 1.3 faits (`npm run verify` vert : lint, types, 11 tests unitaires, build, 6 tests Playwright). 1.4 Shell fait (navigation, routes, `Ctrl+K`, états globaux ; captures `docs/captures/1.4`). Prochain lot : **1.5** puis **1.6**.
-- **Dépôt** : `github.com/QuentinPN/Request` (privé). `main` = production, `dev` = intégration.
+- **Phases 0 à 3** : faites, sauf 0.5 (points [?] de `docs/integrations.md` à confirmer sur les vraies instances), 3.3 (lien « Regarder dans Emby », épisodes présents par saison) et 3.4 (logo : choix du propriétaire attendu).
+- **Phase 4** : API des demandes (4.1, 4.2) en cours sur `feat/demandes-api` ; puis écrans Demandes, Approbations, feuille de demande (4.2, 4.3).
+- **Dépôt** : `github.com/QuentinPN/Request` (privé). `main` = production (rien n'y a encore été fusionné), `dev` = intégration ; une PR par lot, CI `npm run verify`.
+- **Méthode** : lots indépendants en parallèle (un worktree par agent), `checker` sur chaque PR, correctifs avant fusion.
 
 ## Ce qui existe réellement
 
-- Serveur Fastify (`buildApp`) : `GET /api/health`, fichiers du client compilé, repli SPA. En dev, Vite route `/api/*` vers la même app (un seul port, 3000).
-- Base SQLite (WAL, migrations automatiques), table `settings` ; secrets chiffrés AES-256-GCM avec une clé générée dans le dossier de données.
-- Schémas Zod partagés : réglages (Emby, Radarr, Sonarr, TMDB, Discord), statuts de média et leurs libellés.
-- Client : tokens, correspondance shadcn, composants (bouton, carte, affiche, pastille de statut, dialogue, squelette) sur une page de démonstration.
+- **Serveur** : Fastify, garde de session globale sur `/api/*` (cookie httpOnly, CSRF par en-tête + origine, proxy de confiance limité à la boucle locale ou `TRUST_PROXY`), erreurs uniformes `{ error }`.
+- **Connexion** par compte Emby, premier admin Emby = propriétaire, rôles et quotas par membre, import des membres.
+- **Assistant** et Réglages : Emby (bibliothèques), TMDB, Radarr, Sonarr (profils, dossiers), règles et quotas ; secrets chiffrés, jamais renvoyés.
+- **Catalogue** : Découvrir (tendances, populaires, prochainement, ajoutés récemment dans Emby, plateformes), Films/Séries par genre, fiche complète, recherche `Ctrl+K`, images relayées avec cache disque.
+- **Statuts** calculés côté serveur (disponible, partiel, en téléchargement avec progression) et affichés sur chaque affiche et chaque saison.
+- **Base** : SQLite (WAL), migrations 0000 à 0004, modèle dans `docs/DATA_MODEL.md`.
+- **Tests** : ~290 unitaires et de routes (faux Emby/Radarr/Sonarr/TMDB), ~80 e2e Playwright avec axe à 1440 et 390 px.
 
 ## Risques et points de vigilance
 
-| Risque                                                                       | Impact                          | Traitement                        |
-| ---------------------------------------------------------------------------- | ------------------------------- | --------------------------------- |
-| API et versions réelles d'Emby/Radarr/Sonarr non vérifiées (0.5)             | Intégrations à reprendre        | Faire 0.5 avant la phase 2        |
-| `FastifyInstance.data` déclaré non optionnel mais décoré seulement si fourni | Plantage des futures routes     | Tâche 1.5                         |
-| `/api` (sans barre finale) ou `/api?x` inconnus renvoient `index.html`       | Erreurs masquées côté client    | Tâche 1.5                         |
-| Chemin des migrations via `import.meta.dirname`                              | Peut casser dans l'image Docker | À vérifier en 6.1                 |
-| Paquet `cn` (shadcn) à la place de `clsx` + `tailwind-merge`                 | Dépendance peu répandue         | Acceptable ; à revoir si problème |
-| Aucune intégration continue                                                  | Régressions non détectées en PR | Tâche 1.6                         |
+| Risque                                                                                                                 | Impact                                   | Traitement                                               |
+| ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------- |
+| Points [?] des API (Emby `AnyProviderIdEquals`, lien profond, webhooks Premiere) non vérifiés sur les vraies instances | Statuts ou liens faux en production      | 0.5 : essai sur le mini-PC avant 6.3                     |
+| Rebinding DNS pendant l'amorçage (avant propriétaire)                                                                  | Prise de contrôle pendant l'installation | Accepté, documenté ; installation courte en réseau local |
+| Lignes `media` sans statut accumulées                                                                                  | Base qui grossit                         | Purge dans le balayage complet (5.1)                     |
+| Disque du cache d'images sans limite                                                                                   | Espace disque                            | À borner en 6.1                                          |
 
 ## Prochaines actions
 
-1. 1.5 Corrections API (404 JSON, type `data`).
-2. 1.6 CI GitHub Actions.
-3. 0.4 / 0.5, puis phase 2 (intégrations, assistant, connexion).
+1. Fusionner l'API des demandes (4.1/4.2), puis en parallèle : écrans des demandes (feuille, Mes demandes, Approbations) et 3.3.
+2. Phase 5 : webhooks Radarr/Sonarr, balayages planifiés, notifications.
+3. Choix du logo par le propriétaire (3.4), puis phase 6 (Docker, déploiement).
