@@ -1,4 +1,3 @@
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { eq, lte } from 'drizzle-orm';
@@ -16,7 +15,7 @@ import {
   upsertFromEmby,
 } from '../src/server/services/users.ts';
 import { roles } from '../src/shared/roles.ts';
-import { trackTempDirs } from './helpers.ts';
+import { queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 afterEach(() => vi.restoreAllMocks());
@@ -27,22 +26,14 @@ const insertUser = (db: ReturnType<typeof openDb>, role: string, quotaOverride: 
     .run(`u-${role}`, `Nom ${role}`, role, quotaOverride);
 
 describe('index des sessions', () => {
-  /** Plan d'exécution de la requête Drizzle (même SQL et mêmes paramètres que ceux envoyés à SQLite). */
-  const plan = (db: ReturnType<typeof openDb>, query: { toSQL: () => { sql: string; params: unknown[] } }) => {
-    const { sql, params } = query.toSQL();
-    return (db.$client.prepare(`explain query plan ${sql}`).all(...params) as Array<{ detail: string }>)
-      .map((step) => step.detail)
-      .join(' | ');
-  };
-
   it('servent la révocation des sessions d’un membre', () => {
     const db = openDb(':memory:');
-    expect(plan(db, db.delete(sessions).where(eq(sessions.userId, 'a')))).toContain('sessions_user_id_idx');
+    expect(queryPlan(db, db.delete(sessions).where(eq(sessions.userId, 'a')))).toContain('sessions_user_id_idx');
   });
 
   it('servent la purge des sessions expirées', () => {
     const db = openDb(':memory:');
-    expect(plan(db, db.delete(sessions).where(lte(sessions.expiresAt, new Date())))).toContain(
+    expect(queryPlan(db, db.delete(sessions).where(lte(sessions.expiresAt, new Date())))).toContain(
       'sessions_expires_at_idx',
     );
   });
@@ -117,22 +108,10 @@ describe('PRAGMA', () => {
 });
 
 describe('migration 0002 (durcissement)', () => {
-  /** Dossier de migrations tronqué à `count` entrées : la base telle qu'elle était avant 0002. */
-  const truncatedMigrations = (count: number) => {
-    const dir = join(tempDir(), 'migrations');
-    mkdirSync(join(dir, 'meta'), { recursive: true });
-    const journalFile = join(migrationsFolder, 'meta', '_journal.json');
-    const journal = JSON.parse(readFileSync(journalFile, 'utf8')) as { entries: Array<{ tag: string }> };
-    journal.entries = journal.entries.slice(0, count);
-    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify(journal));
-    for (const { tag } of journal.entries) cpSync(join(migrationsFolder, `${tag}.sql`), join(dir, `${tag}.sql`));
-    return dir;
-  };
-
   it('conserve les membres existants et leur rôle', () => {
     const sqlite = new Database(join(tempDir(), 'avant.db'));
     sqlite.pragma('foreign_keys = ON');
-    migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(2) });
+    migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 2) });
     sqlite.exec(`
       insert into users (id, name, avatar, role, quota_override, last_login_at) values
         ('a', 'Alice', 'http://emby/a.png', 'owner', '{"movies":{"limit":2,"days":7},"seasons":null}', 1700000000),

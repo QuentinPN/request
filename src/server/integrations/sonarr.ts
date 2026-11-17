@@ -131,15 +131,39 @@ export async function addSeries(config: ArrConfig, input: AddSeriesInput): Promi
   );
 }
 
-/** Avancement par saison (épisodes présents / diffusés / total), d'après les statistiques de la série. */
-export async function getSeriesSeasonStatus(config: ArrConfig, sonarrId: number): Promise<SeasonStatus[]> {
-  const series: Series = await arrClient('sonarr', config).get(`/series/${sonarrId}`, seriesSchema);
-  return series.seasons.map(({ seasonNumber, statistics }) => ({
+const toSeasonStatuses = (series: Series): SeasonStatus[] =>
+  series.seasons.map(({ seasonNumber, statistics }) => ({
     seasonNumber,
     episodeFileCount: statistics?.episodeFileCount ?? 0,
     episodeCount: statistics?.episodeCount ?? 0,
     ...(statistics?.totalEpisodeCount !== undefined && { totalEpisodeCount: statistics.totalEpisodeCount }),
   }));
+
+/** Avancement par saison (épisodes présents / diffusés / total), d'après les statistiques de la série. */
+export async function getSeriesSeasonStatus(config: ArrConfig, sonarrId: number): Promise<SeasonStatus[]> {
+  return toSeasonStatuses(await arrClient('sonarr', config).get(`/series/${sonarrId}`, seriesSchema));
+}
+
+export interface LibrarySeries {
+  sonarrId: number;
+  tvdbId: number;
+  /** Présent depuis Sonarr v4 ; absent en v3. */
+  tmdbId?: number;
+  seasons: SeasonStatus[];
+}
+const librarySeriesSchema = seriesSchema.extend({ tvdbId: z.number().catch(0), tmdbId: lenient(z.number()) });
+
+/** Toutes les séries de Sonarr en un appel, avec leurs statistiques par saison (statuts d'une page d'affiches). */
+export async function listSeries(config: ArrConfig): Promise<LibrarySeries[]> {
+  const all = await arrClient('sonarr', config).get('/series', z.array(librarySeriesSchema));
+  return all
+    .filter((series) => series.id > 0)
+    .map((series) => ({
+      sonarrId: series.id,
+      tvdbId: series.tvdbId,
+      ...(series.tmdbId !== undefined && series.tmdbId > 0 && { tmdbId: series.tmdbId }),
+      seasons: toSeasonStatuses(series),
+    }));
 }
 
 export const parseSonarrWebhook = (body: unknown) => parseArrWebhook(body, 'series');

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { keyOf } from '../../shared/media.ts';
 import type { Connection } from '../../shared/settings.ts';
 import type { EmbyLibrary } from '../../shared/setup.ts';
 import { createClient, httpRequest, IntegrationError } from './http.ts';
@@ -36,14 +37,10 @@ const librariesSchema = z.array(
   z.object({ ItemId: id.nullish(), Name: z.string(), CollectionType: z.string().nullish() }),
 );
 
+const providerIdsSchema = z.record(z.string(), z.union([z.string(), z.number()]).nullable()).nullish();
+
 const itemsSchema = z.object({
-  Items: z.array(
-    z.object({
-      Id: id,
-      Name: z.string(),
-      ProviderIds: z.record(z.string(), z.union([z.string(), z.number()]).nullable()).nullish(),
-    }),
-  ),
+  Items: z.array(z.object({ Id: id, Name: z.string(), ProviderIds: providerIdsSchema })),
 });
 
 const episodesSchema = z.object({
@@ -149,23 +146,47 @@ export async function listEmbyLibraries(config: EmbyConfig): Promise<EmbyLibrary
   });
 }
 
+/** Nombre d'appels Emby simultanés au plus : on ne noie pas un petit serveur, sans tout enchaîner un par un. */
+const EMBY_CONCURRENCY = 3;
+
+/** `fn` sur chaque élément, `EMBY_CONCURRENCY` à la fois ; résultats dans l'ordre. */
+async function mapBounded<T, R>(items: readonly T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < items.length; i = next++) results[i] = await fn(items[i] as T);
+  };
+  await Promise.all(Array.from({ length: Math.min(EMBY_CONCURRENCY, items.length) }, worker));
+  return results;
+}
+
 const chunk = <T>(values: T[], size: number): T[][] =>
   Array.from({ length: Math.ceil(values.length / size) }, (_, i) => values.slice(i * size, (i + 1) * size));
 
 /** Lit un identifiant de fournisseur sans tenir compte de la casse de la clé (`Tmdb`, `tmdb`…). */
-function providerId(providerIds: Record<string, string | number | null> | null | undefined, provider: 'tmdb' | 'tvdb') {
+function providerId(providerIds: z.infer<typeof providerIdsSchema>, provider: 'tmdb' | 'tvdb') {
   const raw = Object.entries(providerIds ?? {}).find(([key]) => key.toLowerCase() === provider)?.[1];
   const value = Number(raw);
   return raw != null && Number.isInteger(value) ? value : undefined;
 }
 
+/** `ParentId` de chaque bibliothèque suivie ; aucune bibliothèque choisie = tout le serveur (une requête sans filtre). */
+const parentsOf = (libraryIds: readonly string[] = []): Array<string | undefined> =>
+  libraryIds.length > 0 ? [...libraryIds] : [undefined];
+
 /**
  * Éléments d'Emby correspondant à des ids TMDB et/ou TVDB. Les ids sont envoyés par lots, un fournisseur par
  * requête (`AnyProviderIdEquals=tmdb.603,tmdb.604`) ; chaque résultat est rapproché par ses `ProviderIds`.
+ * `libraryIds` limite la recherche aux bibliothèques suivies (`ParentId`, une requête par bibliothèque et par lot).
  */
 export async function findEmbyItems(
   config: EmbyConfig,
-  query: { type: 'movie' | 'series'; tmdbIds?: readonly number[]; tvdbIds?: readonly number[] },
+  query: {
+    type: 'movie' | 'series';
+    tmdbIds?: readonly number[];
+    tvdbIds?: readonly number[];
+    libraryIds?: readonly string[];
+  },
 ): Promise<EmbyItem[]> {
   const tmdbIds = new Set(query.tmdbIds);
   const tvdbIds = new Set(query.tvdbIds);
@@ -179,13 +200,15 @@ export async function findEmbyItems(
   const client = embyClient(config);
   const found = new Map<string, EmbyItem>();
 
-  for (const batch of batches) {
+  const requests = batches.flatMap((batch) => parentsOf(query.libraryIds).map((parentId) => ({ batch, parentId })));
+  await mapBounded(requests, async ({ batch, parentId }) => {
     const { Items } = await client.get('/Items', itemsSchema, {
       query: {
         Recursive: true,
         IncludeItemTypes: query.type === 'movie' ? 'Movie' : 'Series',
         Fields: 'ProviderIds',
         AnyProviderIdEquals: batch.join(','),
+        ParentId: parentId,
       },
     });
     for (const item of Items) {
@@ -200,8 +223,63 @@ export async function findEmbyItems(
         ...(tvdbId !== undefined && { tvdbId }),
       });
     }
-  }
+  });
   return [...found.values()];
+}
+
+export interface EmbyLatestItem {
+  type: 'movie' | 'tv';
+  tmdbId: number;
+  /** Date d'ajout à la bibliothèque (ms depuis l'époque Unix), `0` si Emby ne la donne pas. */
+  addedAt: number;
+}
+
+const latestSchema = z.object({
+  Items: z.array(
+    z.object({
+      Type: z.string().nullish(),
+      DateCreated: z.string().nullish(),
+      ProviderIds: providerIdsSchema,
+    }),
+  ),
+});
+
+/**
+ * Films et séries les plus récemment ajoutés aux bibliothèques suivies (une requête par bibliothèque), du plus récent
+ * au plus ancien. Les éléments sans id TMDB sont écartés : TMDB fournit affiche et résumé.
+ */
+export async function latestEmbyItems(
+  config: EmbyConfig,
+  { libraryIds, limit }: { libraryIds?: readonly string[]; limit: number },
+): Promise<EmbyLatestItem[]> {
+  const client = embyClient(config);
+  const pages = await mapBounded(parentsOf(libraryIds), (parentId) =>
+    client.get('/Items', latestSchema, {
+      query: {
+        Recursive: true,
+        IncludeItemTypes: 'Movie,Series',
+        SortBy: 'DateCreated',
+        SortOrder: 'Descending',
+        Fields: 'ProviderIds,DateCreated',
+        Limit: limit,
+        ParentId: parentId,
+      },
+    }),
+  );
+  const items = pages
+    .flatMap(({ Items }) =>
+      Items.flatMap((item): EmbyLatestItem[] => {
+        const type = item.Type === 'Movie' ? 'movie' : item.Type === 'Series' ? 'tv' : undefined;
+        const tmdbId = providerId(item.ProviderIds, 'tmdb');
+        if (!type || tmdbId === undefined) return [];
+        return [{ type, tmdbId, addedAt: Date.parse(item.DateCreated ?? '') || 0 }];
+      }),
+    )
+    .sort((a, b) => b.addedAt - a.addedAt);
+  // Un même titre peut figurer dans deux bibliothèques : on garde son ajout le plus récent.
+  const unique = new Map<string, EmbyLatestItem>();
+  for (const item of items) if (!unique.has(keyOf(item))) unique.set(keyOf(item), item);
+  return [...unique.values()].slice(0, limit);
 }
 
 /** Épisodes présents par saison d'une série Emby (triées par numéro de saison). */

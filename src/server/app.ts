@@ -12,7 +12,9 @@ import { catalogueRoutes } from './routes/catalogue.ts';
 import { imageRoutes } from './routes/images.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { usersRoutes } from './routes/users.ts';
+import { type AvailabilityService, createAvailability } from './services/availability.ts';
 import { createImageCache } from './services/images.ts';
+import { failOrphanJobs } from './services/jobs.ts';
 import { createTmdbProvider } from './services/tmdb.ts';
 
 declare module 'fastify' {
@@ -20,6 +22,8 @@ declare module 'fastify' {
     data: Data;
     /** Client TMDB d'après le réglage courant ; lève `NotConfiguredError` tant que TMDB n'est pas configuré. */
     tmdb: () => TmdbClient;
+    /** Statut de disponibilité des titres (Emby, Radarr, Sonarr), en cache dans `media`. */
+    availability: AvailabilityService;
   }
 }
 
@@ -62,6 +66,9 @@ export async function buildApp({
   const app = Fastify({ logger: false, trustProxy });
   app.decorate('data', data);
   app.decorate('tmdb', createTmdbProvider(data, upstreams.tmdbUrl));
+  app.decorate('availability', createAvailability(data, { tmdb: app.tmdb }));
+  // Démarrage : une tâche restée « en cours » a été interrompue par l'arrêt précédent.
+  failOrphanJobs(data.db);
   app.addHook('onClose', () => data.db.$client.close());
   app.setErrorHandler(apiErrorHandler);
   // Avant toute route : le garde de /api couvre aussi les plugins enregistrés ensuite (catalogue, images).

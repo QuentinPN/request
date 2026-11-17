@@ -59,6 +59,17 @@ export async function getMovieByTmdbId(config: ArrConfig, tmdbId: number): Promi
   return movie ? toStatus(movie) : null;
 }
 
+export interface LibraryMovie extends MovieStatus {
+  tmdbId: number;
+}
+const libraryMovieSchema = movieSchema.extend({ tmdbId: z.number().catch(0) });
+
+/** Tous les films de Radarr en un appel : les statuts d'une page d'affiches sans une requête par film. */
+export async function listMovies(config: ArrConfig): Promise<LibraryMovie[]> {
+  const movies = await arrClient('radarr', config).get('/movie', z.array(libraryMovieSchema));
+  return movies.filter((m) => m.id > 0 && m.tmdbId > 0).map((m) => ({ ...toStatus(m), tmdbId: m.tmdbId }));
+}
+
 export async function getMovieStatus(config: ArrConfig, radarrId: number): Promise<MovieStatus> {
   return toStatus(await arrClient('radarr', config).get(`/movie/${radarrId}`, movieSchema));
 }

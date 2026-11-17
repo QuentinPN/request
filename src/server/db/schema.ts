@@ -1,6 +1,9 @@
 import { sql } from 'drizzle-orm';
-import { check, customType, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { check, customType, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { jobRunStatuses } from '../../shared/jobs.ts';
+import { mediaTypes } from '../../shared/media.ts';
 import { type QuotaOverride, quotaOverrideSchema, roles } from '../../shared/roles.ts';
+import { mediaStatuses } from '../../shared/status.ts';
 import { enumCheck } from './checks.ts';
 
 /**
@@ -66,4 +69,78 @@ export const sessions = sqliteTable(
     userAgent: text(),
   },
   (table) => [index('sessions_user_id_idx').on(table.userId), index('sessions_expires_at_idx').on(table.expiresAt)],
+);
+
+/**
+ * Titres connus de l'appli (vus sur une affiche, dans Emby, Radarr ou Sonarr). Pas de titre ni d'affiche : TMDB reste
+ * la source. `status` est un **cache** du statut de bibliothèque calculé par `services/availability.ts`
+ * (`NULL` = absent : ni dans Emby ni chez Radarr/Sonarr), daté par `statusUpdatedAt` pour sa durée de vie.
+ */
+export const media = sqliteTable(
+  'media',
+  {
+    id: integer().primaryKey(),
+    type: text({ enum: mediaTypes }).notNull(),
+    tmdbId: integer().notNull(),
+    tvdbId: integer(),
+    radarrId: integer(),
+    sonarrId: integer(),
+    embyItemId: text(),
+    status: text({ enum: mediaStatuses }),
+    statusUpdatedAt: integer({ mode: 'timestamp' }).notNull(),
+    /** Dernier calcul des saisons (série) ; `NULL` = jamais calculées, la fiche les calcule alors à la prochaine visite. */
+    seasonsComputedAt: integer({ mode: 'timestamp' }),
+    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  },
+  (table) => [
+    enumCheck('media_type_check', table.type, mediaTypes),
+    enumCheck('media_status_check', table.status, mediaStatuses),
+    // Badge de chaque affiche : lecture par lot `WHERE (type, tmdb_id) IN (VALUES …)`.
+    uniqueIndex('media_type_tmdb_id_unique').on(table.type, table.tmdbId),
+    // Webhooks Radarr/Sonarr (tâche 5.1). Partiels : la plupart des titres n'ont aucun de ces ids.
+    index('media_tvdb_id_idx').on(table.tvdbId).where(sql`${table.tvdbId} IS NOT NULL`),
+    index('media_radarr_id_idx').on(table.radarrId).where(sql`${table.radarrId} IS NOT NULL`),
+    index('media_sonarr_id_idx').on(table.sonarrId).where(sql`${table.sonarrId} IS NOT NULL`),
+  ],
+);
+
+/** Statut par saison d'une série (cache, comme `media.status`) : seules les saisons ayant un statut ont une ligne. */
+export const seasons = sqliteTable(
+  'seasons',
+  {
+    id: integer().primaryKey(),
+    mediaId: integer()
+      .notNull()
+      .references(() => media.id, { onDelete: 'cascade' }),
+    seasonNumber: integer().notNull(),
+    status: text({ enum: mediaStatuses }).notNull(),
+  },
+  (table) => [
+    enumCheck('seasons_status_check', table.status, mediaStatuses),
+    // Couvre aussi l'accès (et la cascade) par média.
+    uniqueIndex('seasons_media_id_season_number_unique').on(table.mediaId, table.seasonNumber),
+  ],
+);
+
+/**
+ * Exécutions des tâches de fond. Verrou : une seule ligne `running` par tâche (index unique partiel) ; démarrer
+ * = insérer, une violation d'unicité signifie « déjà en cours ».
+ */
+export const jobRuns = sqliteTable(
+  'job_runs',
+  {
+    id: integer().primaryKey(),
+    job: text().notNull(),
+    status: text({ enum: jobRunStatuses }).notNull(),
+    startedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    finishedAt: integer({ mode: 'timestamp' }),
+    detail: text(),
+  },
+  (table) => [
+    enumCheck('job_runs_status_check', table.status, jobRunStatuses),
+    // Littéral (pas de paramètre lié dans le DDL d'un index partiel).
+    uniqueIndex('job_runs_running').on(table.job).where(sql`${table.status} = 'running'`),
+    // « Dernier balayage » d'une tâche (`ORDER BY started_at DESC` parcourt l'index à rebours).
+    index('job_runs_job_started_at_idx').on(table.job, table.startedAt),
+  ],
 );

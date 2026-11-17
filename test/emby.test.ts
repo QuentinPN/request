@@ -172,7 +172,7 @@ describe('findEmbyItems', () => {
     });
     const items = await findEmbyItems(server.config, { type: 'series', tmdbIds: [70523], tvdbIds: [334824] });
     expect(items).toEqual([{ embyId: '200', name: 'Dark', tmdbId: 70523, tvdbId: 334824 }]);
-    expect(server.requests.map((r) => r.query.AnyProviderIdEquals)).toEqual(['tmdb.70523', 'tvdb.334824']);
+    expect(server.requests.map((r) => r.query.AnyProviderIdEquals).sort()).toEqual(['tmdb.70523', 'tvdb.334824']);
     expect(server.requests[0]?.query).toMatchObject({ IncludeItemTypes: 'Series', Recursive: 'true' });
   });
 

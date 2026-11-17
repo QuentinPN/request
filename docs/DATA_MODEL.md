@@ -18,11 +18,11 @@ SQLite (better-sqlite3 + Drizzle, `casing: 'snake_case'`), un seul processus, WA
 
 Conventions : clés primaires `integer` auto-incrémentées pour les tables internes, `text` pour les ids externes (Emby). Clés étrangères toujours indexées. `created_at`/`updated_at` en secondes.
 
-**`media`** — un titre connu de l'appli (demandé ou vu dans Emby).
-`id` PK · `type` text `CHECK IN ('movie','tv')` · `tmdb_id` int NOT NULL · `tvdb_id` int · `radarr_id` int · `sonarr_id` int · `emby_item_id` text · `status` text NOT NULL `CHECK IN mediaStatuses` · `status_updated_at` · `created_at`.
+**`media`** — un titre connu de l'appli (vu sur une affiche, dans Emby, Radarr ou Sonarr, ou demandé).
+`id` PK · `type` text `CHECK IN ('movie','tv')` · `tmdb_id` int NOT NULL · `tvdb_id` int · `radarr_id` int · `sonarr_id` int · `emby_item_id` text · `status` text `CHECK IN mediaStatuses`, **nullable** : `NULL` = absent (le cache retient aussi l'absence, sinon chaque affiche inconnue relancerait les appels) · `status_updated_at` · `seasons_computed_at` (dernier calcul des saisons d'une série, nullable) · `created_at`.
 Index : `UNIQUE(tmdb_id, type)` (badge de chaque affiche : lecture par lot `WHERE (tmdb_id,type) IN …`), `tvdb_id` (webhooks Sonarr), `radarr_id`, `sonarr_id` (webhooks). Pas de titre ni d'affiche : TMDB reste la source (cache mémoire). `media_type` partagé dans `src/shared/media.ts`.
 
-**`seasons`** — `id` PK · `media_id` FK → media `ON DELETE CASCADE` · `season_number` int · `status` text `CHECK IN mediaStatuses` · `UNIQUE(media_id, season_number)` (couvre aussi l'accès par média).
+**`seasons`** — `id` PK · `media_id` FK → media `ON DELETE CASCADE` · `season_number` int · `status` text NOT NULL `CHECK IN mediaStatuses` (seules les saisons ayant un statut ont une ligne) · `UNIQUE(media_id, season_number)` (couvre aussi l'accès par média).
 
 **`requests`** — `id` PK · `media_id` FK → media `ON DELETE RESTRICT` · `user_id` FK → users `ON DELETE CASCADE` · `status` text `CHECK IN requestStatuses` · `decided_by` FK → users `ON DELETE SET NULL` · `decline_reason` text · `quality_profile_id` int · `root_folder` text · `is_4k` int NOT NULL DEFAULT 0 (réservé, toujours 0) · `created_at` · `updated_at`.
 Index : `(user_id, created_at)` (« Mes demandes » + quota), `(status, created_at)` (file d'approbation), `(media_id)`.
@@ -33,7 +33,7 @@ Index : `(user_id, created_at)` (« Mes demandes » + quota), `(status, created_
 
 **`notifications`** — `id` PK · `user_id` FK `CASCADE` · `request_id` FK `SET NULL` · `kind` text `CHECK` · `read_at` · `created_at`. Index `(user_id, created_at DESC)` et partiel `(user_id) WHERE read_at IS NULL` (pastille non lus). Le texte est rendu à l'affichage depuis `kind` (pas de chaîne figée en base).
 
-**`job_runs`** — `id` PK · `job` text · `status` `CHECK IN ('running','success','failed')` · `started_at` · `finished_at` · `detail`. Verrou : `CREATE UNIQUE INDEX job_runs_running ON job_runs(job) WHERE status = 'running'`. Démarrer un balayage = `INSERT` ; la violation d'unicité signifie « déjà en cours ». Au démarrage du serveur, passer en `failed` les lignes `running` orphelines (crash). Index `(job, started_at DESC)` pour « dernier balayage ».
+**`job_runs`** — `id` PK · `job` text · `status` `CHECK IN ('running','success','failed')` · `started_at` · `finished_at` · `detail`. Verrou : `CREATE UNIQUE INDEX job_runs_running ON job_runs(job) WHERE status = 'running'`. Démarrer un balayage = `INSERT` ; la violation d'unicité signifie « déjà en cours ». Au démarrage du serveur, passer en `failed` les lignes `running` orphelines (crash). Index `(job, started_at)` pour « dernier balayage » (SQLite le parcourt à rebours pour `ORDER BY started_at DESC`). Fait en 3.2 : `services/jobs.ts` (`startJob` → `null` si déjà en cours, `finishJob`, `failOrphanJobs` appelé par `buildApp`).
 
 **Webhooks** : pas de table. Les webhooks Radarr/Sonarr ne font que déclencher un recalcul idempotent du statut (`media.status` dérivé de l'état courant) ; un doublon recalcule la même valeur. Les `request_events` ne sont ajoutés que si le statut change.
 
@@ -60,9 +60,10 @@ Seule la colonne `requests.is_4k` (et sa présence dans l'index ci-dessus) est p
 
 ## 3. Statuts : une seule source
 
-- `src/shared/status.ts` est l'unique définition : `mediaStatuses` (existant), à compléter de `requestStatuses` (`pending`, `approved`, `declined`, `cancelled`, `sent`, `failed`, `available`) — l'annulation par le membre passe la demande en `cancelled` (historique conservé, hors quota, hors `requests_active`) et `requestEventTypes`. Les `CHECK` SQL et les schémas Zod en dérivent.
+- `src/shared/status.ts` est l'unique définition : `mediaStatuses` (existant), à compléter de `requestStatuses` (`pending`, `approved`, `declined`, `cancelled`, `sent`, `failed`, `available`) — l'annulation par le membre passe la demande en `cancelled` (historique conservé, hors quota, hors `requests_active`) et `requestEventTypes` (valeurs à fixer en 4.1/4.2 ; `requestStatuses` posé en 3.2). Les `CHECK` SQL et les schémas Zod en dérivent.
 - **Stockés** : `requests.status` (cycle de vie piloté par l'appli), `request_events` (faits), `media.status` et `seasons.status` (**cache** calculé par le serveur à partir d'Emby + Radarr/Sonarr + demandes).
-- **Dérivés, jamais stockés** : étape courante de la frise (dernier évènement), compteurs de quota, nombre de non lus, `partial` (calculé depuis les saisons).
+- **Dérivés, jamais stockés** : étape courante de la frise (dernier évènement), compteurs de quota, nombre de non lus, progression d'un téléchargement (lue dans la file Radarr/Sonarr, en cache mémoire 30 s). `partial` est calculé depuis les saisons mais **gardé dans `media.status`** (cache) : une page d'affiches se lit en une requête, sans agrégat.
+- **3.2** : `media.status` ne garde que la part bibliothèque (`available`, `partial`, `downloading`, `NULL`). Le statut affiché = `displayStatus(bibliothèque, demande)` (`services/availability.ts`), seule fusion ; la part demande (4.1) y sera branchée sans toucher au calcul. Durée de vie du cache : 5 min (1 min en téléchargement) ; le balayage complet viendra en 5.1.
 - Une seule fonction serveur calcule le statut d'un média ; webhooks, balayages et création de demande l'appellent.
 
 ## 4. Migrations et exploitation
@@ -105,8 +106,8 @@ erDiagram
 ## 5. Tâches, par priorité
 
 1. **Fait (tâche 1.7, correctif socle)** — index `sessions(user_id)` et `sessions(expires_at)`, `CHECK` sur `users.role` et `json_valid` sur `quota_override` (relu avec `quotaOverrideSchema`), `users.last_login_at` nullable, PRAGMA `synchronous`/`journal_size_limit`. _Critères_ : migration générée ; `EXPLAIN QUERY PLAN` des deux requêtes de `sessions.ts` utilise l'index ; un `INSERT` avec un rôle inconnu échoue.
-2. **3.2** — `media`, `seasons`, `requestStatuses` dans `status.ts`, fonction unique de calcul du statut. _Critères_ : tests absent / partiel / disponible / en téléchargement ; lecture par lot des statuts d'une page d'affiches en une requête.
+2. **Fait (3.2)** — `media`, `seasons`, `job_runs`, `requestStatuses` dans `status.ts`, fonction unique de calcul du statut. _Critères_ : tests absent / partiel / disponible / en téléchargement ; lecture par lot des statuts d'une page d'affiches en une requête.
 3. **4.1** — `requests`, `request_seasons`, `request_events`, index `requests_active`. _Critères_ : quota testé en bord de fenêtre ; deux POST identiques → une seule ligne ; quota dépassé → rien d'inséré (transaction).
 4. **4.2** — évènements `approved`/`declined`/`sent`/`failed`, relance d'un échec. _Critères_ : la frise se reconstruit depuis `request_events` ; une relance ajoute un évènement sans en effacer.
-5. **5.1** — `job_runs` + verrou partiel, recalcul idempotent sur webhook, sauvegarde et purges planifiées. _Critères_ : deux balayages simultanés → un seul démarre ; webhook rejoué → aucun évènement en double ; sauvegarde restaurable testée.
+5. **5.1** — `job_runs` + verrou partiel, recalcul idempotent sur webhook, sauvegarde et purges planifiées. _Critères_ : deux balayages simultanés → un seul démarre ; webhook rejoué → aucun évènement en double ; sauvegarde restaurable testée. Le balayage complet purge aussi les lignes `media` sans statut, sans demande et sans accès récent (par exemple plus de 30 jours) : les titres vus sur une affiche s'accumulent sinon.
 6. **5.2** — `notifications`. _Critères_ : compteur non lus via l'index partiel ; texte du message testé par `kind`.

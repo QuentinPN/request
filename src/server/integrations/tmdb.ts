@@ -297,6 +297,10 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
       }
     },
 
+    /** Résumé d'un titre (affiche, année, synopsis), sans le reste de la fiche. */
+    summary: async (type: MediaType, id: number): Promise<MediaSummary> =>
+      toSummary(await get(`/${type}/${id}`, rawMedia, {}, DETAILS_TTL_MS), type),
+
     /** Identifiant TVDB d'une série (Sonarr), `null` si TMDB ne le connaît pas. */
     tvdbIdFor: async (tvId: number): Promise<number | null> => {
       const ids = await get(

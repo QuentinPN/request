@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
-import { openDataDir } from '../src/server/db/index.ts';
+import { type Db, migrationsFolder, openDataDir } from '../src/server/db/index.ts';
 import { SESSION_COOKIE } from '../src/server/plugins/auth.ts';
 import { createSession } from '../src/server/services/sessions.ts';
 import { setRole, type User, upsertFromEmby } from '../src/server/services/users.ts';
@@ -74,3 +74,24 @@ export async function loginAs(app: FastifyInstance, role: Role, id = `membre-${r
 
 /** Session du propriétaire (crée le membre propriétaire au besoin). */
 export const loginAsOwner = (app: FastifyInstance) => loginAs(app, 'owner', 'proprietaire');
+
+/** Plan d'exécution d'une requête Drizzle (même SQL et mêmes paramètres que ceux envoyés à SQLite). */
+export function queryPlan(db: Db, query: { toSQL: () => { sql: string; params: unknown[] } }): string {
+  const { sql, params } = query.toSQL();
+  return (db.$client.prepare(`explain query plan ${sql}`).all(...params) as Array<{ detail: string }>)
+    .map((step) => step.detail)
+    .join(' | ');
+}
+
+/** Copie des migrations tronquée aux `count` premières, dans `parent` : la base telle qu'elle était avant les suivantes. */
+export function truncatedMigrations(parent: string, count: number): string {
+  const dir = join(parent, 'migrations');
+  mkdirSync(join(dir, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync(join(migrationsFolder, 'meta', '_journal.json'), 'utf8')) as {
+    entries: Array<{ tag: string }>;
+  };
+  journal.entries = journal.entries.slice(0, count);
+  writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify(journal));
+  for (const { tag } of journal.entries) cpSync(join(migrationsFolder, `${tag}.sql`), join(dir, `${tag}.sql`));
+  return dir;
+}

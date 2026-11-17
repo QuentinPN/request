@@ -1,28 +1,45 @@
 import { z } from 'zod';
+import { availabilitySchema } from './status.ts';
 
-export const mediaTypeSchema = z.enum(['movie', 'tv']);
+export const mediaTypes = ['movie', 'tv'] as const;
+export const mediaTypeSchema = z.enum(mediaTypes);
 export type MediaType = z.infer<typeof mediaTypeSchema>;
 
-/** Média normalisé tel qu'il est envoyé au client (film ou série, issu de TMDB). */
-export const mediaSummarySchema = z.object({
-  tmdbId: z.number().int(),
-  type: mediaTypeSchema,
-  title: z.string(),
-  year: z.number().int().nullable(),
-  posterPath: z.string().nullable(),
-  backdropPath: z.string().nullable(),
-  overview: z.string(),
-});
+export interface MediaKey {
+  type: MediaType;
+  tmdbId: number;
+}
+/** Clé unique d'un média (`movie:123`), partagée par les intégrations et les services. */
+export const keyOf = ({ type, tmdbId }: MediaKey) => `${type}:${tmdbId}`;
+
+/**
+ * Média normalisé tel qu'il est envoyé au client (film ou série, issu de TMDB), avec son statut calculé par le
+ * serveur (`status` absent : ni dans la bibliothèque ni demandé).
+ */
+export const mediaSummarySchema = z
+  .object({
+    tmdbId: z.number().int(),
+    type: mediaTypeSchema,
+    title: z.string(),
+    year: z.number().int().nullable(),
+    posterPath: z.string().nullable(),
+    backdropPath: z.string().nullable(),
+    overview: z.string(),
+  })
+  .extend(availabilitySchema.shape);
 export type MediaSummary = z.infer<typeof mediaSummarySchema>;
 
 export const genreSchema = z.object({ id: z.number().int(), name: z.string() });
 export type Genre = z.infer<typeof genreSchema>;
 
-export const seasonSchema = z.object({
-  seasonNumber: z.number().int(),
-  episodeCount: z.number().int(),
-  airDate: z.string().nullable(),
-});
+/** Saison d'une série, avec son statut propre (fiche titre). */
+export const seasonSchema = z
+  .object({
+    seasonNumber: z.number().int(),
+    episodeCount: z.number().int(),
+    airDate: z.string().nullable(),
+  })
+  .extend(availabilitySchema.shape);
 export type Season = z.infer<typeof seasonSchema>;
 
 export const castMemberSchema = z.object({
