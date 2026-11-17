@@ -4,10 +4,16 @@ import { cn } from 'cn';
 import { X } from 'lucide-react';
 import { createContext, type FormEvent, type ReactNode, useCallback, useContext, useId, useRef, useState } from 'react';
 import type { MediaDetails, MediaSummary, Season } from '../../../shared/media.ts';
-import type { CreateRequestInput, RequestDetail, RequestQuota } from '../../../shared/requests.ts';
+import {
+  type CreateRequestInput,
+  isAiredSeason,
+  isoDay,
+  type RequestDetail,
+  type RequestQuota,
+} from '../../../shared/requests.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
 import { mediaQuery, plural, regularSeasons, seasonMeta, seasonTitle, summaryMeta } from '../../lib/catalogue.ts';
-import { ApiError } from '../../lib/http.ts';
+import { errorMessage } from '../../lib/http.ts';
 import { arrName, requestProgress, requestQuotaQuery, useCreateRequest } from '../../lib/requests.ts';
 import { canRequest } from '../../lib/status.ts';
 import { StatusPill } from '../media/status-pill.tsx';
@@ -111,11 +117,8 @@ function RequestForm({ media, onClose }: { media: MediaSummary; onClose: () => v
   );
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-
 /** Une saison se demande si elle est diffusée et ni disponible, ni en cours, ni déjà demandée (règles du serveur). */
-const isAired = (season: Season, day: string) => season.episodeCount > 0 && !!season.airDate && season.airDate <= day;
-const isRequestable = (season: Season, day: string) => isAired(season, day) && canRequest(season.status);
+const isRequestable = (season: Season, day: string) => isAiredSeason(season, day) && canRequest(season.status);
 
 function RequestBody({
   media,
@@ -126,7 +129,7 @@ function RequestBody({
   details?: MediaDetails;
   onClose: () => void;
 }) {
-  const day = today();
+  const day = isoDay();
   const seasons = details ? regularSeasons(details.seasons) : [];
   const missing = seasons.filter((s) => isRequestable(s, day)).map((s) => s.seasonNumber);
   // « Toutes les saisons manquantes » présélectionné.
@@ -191,7 +194,7 @@ function RequestBody({
       />
       {mutation.error && (
         <Notice tone="error" role="alert">
-          {mutation.error instanceof ApiError ? mutation.error.message : 'La demande n’a pas pu être envoyée.'}
+          {errorMessage(mutation.error, 'La demande n’a pas pu être envoyée.')}
         </Notice>
       )}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -248,7 +251,7 @@ function SeasonPicker({
       {seasons.length === 0 && <p className="text-sm text-muted-foreground">TMDB ne connaît aucune saison.</p>}
       {seasons.map((season) => {
         const requestable = missing.includes(season.seasonNumber);
-        const meta = isAired(season, day) ? seasonMeta(season) : 'Pas encore diffusée';
+        const meta = isAiredSeason(season, day) ? seasonMeta(season) : 'Pas encore diffusée';
         return (
           <label key={season.seasonNumber} className={row}>
             <span className="flex min-w-0 items-center gap-3">

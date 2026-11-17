@@ -8,8 +8,7 @@ import {
   arrName,
   formatDateTime,
   isActiveRequest,
-  latestRequestFor,
-  myRequestsQuery,
+  myRequestsForQuery,
   requestDetailQuery,
   requestProgress,
   type StepState,
@@ -97,8 +96,8 @@ export function RequestTimeline({ request }: { request: RequestDetail }) {
  */
 export function RequestTracking({ media }: { media: MediaKey }) {
   const allowed = !!useViewer()?.capabilities.canRequest;
-  const mine = useQuery({ ...myRequestsQuery(), enabled: allowed });
-  const latest = mine.data ? latestRequestFor(mine.data, media) : undefined;
+  const mine = useQuery({ ...myRequestsForQuery(media), enabled: allowed });
+  const latest = mine.data?.results[0];
   const detail = useQuery({ ...requestDetailQuery(latest?.id ?? 0), enabled: !!latest });
   if (!latest || !detail.data) return null;
   return (

@@ -11,7 +11,7 @@ import type { Setting } from '../../shared/settings.ts';
 import type { Availability, LibraryStatus, MediaStatus, RequestStatus } from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
 import { media, requestSeasons, requests, seasons } from '../db/schema.ts';
-import { type ArrKind, getQueue, type QueueItem } from '../integrations/arr.ts';
+import { type ArrKind, arrKindOf, getQueue, type QueueItem } from '../integrations/arr.ts';
 import { findEmbyItems, getEmbySeasonAvailability, latestEmbyItems, listEmbyLibraries } from '../integrations/emby.ts';
 import { listMovies } from '../integrations/radarr.ts';
 import { listSeries } from '../integrations/sonarr.ts';
@@ -508,7 +508,7 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
 
   /** Progression d'un titre (ou d'une saison) en téléchargement, lue dans la file (en cache). */
   async function progressFor(row: MediaRow, settings: Settings, seasonNumber?: number) {
-    const kind = row.type === 'movie' ? 'radarr' : 'sonarr';
+    const kind = arrKindOf(row.type);
     const config = settings[kind];
     const externalId = row.type === 'movie' ? row.radarrId : row.sonarrId;
     if (!config || externalId === null) return undefined;

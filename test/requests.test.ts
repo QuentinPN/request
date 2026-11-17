@@ -5,11 +5,17 @@ import { buildApp } from '../src/server/app.ts';
 import { type Db, openDataDir, openDb } from '../src/server/db/index.ts';
 import { media, requestSeasons, requests } from '../src/server/db/schema.ts';
 import { requestStatesFor } from '../src/server/services/availability.ts';
-import { ACTIVE_CONFLICT, quotaUsageQuery } from '../src/server/services/requests.ts';
+import {
+  ACTIVE_CONFLICT,
+  lastFailureQuery,
+  quotaUsageQuery,
+  requestPageQuery,
+  requestTotalsQuery,
+} from '../src/server/services/requests.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { setQuotaOverride, upsertFromEmby } from '../src/server/services/users.ts';
 import type { MediaType } from '../src/shared/media.ts';
-import type { RequestDetail } from '../src/shared/requests.ts';
+import type { RequestDetail, RequestPage, SendOptions } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import type { RequestStatus } from '../src/shared/status.ts';
 import { type FakeRoutes, sequence, status } from './fake-server.ts';
@@ -53,11 +59,25 @@ const breakingBad = {
 
 const emptyQueue = { totalRecords: 0, records: [] };
 
+/** Listes de l'approbation, communes au faux Radarr et au faux Sonarr. */
+const arrOptionRoutes = (folder: string): FakeRoutes => ({
+  'GET /api/v3/qualityprofile': [
+    { id: 1, name: 'HD-1080p' },
+    { id: 2, name: 'HD-720p' },
+    { id: 5, name: 'Ultra-HD' },
+  ],
+  'GET /api/v3/rootfolder': [
+    { id: 1, path: folder, freeSpace: 1000 },
+    { id: 2, path: '/anime', freeSpace: 2000 },
+  ],
+});
+
 const radarrRoutes = (overrides: FakeRoutes = {}): FakeRoutes => ({
   'GET /api/v3/movie': [],
   'GET /api/v3/queue': emptyQueue,
   'GET /api/v3/movie/lookup/tmdb': { id: 0, title: 'The Matrix', tmdbId: 603, hasFile: false, monitored: false },
   'POST /api/v3/movie': { id: 42, hasFile: false, monitored: true },
+  ...arrOptionRoutes('/films'),
   ...overrides,
 });
 
@@ -88,6 +108,7 @@ const sonarrRoutes = (overrides: FakeRoutes = {}): FakeRoutes => ({
     },
   ],
   'POST /api/v3/series': { id: 7, monitored: true, seasons: [] },
+  ...arrOptionRoutes('/series'),
   ...overrides,
 });
 
@@ -548,6 +569,57 @@ describe('approbation et envoi', () => {
     expect((await owner.post(`/api/requests/${id}/retry`)).statusCode).toBe(409);
   });
 
+  it('profil ou dossier inconnu de Radarr : 400, la demande reste en attente et rien n’est envoyé', async () => {
+    const { as, servers } = await setup();
+    const owner = await as('owner', 'proprietaire');
+    const { id } = (
+      await (await as('member')).post('/api/requests', { type: 'movie', tmdbId: 603 })
+    ).json<RequestDetail>();
+
+    const badProfile = await owner.post(`/api/requests/${id}/approve`, { qualityProfileId: 99 });
+    expect(badProfile.statusCode).toBe(400);
+    expect(badProfile.json()).toEqual({ error: 'Profil de qualité inconnu de Radarr' });
+    const badFolder = await owner.post(`/api/requests/${id}/approve`, { rootFolderPath: '/ailleurs' });
+    expect(badFolder.json()).toEqual({ error: 'Dossier racine inconnu de Radarr' });
+    expect((await owner.get(`/api/requests/${id}`)).json<RequestDetail>().status).toBe('pending');
+    expect(posted(servers.radarr, '/api/v3/movie')).toHaveLength(0);
+
+    const res = await owner.post(`/api/requests/${id}/approve`, { qualityProfileId: 5, rootFolderPath: '/anime' });
+    expect(res.json<RequestDetail>()).toMatchObject({ status: 'sent', qualityProfileId: 5, rootFolder: '/anime' });
+    expect(posted(servers.radarr, '/api/v3/movie')[0]).toMatchObject({ qualityProfileId: 5, rootFolderPath: '/anime' });
+  });
+
+  it('GET /api/requests/send-options/:type : profils et dossiers pour les approbateurs, sans adresse ni clé', async () => {
+    const { as, db } = await setup();
+    const expected: SendOptions = {
+      qualityProfiles: [
+        { id: 1, name: 'HD-1080p' },
+        { id: 2, name: 'HD-720p' },
+        { id: 5, name: 'Ultra-HD' },
+      ],
+      rootFolders: [
+        { id: 1, path: '/series', freeSpace: 1000 },
+        { id: 2, path: '/anime', freeSpace: 2000 },
+      ],
+      defaultProfileId: 2,
+      defaultFolder: '/series',
+    };
+    for (const role of ['owner', 'manager'] as const) {
+      const res = await (await as(role, role)).get('/api/requests/send-options/tv');
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual(expected);
+    }
+    const manager = await as('manager', 'gestionnaire');
+    expect((await manager.get('/api/requests/send-options/movie')).json<SendOptions>().defaultFolder).toBe('/films');
+    expect((await manager.get('/api/requests/send-options/livre')).statusCode).toBe(400);
+    expect((await (await as('member')).get('/api/requests/send-options/movie')).statusCode).toBe(403);
+
+    db.$client.prepare("delete from settings where key = 'radarr'").run();
+    const missing = await manager.get('/api/requests/send-options/movie');
+    expect(missing.statusCode).toBe(503);
+    expect(missing.json()).toEqual({ error: "Radarr n'est pas encore configuré" });
+  });
+
   it('envoi interrompu par un redémarrage : la demande restée « approved » passe en échec, puis se relance', async () => {
     const { app, as, db, servers } = await setup();
     const owner = await as('owner', 'proprietaire');
@@ -667,8 +739,97 @@ describe('listes, fiche d’une demande et compteurs', () => {
     const all = (await owner.get('/api/requests')).json();
     expect(all.results).toHaveLength(20);
     expect((await owner.get('/api/requests?status=declined')).json().results).toMatchObject([{ tmdbId: 5000 }]);
-    expect((await owner.get('/api/requests?mine=true')).json()).toEqual({ page: 1, totalPages: 0, results: [] });
+    expect((await owner.get('/api/requests?mine=true')).json()).toMatchObject({ page: 1, totalPages: 0, results: [] });
     expect((await owner.get('/api/requests?status=perdu')).statusCode).toBe(400);
+  });
+
+  it('filtres : plusieurs statuts séparés par des virgules, un titre (type + tmdbId) ; totaux par statut du périmètre', async () => {
+    const { as, db } = await setup();
+    const member = await as('member', 'a');
+    const other = await as('member', 'b');
+    const manager = await as('manager', 'c');
+    seedRequest(db, { userId: member.user.id, tmdbId: 1, createdAt: new Date(Date.now() - 3000) });
+    seedRequest(db, { userId: member.user.id, tmdbId: 2, status: 'failed', createdAt: new Date(Date.now() - 2000) });
+    seedRequest(db, { userId: member.user.id, tmdbId: 3, status: 'declined', createdAt: new Date(Date.now() - 1000) });
+    seedRequest(db, { userId: member.user.id, tmdbId: 1, type: 'tv', status: 'sent', seasons: [1] });
+    seedRequest(db, { userId: other.user.id, tmdbId: 4 });
+
+    const keys = (page: RequestPage) => page.results.map((r) => `${r.type}:${r.tmdbId}`);
+    const several = (await member.get('/api/requests?status=pending,failed')).json<RequestPage>();
+    expect(keys(several)).toEqual(['movie:2', 'movie:1']);
+    expect(several.totalPages).toBe(1);
+    // Totaux du périmètre (ses demandes), indépendants du filtre de statut.
+    expect(several.totals).toEqual({
+      pending: 1,
+      approved: 0,
+      declined: 1,
+      cancelled: 0,
+      sent: 1,
+      failed: 1,
+      available: 0,
+    });
+    // Approbateur : toutes les demandes.
+    const all = (await manager.get('/api/requests?status=pending')).json<RequestPage>();
+    expect(keys(all)).toEqual(['movie:4', 'movie:1']);
+    expect(all.totals).toMatchObject({ pending: 2, failed: 1, sent: 1, declined: 1 });
+
+    // Un titre : le film 1 et la série 1 sont deux titres distincts.
+    const movie = (await member.get('/api/requests?mine=true&type=movie&tmdbId=1')).json<RequestPage>();
+    expect(keys(movie)).toEqual(['movie:1']);
+    expect(movie.totals).toMatchObject({ pending: 1, sent: 0 });
+    const series = (await member.get('/api/requests?type=tv&tmdbId=1')).json<RequestPage>();
+    expect(keys(series)).toEqual(['tv:1']);
+    expect(series.results[0]?.seasons).toEqual([1]);
+    expect(keys((await member.get('/api/requests?type=tv')).json<RequestPage>())).toEqual(['tv:1']);
+
+    expect((await member.get('/api/requests?status=pending,pending')).json<RequestPage>().totalPages).toBe(
+      (await member.get('/api/requests?status=pending')).json<RequestPage>().totalPages,
+    );
+    for (const query of ['status=pending&status=failed', 'status=', 'status=pending,', 'tmdbId=1', 'type=livre'])
+      expect((await member.get(`/api/requests?${query}`)).statusCode, query).toBe(400);
+  });
+
+  it('raison du dernier échec dans chaque ligne de la liste, effacée par une relance réussie', async () => {
+    const { as } = await setup({
+      radarr: radarrRoutes({
+        'POST /api/v3/movie': sequence(status(500), status(503), status(201, { id: 42 })),
+      }),
+    });
+    const member = await as('member');
+    const owner = await as('owner', 'proprietaire');
+    const { id } = (await member.post('/api/requests', { type: 'movie', tmdbId: 603 })).json<RequestDetail>();
+    const first = (await owner.post(`/api/requests/${id}/approve`)).json<RequestDetail>();
+    expect(first.failureReason).toBe('Radarr a répondu par une erreur (500)');
+    await owner.post(`/api/requests/${id}/retry`);
+
+    const failed = (await owner.get('/api/requests?status=failed')).json<RequestPage>();
+    const lastReason = (await owner.get(`/api/requests/${id}`)).json<RequestDetail>().events.at(-1)?.detail;
+    expect(lastReason).not.toBe(first.failureReason);
+    expect(failed.results).toMatchObject([{ id, failureReason: lastReason }]);
+
+    await owner.post(`/api/requests/${id}/retry`);
+    expect((await owner.get('/api/requests')).json<RequestPage>().results).toMatchObject([
+      { id, status: 'sent', failureReason: null },
+    ]);
+  });
+
+  it('les requêtes de la liste passent par les index (pas de parcours de toute la table)', () => {
+    const db = openDb(':memory:');
+    const scopes = [{ userId: 'u' }, {}, { userId: 'u', title: { type: 'movie' as const, tmdbId: 1 } }];
+    for (const scope of scopes) {
+      const totals = queryPlan(db, requestTotalsQuery(db, scope));
+      const page = queryPlan(db, requestPageQuery(db, scope, ['pending', 'failed'], 1));
+      for (const plan of [totals, page]) expect(plan).not.toMatch(/SCAN requests(?! USING COVERING INDEX)/);
+    }
+    expect(queryPlan(db, requestTotalsQuery(db, {}))).toContain('USING COVERING INDEX requests_status_created_at_idx');
+    expect(queryPlan(db, requestTotalsQuery(db, { userId: 'u' }))).toContain('requests_user_id_created_at_idx');
+    expect(queryPlan(db, requestPageQuery(db, {}, ['pending', 'failed'], 1))).toContain(
+      'requests_status_created_at_idx',
+    );
+    expect(queryPlan(db, requestTotalsQuery(db, { title: { type: 'tv', tmdbId: 1 } }))).toContain(
+      'media_type_tmdb_id_unique',
+    );
+    expect(queryPlan(db, lastFailureQuery(db, [1, 2]))).toContain('request_events_request_id_created_at_idx');
   });
 
   it('GET /api/requests/:id : frise, demandeur et résumé ; invisible pour un autre membre', async () => {

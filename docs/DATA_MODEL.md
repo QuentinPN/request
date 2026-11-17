@@ -26,6 +26,7 @@ Index : `UNIQUE(tmdb_id, type)` (badge de chaque affiche : lecture par lot `WHER
 
 **`requests`** — `id` PK · `media_id` FK → media `ON DELETE RESTRICT` · `user_id` FK → users `ON DELETE CASCADE` · `status` text `CHECK IN requestStatuses` · `decided_by` FK → users `ON DELETE SET NULL` · `decline_reason` text · `quality_profile_id` int · `root_folder` text · `series_type` text `CHECK IN seriesTypes` (choix de l'approbation, repris par une relance ; ajouté en 4.1) · `is_4k` int NOT NULL DEFAULT 0 (réservé, toujours 0) · `created_at` · `updated_at`.
 Index : `(user_id, created_at)` (« Mes demandes » + quota), `(status, created_at)` (file d'approbation), `(media_id, status)` (statut affiché d'un titre, sert aussi la clé étrangère), `(decided_by)` partiel.
+Liste `GET /api/requests` (filtres `status=a,b`, `type`+`tmdbId`) : une page, les totaux par statut du périmètre en un `GROUP BY` (couvert par `(status, created_at)` pour un approbateur, `(user_id, created_at)` pour un membre ; un titre passe par `media(type, tmdb_id)` en sous-requête) et la raison du dernier échec des lignes `failed` en une requête (`request_events(request_id, created_at)`). Vérifié par `EXPLAIN QUERY PLAN` (`test/requests.test.ts`) : aucun index ajouté.
 
 **`request_seasons`** — **table séparée**, pas de JSON : le quota compte des saisons, Sonarr reçoit une liste, la frise affiche l'état par saison. `request_id` FK `ON DELETE CASCADE` · `season_number` · PK `(request_id, season_number)`.
 

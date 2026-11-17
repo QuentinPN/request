@@ -142,7 +142,7 @@ export function MobileList({
             {tab === 'failed' && (
               <>
                 <p className="text-sm">
-                  <FailureReason id={request.id} />
+                  <FailureReason request={request} />
                 </p>
                 <div className="flex gap-2">
                   <Button

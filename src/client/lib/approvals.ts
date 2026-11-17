@@ -4,19 +4,16 @@ import type {
   BatchRequestInput,
   BatchResult,
   RequestDetail,
-  RequestPage,
   RequestView,
+  SendOptions,
 } from '@shared/requests.ts';
-import type { MaskedSetting } from '@shared/settings.ts';
-import type { ArrTestResult } from '@shared/setup.ts';
 import type { RequestStatus } from '@shared/status.ts';
-import { type QueryClient, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { settingQuery } from '@/components/setup/queries';
-import { apiGet, apiSend } from '@/lib/http';
-import { arrName, failureReason, invalidateAfterRequest, requestKeys, requestTitle } from '@/lib/requests';
+import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiGet, apiSend, isNotConfigured } from '@/lib/http';
+import { arrName, invalidateAfterRequest, requestListQuery, requestTitle } from '@/lib/requests';
 
 // File d'approbation : lectures et actions de l'approbateur (droit « gérer les demandes »).
-// Clés et lectures communes aux demandes (compteurs, détail) : `lib/requests.ts`.
+// Clés et lectures communes aux demandes (liste, compteurs, détail) : `lib/requests.ts`.
 
 export const approvalTabs = ['pending', 'failed', 'history'] as const;
 export type ApprovalTab = (typeof approvalTabs)[number];
@@ -26,68 +23,44 @@ export const approvalTabLabel: Record<ApprovalTab, string> = {
   history: 'Historique',
 };
 
-/** Statuts de l'historique : décidées ou envoyées (l'API ne filtre que sur un statut à la fois). */
-const historyStatuses: readonly RequestStatus[] = ['approved', 'declined', 'sent', 'available'];
-export const inTab = (tab: ApprovalTab, request: RequestView) =>
-  tab === 'history' ? historyStatuses.includes(request.status) : request.status === tab;
+/** Statuts de l'historique : décidées ou envoyées. */
+export const historyStatuses: readonly RequestStatus[] = ['approved', 'declined', 'sent', 'available'];
+
+/** Statuts de chaque onglet, filtrés par le serveur : chaque page est pleine et compte juste. */
+export const approvalTabStatuses: Record<ApprovalTab, readonly RequestStatus[]> = {
+  pending: ['pending'],
+  failed: ['failed'],
+  history: historyStatuses,
+};
 
 export const approvalListQuery = (tab: ApprovalTab, page = 1) =>
-  queryOptions({
-    queryKey: requestKeys.approvals(tab, page),
-    queryFn: ({ signal }) => {
-      const params = new URLSearchParams({ page: String(page) });
-      if (tab !== 'history') params.set('status', tab);
-      return apiGet<RequestPage>(`/api/requests?${params}`, undefined, signal);
-    },
-  });
+  requestListQuery({ status: approvalTabStatuses[tab], page });
 
 /** Choix de l'approbateur avant envoi, par demande ; ce qu'il ne change pas prend la valeur des réglages. */
 export type SendChoice = ApproveRequestInput;
+export type { SendOptions };
 
-/** Profils de qualité et dossiers du service, avec la valeur par défaut des réglages. */
-export interface SendOptions {
-  service: string;
-  profiles: ArrTestResult['qualityProfiles'];
-  folders: ArrTestResult['rootFolders'];
-  defaultProfileId: number;
-  defaultFolder: string;
-}
-
-/**
- * Lu comme l'assistant (réglages, puis test de connexion avec la clé enregistrée) : seules ces deux routes
- * exposent les listes, et elles sont réservées au propriétaire. `null` : service pas encore configuré.
- */
-export const sendOptionsQuery = (queryClient: QueryClient, type: MediaType) =>
+/** Profils et dossiers de Radarr ou Sonarr (route des approbateurs) ; `null` : service pas encore configuré. */
+export const sendOptionsQuery = (type: MediaType) =>
   queryOptions({
     queryKey: ['send-options', type],
     staleTime: 5 * 60_000,
-    queryFn: async (): Promise<SendOptions | null> => {
-      const key = type === 'movie' ? 'radarr' : 'sonarr';
-      const stored: MaskedSetting<typeof key> | null = await queryClient.fetchQuery(settingQuery(key));
-      if (!stored) return null;
-      const { qualityProfiles, rootFolders } = await apiSend<ArrTestResult>('POST', `/api/setup/${key}/test`, {
-        url: stored.url,
-        apiKey: '',
-      });
-      return {
-        service: arrName(type),
-        profiles: qualityProfiles,
-        folders: rootFolders,
-        defaultProfileId: stored.qualityProfileId,
-        defaultFolder: stored.rootFolderPath,
-      };
+    queryFn: async ({ signal }): Promise<SendOptions | null> => {
+      try {
+        return await apiGet<SendOptions>(`/api/requests/send-options/${type}`, undefined, signal);
+      } catch (error) {
+        if (isNotConfigured(error)) return null;
+        throw error;
+      }
     },
   });
 
-/** Réservé au propriétaire (les listes viennent de routes qui lui sont réservées) ; `undefined` tant qu'elles chargent. */
-export function useSendOptions(type: MediaType, enabled: boolean) {
-  const queryClient = useQueryClient();
-  return useQuery({ ...sendOptionsQuery(queryClient, type), enabled });
-}
+/** `undefined` tant que les listes chargent (ou si le service ne répond pas) : les réglages par défaut s'appliquent. */
+export const useSendOptions = (type: MediaType, enabled: boolean) => useQuery({ ...sendOptionsQuery(type), enabled });
 
-/** Nom du profil de qualité ; « Par défaut » tant que la liste n'est pas connue (pas propriétaire, ou en chargement). */
+/** Nom du profil de qualité ; « Par défaut » tant que la liste n'est pas connue (en chargement, service muet). */
 export const profileName = (options: SendOptions | null | undefined, id: number | null | undefined) =>
-  (id == null ? undefined : options?.profiles.find((p) => p.id === id)?.name) ?? 'Par défaut';
+  (id == null ? undefined : options?.qualityProfiles.find((p) => p.id === id)?.name) ?? 'Par défaut';
 
 /** Résultat affiché après une action : message d'une ligne par demande, vert ou rouge. */
 export interface Feedback {
@@ -100,7 +73,7 @@ export function sendOutcome(request: RequestDetail): Feedback {
   const title = requestTitle(request);
   const service = arrName(request.type);
   if (request.status !== 'failed') return { tone: 'ok', lines: [`${title} envoyée à ${service}.`] };
-  const reason = failureReason(request);
+  const reason = request.failureReason;
   return {
     tone: 'error',
     lines: [`${title} : ${service} n’a pas pu la recevoir${reason ? ` (${reason})` : ''}. Elle est dans Échecs.`],
@@ -131,9 +104,6 @@ export const declineOutcome = (request: RequestView): Feedback => ({
   tone: 'ok',
   lines: [`${requestTitle(request)} refusée.`],
 });
-
-/** Message lisible d'une erreur de l'API (déjà en français) ou d'une panne réseau. */
-export const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Erreur inattendue du serveur');
 
 /** Actions de l'approbateur ; chacune rafraîchit les listes et le compteur, qu'elle réussisse ou non. */
 export function useApprovalActions() {

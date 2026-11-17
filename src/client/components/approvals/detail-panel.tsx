@@ -1,5 +1,4 @@
 import type { RequestView } from '@shared/requests.ts';
-import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { type ReactNode, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
@@ -7,15 +6,7 @@ import { formatBytes } from '@/components/setup/config';
 import { Button } from '@/components/ui/button';
 import { FieldHint, Label, NativeSelect } from '@/components/ui/field';
 import { type ApprovalTab, profileName, type SendChoice, type SendOptions } from '@/lib/approvals';
-import {
-  arrName,
-  failureReason,
-  formatWhen,
-  requestDetailQuery,
-  requestMeta,
-  requestStatusLabel,
-  requestTitle,
-} from '@/lib/requests';
+import { arrName, formatWhen, requestMeta, requestStatusLabel, requestTitle } from '@/lib/requests';
 import { approveClass, parseReason, ReasonField, Requester, RequestPoster } from './request-parts';
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -27,7 +18,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Profil et dossier d'envoi : listes du service pour le propriétaire, réglages par défaut sinon. */
+/** Profil et dossier d'envoi : listes du service, ou réglages par défaut tant qu'elles ne sont pas connues. */
 function SendTo({
   request,
   options,
@@ -50,7 +41,7 @@ function SendTo({
       </p>
     );
   const folder = choice.rootFolderPath ?? options.defaultFolder;
-  const free = options.folders.find((f) => f.path === folder)?.freeSpace;
+  const free = options.rootFolders.find((f) => f.path === folder)?.freeSpace;
   return (
     <fieldset className="space-y-4" disabled={disabled}>
       <legend className="mb-3 text-[13px] font-semibold">Envoyer à {service}</legend>
@@ -63,7 +54,7 @@ function SendTo({
           value={choice.qualityProfileId ?? options.defaultProfileId}
           onChange={(event) => onChoice({ qualityProfileId: Number(event.target.value) })}
         >
-          {options.profiles.map((profile) => (
+          {options.qualityProfiles.map((profile) => (
             <option key={profile.id} value={profile.id}>
               {profile.name}
             </option>
@@ -79,7 +70,7 @@ function SendTo({
           value={folder}
           onChange={(event) => onChoice({ rootFolderPath: event.target.value })}
         >
-          {options.folders.map((f) => (
+          {options.rootFolders.map((f) => (
             <option key={f.id} value={f.path}>
               {f.path}
             </option>
@@ -107,8 +98,6 @@ type Props = {
 export function DetailPanel({ tab, request, options, choice, onChoice, busy, onApprove, onRetry, onDecline }: Props) {
   const [reason, setReason] = useState('');
   const [invalid, setInvalid] = useState<string | null>(null);
-  const detail = useQuery({ ...requestDetailQuery(request.id), enabled: tab === 'failed' });
-  const failure = detail.data ? failureReason(detail.data) : null;
   const decidable = tab === 'pending' || tab === 'failed';
 
   const decline = () => {
@@ -157,7 +146,7 @@ export function DetailPanel({ tab, request, options, choice, onChoice, busy, onA
       {tab === 'failed' && (
         <Notice tone="error">
           {arrName(request.type)} n’a pas pu recevoir cette demande
-          {failure ? ` : ${failure}` : detail.isPending ? '…' : '.'}
+          {request.failureReason ? ` : ${request.failureReason}` : '.'}
         </Notice>
       )}
 

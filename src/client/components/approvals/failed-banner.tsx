@@ -24,7 +24,7 @@ export function FailedBanner({
     <Notice tone="error" role="alert">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <p className="min-w-0 grow">
-          <span className="font-semibold">{title}</span> : <FailureReason id={failed.id} />
+          <span className="font-semibold">{title}</span> : <FailureReason request={failed} />
           {more > 0 && (
             <>
               {' '}

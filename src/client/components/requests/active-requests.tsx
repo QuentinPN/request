@@ -1,13 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useViewer } from '../../hooks/use-viewer.ts';
-import {
-  isActiveRequest,
-  myRequestsQuery,
-  requestCountsQuery,
-  requestProgress,
-  requestShortTitle,
-} from '../../lib/requests.ts';
+import { myActiveRequestsQuery, requestCountsQuery, requestProgress, requestShortTitle } from '../../lib/requests.ts';
 import { SectionHeading } from '../media/rail.tsx';
 import { RequestStatusPill, RequestStepBar, RequestThumb } from './request-progress.tsx';
 
@@ -21,8 +15,8 @@ const STRIP_MAX = 3;
 export function ActiveRequestsStrip() {
   const allowed = !!useViewer()?.capabilities.canRequest;
   const counts = useQuery({ ...requestCountsQuery(), enabled: allowed });
-  const mine = useQuery({ ...myRequestsQuery(), enabled: allowed && (counts.data?.mineActive ?? 0) > 0 });
-  const active = (mine.data ?? []).filter((r) => isActiveRequest(r.status)).slice(0, STRIP_MAX);
+  const mine = useQuery({ ...myActiveRequestsQuery(), enabled: allowed && (counts.data?.mineActive ?? 0) > 0 });
+  const active = (mine.data?.results ?? []).slice(0, STRIP_MAX);
   if (!allowed || counts.data?.mineActive === 0 || active.length === 0) return null;
   return (
     <section aria-labelledby="demandes-en-cours">

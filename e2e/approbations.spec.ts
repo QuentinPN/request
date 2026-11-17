@@ -1,12 +1,12 @@
 import type { Page } from '@playwright/test';
-import { mockApprovalQueue, type RequestsMock } from './requests-mocks.ts';
+import { makeRequest, mockApprovalQueue, type RequestsMock, stubMedia } from './requests-mocks.ts';
 import { test as base, expect, expectNoAxeViolations, viewerAs } from './support/api.ts';
 
 const test = base.extend<{ requests: RequestsMock }>({
   // `auto` : même sans l'appeler, le faux serveur des demandes répond (compteur de la navigation, par exemple).
   requests: [
-    async ({ page, api }, use) => {
-      await use(await mockApprovalQueue(page, api));
+    async ({ page }, use) => {
+      await use(await mockApprovalQueue(page));
     },
     { auto: true },
   ],
@@ -51,6 +51,35 @@ test('ordinateur : approuver avec un autre profil et un autre dossier envoie ce 
   // La sélection passe à la demande suivante.
   await expect(panel(page).getByRole('heading', { name: 'Andor' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Navigation principale' })).toContainText('2');
+});
+
+test('ordinateur : un gestionnaire choisit aussi le profil et le dossier', async ({ page, api, requests }, {
+  project,
+}) => {
+  onlyDesktop(project);
+  api.state.viewer = viewerAs('manager', 'Camille');
+  await page.goto('/approbations');
+  await expect(panel(page).getByLabel('Profil de qualité')).toHaveValue('4');
+  await panel(page).getByLabel('Dossier racine').selectOption('/films-4k');
+  await panel(page).getByRole('button', { name: 'Approuver et envoyer' }).click();
+  await expect(page.getByRole('status')).toContainText('Conclave envoyée à Radarr.');
+  expect(requests.approvals).toEqual([{ id: 1, body: { rootFolderPath: '/films-4k' } }]);
+});
+
+test('ordinateur : l’historique se pagine côté serveur, 20 demandes par page', async ({ page, requests }, {
+  project,
+}) => {
+  onlyDesktop(project);
+  const older = Array.from({ length: 20 }, (_, i) =>
+    makeRequest(stubMedia(2000 + i, `Archive ${i + 1}`), 'sent', { id: 100 + i, day: 1 }),
+  );
+  requests.requests = [...requests.requests, ...older];
+  await page.goto('/approbations');
+  await page.getByRole('button', { name: 'Historique' }).click();
+  await expect(page.getByRole('row')).toHaveCount(21); // en-tête + 20
+  await expect(page.getByText('Page 1 sur 2')).toBeVisible();
+  await page.getByRole('button', { name: 'Suivant' }).click();
+  await expect(page.getByRole('row')).toHaveCount(3); // en-tête + les 2 dernières
 });
 
 test('ordinateur : approuver sans rien changer n’envoie aucun choix', async ({ page, requests }, { project }) => {

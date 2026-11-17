@@ -1,6 +1,6 @@
-import type { RequestView } from '@shared/requests.ts';
+import type { BatchResult, RequestView } from '@shared/requests.ts';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { DeclineDialog } from '@/components/approvals/decline-dialog';
 import { DetailPanel } from '@/components/approvals/detail-panel';
 import { FailedBanner } from '@/components/approvals/failed-banner';
@@ -17,18 +17,18 @@ import {
   type ApprovalTab,
   approvalListQuery,
   approvalTabLabel,
+  approvalTabStatuses,
   approvalTabs,
   batchOutcome,
   declineOutcome,
-  errorText,
   type Feedback,
-  inTab,
   profileName,
   type SendChoice,
   sendOutcome,
   useApprovalActions,
   useSendOptions,
 } from '@/lib/approvals';
+import { errorMessage } from '@/lib/http';
 import { requestCountsQuery, requestTitle } from '@/lib/requests';
 
 const emptyText: Record<ApprovalTab, { title: string; description: string }> = {
@@ -55,7 +55,7 @@ const skeleton = (
 );
 
 export function ApprobationsPage() {
-  const isOwner = useViewer()?.capabilities.isOwner === true;
+  const canManage = useViewer()?.capabilities.canManageRequests === true;
   const desktop = useDesktop();
   const actions = useApprovalActions();
   const [tab, setTab] = useState<ApprovalTab>('pending');
@@ -70,16 +70,12 @@ export function ApprobationsPage() {
   const list = useQuery(approvalListQuery(tab, page));
   const failedList = useQuery(approvalListQuery('failed', 1));
   const counts = useQuery(requestCountsQuery());
-  const rows = (list.data?.results ?? []).filter((r) => inTab(tab, r));
+  const rows = list.data?.results ?? [];
   const failed = failedList.data?.results ?? [];
-  const movieOptions = useSendOptions('movie', isOwner && tab !== 'failed' && rows.some((r) => r.type === 'movie'));
-  const tvOptions = useSendOptions('tv', isOwner && tab !== 'failed' && rows.some((r) => r.type === 'tv'));
+  const failedTotal = failedList.data?.totals.failed ?? 0;
+  const movieOptions = useSendOptions('movie', canManage && tab !== 'failed' && rows.some((r) => r.type === 'movie'));
+  const tvOptions = useSendOptions('tv', canManage && tab !== 'failed' && rows.some((r) => r.type === 'tv'));
   const optionsOf = (type: RequestView['type']) => (type === 'movie' ? movieOptions.data : tvOptions.data);
-
-  // Une page vidée par les décisions (dernière page) : retour à la précédente.
-  useEffect(() => {
-    if (page > 1 && list.data?.results.length === 0) setPage(page - 1);
-  }, [page, list.data]);
 
   const selected = rows.find((r) => r.id === selectedId) ?? rows[0];
   const checkedIds = rows.filter((r) => checked.has(r.id)).map((r) => r.id);
@@ -102,7 +98,13 @@ export function ApprobationsPage() {
     setChecked(new Set());
     setFeedback(null);
   };
-  const fail = (error: unknown) => setFeedback({ tone: 'error', lines: [errorText(error)] });
+  const fail = (error: unknown) => setFeedback({ tone: 'error', lines: [errorMessage(error)] });
+  /** Demandes sorties de l'onglet : si la page en est vidée (dernière page), retour à la précédente. */
+  const leave = (decided: RequestView[]) => {
+    const gone = new Set(decided.filter((r) => !approvalTabStatuses[tab].includes(r.status)).map((r) => r.id));
+    if (page > 1 && rows.every((r) => gone.has(r.id))) setPage(page - 1);
+  };
+  const okRequests = (result: BatchResult) => result.results.flatMap((r) => (r.ok ? [r.request] : []));
   // Après une décision, la sélection passe à la demande voisine plutôt que de revenir en haut.
   const advance = (id: number) => {
     const index = rows.findIndex((r) => r.id === id);
@@ -116,6 +118,7 @@ export function ApprobationsPage() {
       {
         onSuccess: (request) => {
           advance(id);
+          leave([request]);
           setFeedback(sendOutcome(request));
         },
         onError: fail,
@@ -129,6 +132,7 @@ export function ApprobationsPage() {
       {
         onSuccess: (request) => {
           advance(id);
+          leave([request]);
           setFeedback(sendOutcome(request));
         },
         onError: fail,
@@ -142,6 +146,7 @@ export function ApprobationsPage() {
       {
         onSuccess: (result) => {
           setChecked(new Set());
+          leave(okRequests(result));
           setFeedback(batchOutcome(result, titleOf, 'approve'));
         },
         onError: fail,
@@ -162,9 +167,10 @@ export function ApprobationsPage() {
         {
           onSuccess: (request) => {
             advance(id);
+            leave([request]);
             finish(declineOutcome(request));
           },
-          onError: (error) => onError(errorText(error)),
+          onError: (error) => onError(errorMessage(error)),
         },
       );
       return;
@@ -172,8 +178,11 @@ export function ApprobationsPage() {
     actions.batch.mutate(
       { action: 'decline', ids, reason },
       {
-        onSuccess: (result) => finish(batchOutcome(result, titleOf, 'decline')),
-        onError: (error) => onError(errorText(error)),
+        onSuccess: (result) => {
+          leave(okRequests(result));
+          finish(batchOutcome(result, titleOf, 'decline'));
+        },
+        onError: (error) => onError(errorMessage(error)),
       },
     );
   };
@@ -182,17 +191,17 @@ export function ApprobationsPage() {
     setDeclining(ids);
   };
 
-  const pendingTotal = counts.data?.pendingApprovals ?? (list.data && tab === 'pending' ? rows.length : 0);
+  const pendingTotal = counts.data?.pendingApprovals ?? list.data?.totals.pending ?? 0;
   const tabCount: Partial<Record<ApprovalTab, string>> = {
     pending: counts.data?.pendingApprovals == null ? undefined : String(counts.data.pendingApprovals),
-    failed: failedList.data ? `${failed.length}${failedList.data.totalPages > 1 ? '+' : ''}` : undefined,
+    failed: failedList.data ? String(failedTotal) : undefined,
   };
   const decliningRequest = declining?.length === 1 ? rows.find((r) => r.id === declining[0]) : undefined;
 
   const failedBanner = tab === 'pending' && failed[0] && (
     <FailedBanner
       failed={failed[0]}
-      more={failed.length - 1}
+      more={failedTotal - 1}
       busy={actions.busy}
       onRetry={retry}
       onShowAll={() => changeTab('failed')}
@@ -225,7 +234,7 @@ export function ApprobationsPage() {
           query={list}
           errorMessage="Les demandes n’ont pas pu être chargées."
           empty={emptyText[tab]}
-          isEmpty={(data) => data.results.filter((r) => inTab(tab, r)).length === 0 && !(page > 1)}
+          isEmpty={(data) => data.results.length === 0 && !(page > 1)}
           skeleton={skeleton}
         >
           {(data) =>

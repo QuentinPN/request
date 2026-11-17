@@ -8,6 +8,7 @@ import {
   getTableColumns,
   gte,
   inArray,
+  max,
   notExists,
   notInArray,
   or,
@@ -21,6 +22,8 @@ import {
   type BatchResult,
   type batchRequestSchema,
   type createRequestSchema,
+  isAiredSeason,
+  isoDay,
   REQUESTS_PAGE_SIZE,
   type RequestCounts,
   type RequestDetail,
@@ -37,10 +40,12 @@ import {
   preSendRequestStatuses,
   type RequestEventType,
   type RequestStatus,
+  requestStatuses,
 } from '../../shared/status.ts';
 import { inLiterals } from '../db/checks.ts';
 import type { Data, Db } from '../db/index.ts';
 import { media, requestEvents, requestSeasons, requests, seasons as seasonStatuses, users } from '../db/schema.ts';
+import { arrKindOf } from '../integrations/arr.ts';
 import { IntegrationError } from '../integrations/http.ts';
 import { addMovie } from '../integrations/radarr.ts';
 import { addSeries } from '../integrations/sonarr.ts';
@@ -50,6 +55,7 @@ import { one } from '../lib/sql.ts';
 import { DAY_MS } from '../lib/time.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
 import type { AvailabilityService } from './availability.ts';
+import { assertSendChoice } from './send-options.ts';
 import { getSetting } from './settings.ts';
 import { loadDetails } from './tmdb.ts';
 import { avatarUrlOf, type User } from './users.ts';
@@ -114,6 +120,54 @@ const selectRows = (db: Pick<Db, 'select'>) =>
 
 const inStatuses = (statuses: readonly RequestStatus[]) => inArray(requests.status, [...statuses]);
 const isActive = inStatuses(activeRequestStatuses);
+
+/** Périmètre d'une liste : les demandes d'un membre (`userId`) ou toutes, éventuellement d'un seul titre. */
+export interface ListScope {
+  userId?: string;
+  title?: { type: MediaType; tmdbId?: number };
+}
+
+/** Filtre du périmètre, sans jointure : le titre passe par l'index unique `media(type, tmdb_id)`. */
+export const scopeWhere = ({ userId, title }: ListScope) =>
+  and(
+    userId === undefined ? undefined : eq(requests.userId, userId),
+    title &&
+      inArray(
+        requests.mediaId,
+        sql`(select ${media.id} from ${media} where ${and(
+          eq(media.type, title.type),
+          title.tmdbId === undefined ? undefined : eq(media.tmdbId, title.tmdbId),
+        )})`,
+      ),
+  );
+
+/** Nombre de demandes par statut du périmètre, en un `GROUP BY`. */
+export const requestTotalsQuery = (db: Pick<Db, 'select'>, scope: ListScope) =>
+  db.select({ status: requests.status, n: count() }).from(requests).where(scopeWhere(scope)).groupBy(requests.status);
+
+/** Page d'une liste, plus récentes d'abord. */
+export const requestPageQuery = (
+  db: Pick<Db, 'select'>,
+  scope: ListScope,
+  statuses: readonly RequestStatus[] | undefined,
+  page: number,
+) =>
+  selectRows(db)
+    .where(and(scopeWhere(scope), statuses && inStatuses(statuses)))
+    .orderBy(desc(requests.createdAt), desc(requests.id))
+    .limit(REQUESTS_PAGE_SIZE)
+    .offset((page - 1) * REQUESTS_PAGE_SIZE);
+
+/**
+ * Détail du dernier évènement `failed` de chaque demande, en une requête pour toute la page (SQLite garantit que les
+ * colonnes nues d'un `max()` viennent de la ligne retenue). Servie par l'index `request_events(request_id, created_at)`.
+ */
+export const lastFailureQuery = (db: Pick<Db, 'select'>, ids: number[]) =>
+  db
+    .select({ requestId: requestEvents.requestId, detail: requestEvents.detail, last: max(requestEvents.id) })
+    .from(requestEvents)
+    .where(and(inArray(requestEvents.requestId, ids), eq(requestEvents.type, 'failed')))
+    .groupBy(requestEvents.requestId);
 
 /**
  * « ON CONFLICT DO NOTHING » sur l'index partiel `requests_active`, dont le `WHERE` doit être repris pour que SQLite
@@ -186,9 +240,7 @@ const ownActive = (
 function wantedSeasons(details: MediaDetails, choice: number[] | 'all', today: string): number[] {
   const known = new Set(details.seasons.map((s) => s.seasonNumber));
   if (choice !== 'all' && choice.some((n) => !known.has(n))) throw new HttpError(400, 'Saison inconnue');
-  const requestable = details.seasons.filter(
-    (s) => s.seasonNumber > 0 && s.episodeCount > 0 && !!s.airDate && s.airDate <= today,
-  );
+  const requestable = details.seasons.filter((s) => s.seasonNumber > 0 && isAiredSeason(s, today));
   const chosen = choice === 'all' ? requestable : details.seasons.filter((s) => choice.includes(s.seasonNumber));
   if (chosen.some((s) => !requestable.includes(s)))
     throw new HttpError(400, 'Les saisons spéciales et pas encore diffusées ne peuvent pas être demandées');
@@ -389,6 +441,10 @@ export function createRequests(
         .map((u) => [u.id, toPerson(u)]),
     );
     const seasonsOf = seasonsByRequest(ids);
+    const failedIds = rows.filter((r) => r.status === 'failed').map((r) => r.id);
+    const failures = new Map<number, string | null>();
+    if (failedIds.length > 0)
+      for (const f of lastFailureQuery(db, failedIds).all()) failures.set(f.requestId, f.detail);
     const titles = await summaries(rows);
     const unknown = (id: string): RequestPerson => ({ id, name: id, avatarUrl: null });
     return rows.map((r) => ({
@@ -406,6 +462,7 @@ export function createRequests(
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
       media: titles.get(keyOf(r)) ?? null,
+      failureReason: failures.get(r.id) ?? null,
     }));
   }
 
@@ -524,9 +581,10 @@ export function createRequests(
 
   async function approve(id: number, actor: User, choice: ApproveRequestInput = {}): Promise<RequestDetail> {
     const row = requireRow(id);
+    await assertSendChoice(data, row.type, choice);
     // Valeurs envoyées gardées sur la demande (une relance les reprend) ; à défaut, celles des réglages.
     const sonarr = row.type === 'tv' ? getSetting(db, cryptoKey, 'sonarr') : null;
-    const defaults = row.type === 'movie' ? getSetting(db, cryptoKey, 'radarr') : sonarr;
+    const defaults = getSetting(db, cryptoKey, arrKindOf(row.type));
     db.transaction((tx) => {
       transition(tx, id, ['pending'], {
         status: 'approved',
@@ -585,7 +643,7 @@ export function createRequests(
     if (input.type === 'movie') {
       if (details.status === 'available') throw new HttpError(409, ALREADY_AVAILABLE);
     } else {
-      wanted = wantedSeasons(details, input.seasons, new Date(now()).toISOString().slice(0, 10));
+      wanted = wantedSeasons(details, input.seasons, isoDay(now()));
     }
 
     const outcome = db.transaction(
@@ -671,20 +729,24 @@ export function createRequests(
 
   // --- Listes et compteurs ---
 
+  /** Une page, et le nombre de demandes par statut du périmètre (le total de la page s'en déduit). */
   async function list(viewer: SessionViewer, query: ListQuery): Promise<RequestPage> {
     const onlyMine = query.mine || !viewer.capabilities.canManageRequests;
-    const where = and(
-      onlyMine ? eq(requests.userId, viewer.user.id) : undefined,
-      query.status ? eq(requests.status, query.status) : undefined,
-    );
-    const total = db.select({ n: count() }).from(requests).where(where).get()?.n ?? 0;
-    const rows = selectRows(db)
-      .where(where)
-      .orderBy(desc(requests.createdAt), desc(requests.id))
-      .limit(REQUESTS_PAGE_SIZE)
-      .offset((query.page - 1) * REQUESTS_PAGE_SIZE)
-      .all();
-    return { page: query.page, totalPages: Math.ceil(total / REQUESTS_PAGE_SIZE), results: await toViews(rows) };
+    const scope: ListScope = {
+      ...(onlyMine && { userId: viewer.user.id }),
+      ...(query.type && { title: { type: query.type, tmdbId: query.tmdbId } }),
+    };
+    const totals = Object.fromEntries(requestStatuses.map((s) => [s, 0])) as RequestPage['totals'];
+    for (const { status, n } of requestTotalsQuery(db, scope).all()) totals[status] = n;
+    const counted: readonly RequestStatus[] = query.status ?? requestStatuses;
+    const total = counted.reduce((sum, s) => sum + totals[s], 0);
+    const rows = total === 0 ? [] : requestPageQuery(db, scope, query.status, query.page).all();
+    return {
+      page: query.page,
+      totalPages: Math.ceil(total / REQUESTS_PAGE_SIZE),
+      results: await toViews(rows),
+      totals,
+    };
   }
 
   async function get(viewer: SessionViewer, id: number): Promise<RequestDetail> {

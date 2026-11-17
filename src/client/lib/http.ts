@@ -21,6 +21,13 @@ export class AuthRequiredError extends ApiError {
   }
 }
 
+/**
+ * Message à afficher pour une erreur : celui de l'API (en français, panne réseau comprise), sinon `fallback`. Une
+ * autre erreur (bug, réponse illisible) a un message technique, souvent en anglais : il n'est jamais montré.
+ */
+export const errorMessage = (error: unknown, fallback = 'Erreur inattendue du serveur') =>
+  error instanceof ApiError ? error.message : fallback;
+
 /** 503 : un service (TMDB…) n'a pas encore ses réglages. */
 export const isNotConfigured = (error: unknown) => error instanceof ApiError && error.status === 503;
 export const isNotFound = (error: unknown) => error instanceof ApiError && error.status === 404;

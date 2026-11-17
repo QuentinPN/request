@@ -4,10 +4,10 @@ import { expect, test } from './support/api.ts';
 // Captures de docs/captures/4.2, hors `npm run verify` : `npm run captures` pour les régénérer.
 test.skip(process.env.npm_lifecycle_event !== 'captures', 'captures générées à la demande');
 
-test('captures de la file d’approbation (4.2)', async ({ page, api }, { project }) => {
+test('captures de la file d’approbation (4.2)', async ({ page }, { project }) => {
   const dir = 'docs/captures/4.2';
   const width = project.name === 'mobile' ? 390 : 1440;
-  await mockApprovalQueue(page, api);
+  await mockApprovalQueue(page);
   await page.goto('/approbations');
   if (width === 1440) {
     await page.getByRole('checkbox', { name: 'Sélectionner Conclave' }).check();

@@ -1,56 +1,72 @@
-import { type QueryClient, queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  infiniteQueryOptions,
+  type QueryClient,
+  queryOptions,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import type { MediaKey, MediaType } from '../../shared/media.ts';
-import type {
-  CreateRequestInput,
-  RequestCounts,
-  RequestDetail,
-  RequestPage,
-  RequestQuota,
-  RequestView,
+import {
+  type CreateRequestInput,
+  type RequestCounts,
+  type RequestDetail,
+  type RequestListFilter,
+  type RequestPage,
+  type RequestQuota,
+  type RequestView,
+  requestListParams,
 } from '../../shared/requests.ts';
 import {
   type ActiveRequestStatus,
   activeRequestStatuses,
   type MediaStatus,
   type RequestStatus,
+  requestStatuses,
 } from '../../shared/status.ts';
 import { mediaTypeLabel } from './catalogue.ts';
 import { apiGet, apiSend } from './http.ts';
 import { downloadPercent } from './status.ts';
 
-// Seules définitions des requêtes des demandes (clés et adresses), lues par la feuille, Mes demandes, Découvrir et
-// la fiche. Toutes les clés commencent par `requests` : `invalidateQueries({ queryKey: requestKeys.all })` suffit.
+// Seules définitions des requêtes des demandes (clés et adresses), lues par la feuille, Mes demandes, Découvrir, la
+// fiche et la file d'approbation. Toutes les clés commencent par `requests` : `invalidateQueries({ queryKey:
+// requestKeys.all })` suffit.
 
 export const requestKeys = {
   all: ['requests'] as const,
-  mine: ['requests', 'mine'] as const,
+  /** Une page de la liste, par filtre (statuts, titre, les siennes). */
+  list: (filter: RequestListFilter) => ['requests', 'list', filter] as const,
+  /** Mes demandes, page après page (« Charger plus »), par filtre de statuts. */
+  mine: (status: readonly RequestStatus[] | undefined) => ['requests', 'mine', status ?? 'all'] as const,
   quota: ['requests', 'quota'] as const,
   counts: ['requests', 'counts'] as const,
   detail: (id: number) => ['requests', 'detail', id] as const,
-  /** File d'approbation : un onglet (statut ou historique) et sa page. */
-  approvals: (tab: string, page: number) => ['requests', 'approvals', tab, page] as const,
 };
 
-/** Plafond de pages lues pour « toutes mes demandes » (20 par page) : quelques dizaines par membre en pratique. */
-const MINE_MAX_PAGES = 10;
+const fetchPage = (filter: RequestListFilter, signal?: AbortSignal) =>
+  apiGet<RequestPage>(`/api/requests?${requestListParams(filter)}`, undefined, signal);
 
-/**
- * Toutes les demandes du membre connecté, de la plus récente à la plus ancienne. L'API ne filtre que sur un statut à
- * la fois, sans total ni filtre par titre : la liste complète est lue ici une fois, puis filtrée et comptée côté
- * client (Mes demandes, bande de Découvrir, suivi sur la fiche).
- */
-async function fetchAllMine(signal: AbortSignal): Promise<RequestView[]> {
-  const results: RequestView[] = [];
-  for (let page = 1; page <= MINE_MAX_PAGES; page++) {
-    const data = await apiGet<RequestPage>(`/api/requests?mine=true&page=${page}`, undefined, signal);
-    results.push(...data.results);
-    if (page >= data.totalPages) break;
-  }
-  return results;
-}
+/** Une page de demandes, filtrée côté serveur ; `totals` compte chaque statut du périmètre. */
+export const requestListQuery = (filter: RequestListFilter) =>
+  queryOptions({ queryKey: requestKeys.list(filter), queryFn: ({ signal }) => fetchPage(filter, signal) });
 
-export const myRequestsQuery = () =>
-  queryOptions({ queryKey: requestKeys.mine, queryFn: ({ signal }) => fetchAllMine(signal) });
+/** Mes demandes, plus récentes d'abord, 20 par page lue à la demande. */
+export const myRequestsQuery = (status?: readonly RequestStatus[]) =>
+  infiniteQueryOptions({
+    queryKey: requestKeys.mine(status),
+    queryFn: ({ pageParam, signal }) => fetchPage({ status, mine: true, page: pageParam }, signal),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
+  });
+
+/** Demandes en cours du membre (bande de Découvrir), les plus récentes. */
+export const myActiveRequestsQuery = () => requestListQuery({ mine: true, status: activeRequestStatuses });
+
+/** Demandes du membre pour un titre (suivi sur la fiche) : la première est la plus récente. */
+export const myRequestsForQuery = ({ type, tmdbId }: MediaKey) => requestListQuery({ mine: true, type, tmdbId });
+
+/** Nombre de demandes des statuts donnés (tous par défaut), d'après les totaux d'une page. */
+export const totalOf = (totals: RequestPage['totals'], statuses: readonly RequestStatus[] = requestStatuses) =>
+  statuses.reduce((sum, status) => sum + totals[status], 0);
 
 export const requestQuotaQuery = () =>
   queryOptions({
@@ -71,14 +87,6 @@ export const requestDetailQuery = (id: number) =>
     queryKey: requestKeys.detail(id),
     queryFn: ({ signal }) => apiGet<RequestDetail>(`/api/requests/${id}`, undefined, signal),
   });
-
-/** Dernière demande du membre pour ce titre (la liste est triée de la plus récente à la plus ancienne). */
-export const latestRequestFor = (requests: RequestView[], { type, tmdbId }: MediaKey) =>
-  requests.find((r) => r.type === type && r.tmdbId === tmdbId);
-
-/** Raison de l'échec d'un envoi : le détail du dernier événement `failed`. */
-export const failureReason = (request: RequestDetail): string | null =>
-  request.events.findLast((event) => event.type === 'failed')?.detail ?? null;
 
 /** Une demande change le statut des titres : catalogue, fiches et recherche sont relus avec les demandes. */
 export function invalidateAfterRequest(client: QueryClient) {

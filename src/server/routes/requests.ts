@@ -11,10 +11,13 @@ import {
   type RequestQuota,
   requestIdParamsSchema,
   requestListQuerySchema,
+  type SendOptions,
+  sendOptionsParamsSchema,
 } from '../../shared/requests.ts';
 import { parseRequest } from '../lib/api-errors.ts';
 import { requireCapability, viewerOf } from '../plugins/auth.ts';
 import { createRequests } from '../services/requests.ts';
+import { sendOptions } from '../services/send-options.ts';
 
 /**
  * Demandes : création et suivi (tout membre ayant le droit de demander), approbation, refus, relance et lots
@@ -44,6 +47,13 @@ export function requestsRoutes(app: FastifyInstance) {
   app.get('/api/requests/quota', canRequest, async (req): Promise<RequestQuota> => service.quota(viewerOf(req)));
 
   app.get('/api/requests/counts', canRequest, async (req): Promise<RequestCounts> => service.counts(viewerOf(req)));
+
+  // Listes de l'approbation (profils, dossiers) : ni adresse ni clé ; service non configuré → 503.
+  app.get(
+    '/api/requests/send-options/:type',
+    canManage,
+    async (req): Promise<SendOptions> => sendOptions(app.data, parseRequest(sendOptionsParamsSchema, req.params).type),
+  );
 
   app.get(
     '/api/requests/:id',

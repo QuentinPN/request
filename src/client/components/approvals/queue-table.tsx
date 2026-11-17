@@ -1,26 +1,16 @@
 import type { RequestView } from '@shared/requests.ts';
-import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { type KeyboardEvent, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { type ApprovalTab, approvalTabLabel } from '@/lib/approvals';
-import {
-  failureReason,
-  formatWhen,
-  requestDetailQuery,
-  requestMeta,
-  requestStatusLabel,
-  requestTitle,
-} from '@/lib/requests';
+import { formatWhen, requestMeta, requestStatusLabel, requestTitle } from '@/lib/requests';
 import { approveClass, Requester, RequestPoster } from './request-parts';
 
 const checkbox = 'size-[18px] cursor-pointer accent-(--brand) disabled:cursor-default';
 
-/** Raison de l'échec d'un envoi, lue sur la fiche de la demande (la liste ne la porte pas). */
-export function FailureReason({ id }: { id: number }) {
-  const { data, isPending } = useQuery(requestDetailQuery(id));
-  const reason = data && failureReason(data);
-  return <span className="text-(--text-danger)">{reason ?? (isPending ? '…' : 'Envoi impossible')}</span>;
+/** Raison de l'échec d'un envoi, portée par chaque ligne de la liste. */
+export function FailureReason({ request }: { request: Pick<RequestView, 'failureReason'> }) {
+  return <span className="text-(--text-danger)">{request.failureReason ?? 'Envoi impossible'}</span>;
 }
 
 type Props = {
@@ -146,7 +136,7 @@ export function QueueTable({
               </td>
               <td className={cn(cell, 'max-w-56')}>
                 {tab === 'failed' ? (
-                  <FailureReason id={request.id} />
+                  <FailureReason request={request} />
                 ) : tab === 'history' ? (
                   requestStatusLabel[request.status]
                 ) : (

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { MediaType } from '../../shared/media.ts';
 import type { ArrTestResult } from '../../shared/setup.ts';
 import { createClient, IntegrationError } from './http.ts';
 
@@ -11,6 +12,9 @@ export interface ArrConfig {
 export type ArrKind = 'radarr' | 'sonarr';
 
 export const ARR_SERVICE: Record<ArrKind, string> = { radarr: 'Radarr', sonarr: 'Sonarr' };
+
+/** Service qui reçoit un titre : Radarr pour un film, Sonarr pour une série. */
+export const arrKindOf = (type: MediaType): ArrKind => (type === 'movie' ? 'radarr' : 'sonarr');
 
 const API = '/api/v3';
 
@@ -69,19 +73,28 @@ export const toProfile = ({ id, name }: { id: number; name: string }) => ({ id, 
 
 export type { ArrTestResult };
 
-/** Vérifie l'adresse et la clé, et renvoie de quoi alimenter les listes déroulantes. */
-export async function testArr(kind: ArrKind, config: ArrConfig): Promise<ArrTestResult> {
+export type ArrOptions = Omit<ArrTestResult, 'version'>;
+
+/** Profils de qualité et dossiers racines : les listes déroulantes de l'assistant et de l'approbation. */
+export async function listArrOptions(kind: ArrKind, config: ArrConfig): Promise<ArrOptions> {
   const client = arrClient(kind, config);
-  const [status, qualityProfiles, rootFolders] = await Promise.all([
-    client.get('/system/status', statusSchema),
+  const [qualityProfiles, rootFolders] = await Promise.all([
     client.get('/qualityprofile', z.array(profileSchema)),
     client.get('/rootfolder', z.array(rootFolderSchema)),
   ]);
   return {
-    version: status.version,
     qualityProfiles: qualityProfiles.map(toProfile),
     rootFolders: rootFolders.map(({ id, path, freeSpace }) => ({ id, path, freeSpace })),
   };
+}
+
+/** Vérifie l'adresse et la clé, et renvoie de quoi alimenter les listes déroulantes. */
+export async function testArr(kind: ArrKind, config: ArrConfig): Promise<ArrTestResult> {
+  const [status, options] = await Promise.all([
+    arrClient(kind, config).get('/system/status', statusSchema),
+    listArrOptions(kind, config),
+  ]);
+  return { version: status.version, ...options };
 }
 
 // --- File de téléchargement ---

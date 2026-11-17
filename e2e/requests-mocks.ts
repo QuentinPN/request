@@ -5,14 +5,19 @@ import {
   type CreateRequestInput,
   REQUESTS_PAGE_SIZE,
   type RequestDetail,
+  type RequestPage,
   type RequestPerson,
   type RequestQuota,
+  requestListQuerySchema,
+  type SendOptions,
 } from '../src/shared/requests.ts';
-import type { MaskedSetting } from '../src/shared/settings.ts';
-import type { ArrTestResult } from '../src/shared/setup.ts';
-import { activeRequestStatuses, type RequestEventType, type RequestStatus } from '../src/shared/status.ts';
+import {
+  activeRequestStatuses,
+  type RequestEventType,
+  type RequestStatus,
+  requestStatuses,
+} from '../src/shared/status.ts';
 import { fixtures } from './catalogue-mocks.ts';
-import type { ApiMock } from './support/api.ts';
 
 // Faux `/api/requests*` : demandes en mémoire, typées par le contrat partagé. Une seule source pour Mes demandes
 // (feuille de demande, bande de Découvrir, fiche) et pour la file d'approbation.
@@ -101,6 +106,7 @@ export function makeRequest(
     createdAt,
     updatedAt: createdAt,
     media,
+    failureReason: status === 'failed' ? FAILURE : null,
     events: events.map((type, i) => ({
       id: id * 100 + i,
       type,
@@ -154,16 +160,10 @@ export const approvalQueue = (): RequestDetail[] => {
   ];
 };
 
-export const radarrSetting: MaskedSetting<'radarr'> = {
-  url: 'http://radarr.local:7878',
-  apiKey: { set: true },
-  qualityProfileId: 4,
-  rootFolderPath: '/films',
-  minimumAvailability: 'released',
-};
-
-export const radarrTest: ArrTestResult = {
-  version: '5.14.0',
+/** Listes de Radarr que lit l'approbateur, avec les valeurs par défaut des réglages. */
+export const radarrOptions: SendOptions = {
+  defaultProfileId: 4,
+  defaultFolder: '/films',
   qualityProfiles: [
     { id: 4, name: 'HD-1080p' },
     { id: 5, name: 'Ultra-HD' },
@@ -190,6 +190,8 @@ export class RequestsMock {
   declines: { id: number; body: unknown }[] = [];
   retries: number[] = [];
   batches: BatchRequestInput[] = [];
+  /** Réponses de `/api/requests/send-options/:type` ; absent : service pas encore configuré (503). */
+  sendOptions: Partial<Record<MediaType, SendOptions>> = {};
 
   readonly page: Page;
 
@@ -221,6 +223,7 @@ export class RequestsMock {
       detail: eventDetail[type] ?? null,
       createdAt: request.updatedAt,
     });
+    request.failureReason = status === 'failed' ? FAILURE : null;
     return request;
   }
 
@@ -253,18 +256,32 @@ export class RequestsMock {
     const path = url.pathname;
     const json = (status: number, body: unknown) => route.fulfill({ status, json: body });
     if (method === 'GET' && path === '/api/requests') {
-      const status = url.searchParams.get('status');
-      const mine = url.searchParams.get('mine') === 'true';
-      const matching = this.requests.filter(
-        (r) => (!status || r.status === status) && (!mine || r.requester.id === quentin.id),
+      // Même contrat que le serveur : la requête est lue par le schéma partagé.
+      const query = requestListQuerySchema.safeParse(Object.fromEntries(url.searchParams));
+      if (!query.success) return json(400, { error: 'Requête invalide' });
+      const { status, type, tmdbId, mine, page } = query.data;
+      const scope = this.requests.filter(
+        (r) =>
+          (!mine || r.requester.id === quentin.id) &&
+          (!type || r.type === type) &&
+          (tmdbId === undefined || r.tmdbId === tmdbId),
       );
-      const page = Number(url.searchParams.get('page') ?? 1);
+      const matching = scope.filter((r) => !status || status.includes(r.status));
       const start = (page - 1) * REQUESTS_PAGE_SIZE;
+      const totals = Object.fromEntries(
+        requestStatuses.map((s) => [s, scope.filter((r) => r.status === s).length]),
+      ) as RequestPage['totals'];
       return json(200, {
         page,
         totalPages: Math.ceil(matching.length / REQUESTS_PAGE_SIZE),
         results: matching.slice(start, start + REQUESTS_PAGE_SIZE).map(({ events: _, ...view }) => view),
-      });
+        totals,
+      } satisfies RequestPage);
+    }
+    const optionsOf = path.match(/^\/api\/requests\/send-options\/(movie|tv)$/)?.[1] as MediaType | undefined;
+    if (method === 'GET' && optionsOf) {
+      const options = this.sendOptions[optionsOf];
+      return options ? json(200, options) : json(503, { error: "Radarr n'est pas encore configuré" });
     }
     if (method === 'GET' && path === '/api/requests/quota') return json(200, this.quota);
     if (method === 'GET' && path === '/api/requests/counts')
@@ -317,11 +334,10 @@ export class RequestsMock {
 
 export const mockRequests = (page: Page) => new RequestsMock(page).install();
 
-/** File d'approbation d'un propriétaire : les demandes de `approvalQueue` et les réglages Radarr qu'il y lit. */
-export async function mockApprovalQueue(page: Page, api: ApiMock) {
-  api.state.settings.radarr = radarrSetting;
-  await page.route(/\/api\/setup\/radarr\/test$/, (route) => route.fulfill({ json: radarrTest }));
+/** File d'approbation : les demandes de `approvalQueue` et les listes de Radarr qu'y lit l'approbateur. */
+export async function mockApprovalQueue(page: Page) {
   const requests = await mockRequests(page);
   requests.requests = approvalQueue();
+  requests.sendOptions = { movie: radarrOptions };
   return requests;
 }

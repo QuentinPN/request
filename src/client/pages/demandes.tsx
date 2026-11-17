@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ChipGroup, FilterChip } from '@/components/media/title-parts';
@@ -18,33 +18,36 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { plural } from '@/lib/catalogue';
-import { ApiError } from '@/lib/http';
+import { errorMessage } from '@/lib/http';
 import {
   formatDay,
-  isActiveRequest,
   myRequestsQuery,
+  requestCountsQuery,
   requestMeta,
   requestProgress,
   requestQuotaQuery,
+  totalOf,
   useCancelRequest,
 } from '@/lib/requests';
-import { REQUESTS_PAGE_SIZE, type RequestView } from '../../shared/requests.ts';
+import type { RequestPage, RequestView } from '../../shared/requests.ts';
+import { activeRequestStatuses, type RequestStatus } from '../../shared/status.ts';
 
 type FilterId = 'active' | 'available' | 'declined' | 'all';
 
-const isAvailable = (r: RequestView) => requestProgress(r).tone === 'available';
-
-/** Filtres de Mes demandes : « En cours » exclut un titre déjà arrivé dans Emby, même avant la synchronisation. */
-const filters: { id: FilterId; label: string; match: (r: RequestView) => boolean; empty: string }[] = [
+/**
+ * Filtres de Mes demandes, appliqués par le serveur ; `statuses` absent : toutes. Un titre arrivé dans Emby reste
+ * « En cours » jusqu'à ce que la synchronisation passe sa demande en `available`.
+ */
+const filters: { id: FilterId; label: string; statuses?: readonly RequestStatus[]; empty: string }[] = [
+  { id: 'active', label: 'En cours', statuses: activeRequestStatuses, empty: 'Aucune demande en cours' },
   {
-    id: 'active',
-    label: 'En cours',
-    match: (r) => isActiveRequest(r.status) && !isAvailable(r),
-    empty: 'Aucune demande en cours',
+    id: 'available',
+    label: 'Disponibles',
+    statuses: ['available'],
+    empty: 'Aucune demande disponible pour l’instant',
   },
-  { id: 'available', label: 'Disponibles', match: isAvailable, empty: 'Aucune demande disponible pour l’instant' },
-  { id: 'declined', label: 'Refusées', match: (r) => r.status === 'declined', empty: 'Aucune demande refusée' },
-  { id: 'all', label: 'Toutes', match: () => true, empty: 'Aucune demande pour l’instant' },
+  { id: 'declined', label: 'Refusées', statuses: ['declined'], empty: 'Aucune demande refusée' },
+  { id: 'all', label: 'Toutes', empty: 'Aucune demande pour l’instant' },
 ];
 
 function QuotaLine() {
@@ -82,7 +85,7 @@ function CancelRequest({ request }: { request: RequestView }) {
         </DialogDescription>
         {cancel.error && (
           <Notice tone="error" role="alert">
-            {cancel.error instanceof ApiError ? cancel.error.message : 'L’annulation n’a pas abouti.'}
+            {errorMessage(cancel.error, 'L’annulation n’a pas abouti.')}
           </Notice>
         )}
         <DialogFooter>
@@ -157,33 +160,33 @@ function RowsSkeleton() {
   );
 }
 
-function RequestList({ requests }: { requests: RequestView[] }) {
-  // Sans demande en cours, la page s'ouvre sur toutes les demandes plutôt que sur une liste vide.
-  const [filterId, setFilterId] = useState<FilterId>(() =>
-    requests.some((r) => filters[0]?.match(r)) ? 'active' : 'all',
-  );
-  const [shown, setShown] = useState(REQUESTS_PAGE_SIZE);
-  const filter = filters.find((f) => f.id === filterId) ?? filters[0];
-  if (!filter) return null;
-  const matching = requests.filter(filter.match);
+type Filter = (typeof filters)[number];
+
+function RequestList({
+  filter,
+  pages,
+  onFilter,
+  more,
+}: {
+  filter: Filter;
+  pages: RequestPage[];
+  onFilter: (id: FilterId) => void;
+  /** Lit la page suivante ; absent quand tout est affiché. */
+  more: { load: () => void; loading: boolean } | undefined;
+}) {
+  const totals = pages[0]?.totals;
+  const requests = pages.flatMap((page) => page.results);
   return (
     <div className="space-y-6">
       <ChipGroup label="Filtrer les demandes">
         {filters.map((f) => (
-          <FilterChip
-            key={f.id}
-            pressed={f.id === filterId}
-            onClick={() => {
-              setFilterId(f.id);
-              setShown(REQUESTS_PAGE_SIZE);
-            }}
-          >
+          <FilterChip key={f.id} pressed={f.id === filter.id} onClick={() => onFilter(f.id)}>
             {f.label}
-            <span className="ml-1.5 tabular-nums opacity-70">{requests.filter(f.match).length}</span>
+            <span className="ml-1.5 tabular-nums opacity-70">{totals ? totalOf(totals, f.statuses) : ''}</span>
           </FilterChip>
         ))}
       </ChipGroup>
-      {matching.length === 0 ? (
+      {requests.length === 0 ? (
         <EmptyState
           title={filter.empty}
           description="Demandez un film ou une série depuis Découvrir : son avancement s’affichera ici."
@@ -199,13 +202,13 @@ function RequestList({ requests }: { requests: RequestView[] }) {
             aria-label={`Demandes : ${filter.label.toLowerCase()}`}
             className="space-y-2 lg:space-y-0 lg:rounded-card lg:border lg:border-border lg:bg-card lg:py-2"
           >
-            {matching.slice(0, shown).map((request) => (
+            {requests.map((request) => (
               <RequestRow key={request.id} request={request} />
             ))}
           </ul>
-          {matching.length > shown && (
+          {more && (
             <div className="flex justify-center">
-              <Button variant="secondary" onClick={() => setShown((n) => n + REQUESTS_PAGE_SIZE)}>
+              <Button variant="secondary" disabled={more.loading} onClick={more.load}>
                 Charger plus
               </Button>
             </div>
@@ -218,7 +221,23 @@ function RequestList({ requests }: { requests: RequestView[] }) {
 
 /** Mes demandes (maquettes A-Demandes et R-Mobile) : filtres, avancement en quatre étapes, annulation. */
 export function DemandesPage() {
-  const query = useQuery(myRequestsQuery());
+  const counts = useQuery(requestCountsQuery());
+  const [picked, setPicked] = useState<FilterId>();
+  // Sans demande en cours, la page s'ouvre sur toutes les demandes plutôt que sur une liste vide.
+  const initial: FilterId | undefined = counts.data
+    ? counts.data.mineActive > 0
+      ? 'active'
+      : 'all'
+    : counts.isError
+      ? 'all'
+      : undefined;
+  const filter = filters.find((f) => f.id === (picked ?? initial));
+  // Changement de filtre : la liste précédente reste affichée (avec ses filtres) le temps de lire la nouvelle.
+  const query = useInfiniteQuery({
+    ...myRequestsQuery(filter?.statuses),
+    enabled: !!filter,
+    placeholderData: keepPreviousData,
+  });
   return (
     <div className="space-y-8">
       <header className="space-y-2">
@@ -233,9 +252,22 @@ export function DemandesPage() {
           title: 'Aucune demande pour l’instant',
           description: 'Vos demandes de films et de séries, avec leur statut et leur progression, apparaîtront ici.',
         }}
-        isEmpty={(data) => data.length === 0}
+        isEmpty={(data) => !data.pages[0] || totalOf(data.pages[0].totals) === 0}
       >
-        {(requests) => <RequestList requests={requests} />}
+        {(data) =>
+          filter && (
+            <RequestList
+              filter={filter}
+              pages={data.pages}
+              onFilter={setPicked}
+              more={
+                query.hasNextPage && !query.isPlaceholderData
+                  ? { load: () => void query.fetchNextPage(), loading: query.isFetchingNextPage }
+                  : undefined
+              }
+            />
+          )
+        }
       </QueryState>
     </div>
   );
