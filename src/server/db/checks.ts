@@ -1,11 +1,15 @@
-import { type AnyColumn, sql } from 'drizzle-orm';
+import { type AnyColumn, type SQL, sql } from 'drizzle-orm';
 import { check } from 'drizzle-orm/sqlite-core';
 
 /**
- * `CHECK (colonne IN (...))` généré depuis un tableau de `src/shared` : la liste des valeurs n'existe qu'à un endroit.
- * Les valeurs sont écrites en littéraux (une contrainte DDL n'accepte pas de paramètre).
+ * `colonne IN ('a', 'b')` écrit en littéraux : une contrainte DDL (`CHECK`, `WHERE` d'un index partiel) n'accepte pas
+ * de paramètre, et l'`ON CONFLICT … WHERE` d'une insertion doit reprendre mot pour mot celui de l'index partiel.
  */
-export function enumCheck(name: string, column: AnyColumn, values: readonly string[]) {
+export function inLiterals(column: AnyColumn, values: readonly string[]): SQL {
   const literals = values.map((value) => sql.raw(`'${value.replaceAll("'", "''")}'`));
-  return check(name, sql`${column} IN (${sql.join(literals, sql.raw(', '))})`);
+  return sql`${column} IN (${sql.join(literals, sql.raw(', '))})`;
 }
+
+/** `CHECK (colonne IN (...))` généré depuis un tableau de `src/shared` : la liste des valeurs n'existe qu'à un endroit. */
+export const enumCheck = (name: string, column: AnyColumn, values: readonly string[]) =>
+  check(name, inLiterals(column, values));

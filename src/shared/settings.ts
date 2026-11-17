@@ -6,8 +6,9 @@ export const normalizeUrl = (u: string) => u.replace(/\/+$/, '');
 const url = z.url({ protocol: /^https?$/ }).transform(normalizeUrl);
 const apiKey = z.string().trim().min(1, 'Clé d’API requise');
 const service = z.object({ url, apiKey });
-const profileId = z.number().int().positive('Profil requis');
-const rootFolderPath = z.string().trim().min(1, 'Dossier racine requis');
+/** Profil de qualité et dossier racine : réglages Radarr/Sonarr, et choix de l'approbateur avant envoi. */
+export const profileId = z.number().int().positive('Profil requis');
+export const rootFolderPath = z.string().trim().min(1, 'Dossier racine requis');
 
 /** Disponibilité minimale d'un film avant que Radarr ne le cherche. */
 export const minimumAvailabilities = ['announced', 'inCinemas', 'released'] as const;

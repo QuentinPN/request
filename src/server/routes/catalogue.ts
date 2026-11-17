@@ -9,15 +9,10 @@ import {
   typeIdParamsSchema,
   typeParamsSchema,
 } from '../../shared/catalogue.ts';
-import {
-  type MediaDetails,
-  type MediaSummary,
-  mediaDetailsSchema,
-  mediaSearchResultsSchema,
-} from '../../shared/media.ts';
-import { IntegrationError } from '../integrations/http.ts';
+import { type MediaSummary, mediaSearchResultsSchema } from '../../shared/media.ts';
 import { parseRequest, parseUpstream } from '../lib/api-errors.ts';
 import { withStatus } from '../services/availability.ts';
+import { loadDetails } from '../services/tmdb.ts';
 
 const SERVICE = 'TMDB';
 
@@ -78,16 +73,8 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     return { ...found, results: await app.availability.withStatuses(found.results) };
   });
 
-  app.get('/api/media/:type/:id', async (req, reply) => {
+  app.get('/api/media/:type/:id', async (req) => {
     const { type, id } = parseRequest(typeIdParamsSchema, req.params);
-    let details: MediaDetails;
-    try {
-      details = parseUpstream(SERVICE, mediaDetailsSchema, await app.tmdb().details(type, id));
-    } catch (err) {
-      if (err instanceof IntegrationError && err.kind === 'not_found')
-        return reply.code(404).send({ error: 'Titre introuvable' });
-      throw err;
-    }
-    return app.availability.withDetailsStatus(details);
+    return app.availability.withDetailsStatus(await loadDetails(app.tmdb(), type, id));
   });
 };

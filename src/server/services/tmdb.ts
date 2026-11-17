@@ -1,7 +1,19 @@
+import { type MediaDetails, type MediaType, mediaDetailsSchema } from '../../shared/media.ts';
 import type { Data } from '../db/index.ts';
+import { IntegrationError } from '../integrations/http.ts';
 import { createTmdb, type TmdbClient } from '../integrations/tmdb.ts';
-import { NotConfiguredError } from '../lib/api-errors.ts';
+import { HttpError, NotConfiguredError, parseUpstream } from '../lib/api-errors.ts';
 import { getSetting } from './settings.ts';
+
+/** Fiche TMDB validée (fiche titre, création d'une demande) ; un titre inconnu de TMDB → 404 « Titre introuvable ». */
+export async function loadDetails(tmdb: TmdbClient, type: MediaType, id: number): Promise<MediaDetails> {
+  try {
+    return parseUpstream('TMDB', mediaDetailsSchema, await tmdb.details(type, id));
+  } catch (err) {
+    if (err instanceof IntegrationError && err.kind === 'not_found') throw new HttpError(404, 'Titre introuvable');
+    throw err;
+  }
+}
 
 /**
  * Fournit le client TMDB construit d'après le réglage enregistré. Le client est gardé tant que la clé ne change pas

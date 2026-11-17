@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   keyOf,
   type MediaDetails,
@@ -8,9 +8,9 @@ import {
   type Season,
 } from '../../shared/media.ts';
 import type { Setting } from '../../shared/settings.ts';
-import type { Availability, LibraryStatus, MediaStatus } from '../../shared/status.ts';
+import type { Availability, LibraryStatus, MediaStatus, RequestStatus } from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
-import { media, seasons } from '../db/schema.ts';
+import { media, requestSeasons, requests, seasons } from '../db/schema.ts';
 import { getQueue, type QueueItem } from '../integrations/arr.ts';
 import { findEmbyItems, getEmbySeasonAvailability, latestEmbyItems, listEmbyLibraries } from '../integrations/emby.ts';
 import { listMovies } from '../integrations/radarr.ts';
@@ -91,8 +91,35 @@ export function libraryState(type: MediaType, facts: TitleFacts): LibraryState |
   return null;
 }
 
-/** Part « demandes » du statut : posée par la tâche 4.1 (aucune demande pour l'instant). */
-export type RequestState = { status: Extract<MediaStatus, 'requested' | 'pending' | 'declined'> } | null;
+type RequestDisplay = Extract<MediaStatus, 'requested' | 'pending' | 'declined'>;
+/** Part « demandes » du statut, tirée des demandes de tous les membres (chacun voit « Demandé »). */
+export type RequestState = { status: RequestDisplay } | null;
+
+/**
+ * Statut affiché pour chaque statut de demande : approuvée, envoyée ou en échec (relance à venir) → « Demandé ».
+ * Annulée ou arrivée dans Emby : rien (la bibliothèque prend le relais).
+ */
+const REQUEST_DISPLAY: Partial<Record<RequestStatus, RequestDisplay>> = {
+  pending: 'pending',
+  approved: 'requested',
+  sent: 'requested',
+  failed: 'requested',
+  declined: 'declined',
+};
+const shownRequestStatuses = Object.keys(REQUEST_DISPLAY) as RequestStatus[];
+/** Plusieurs demandes sur un même titre (ou une même saison) : « Demandé » > « En attente » > « Refusé ». */
+const DISPLAY_RANK: Record<RequestDisplay, number> = { requested: 3, pending: 2, declined: 1 };
+
+/** Part « demandes » la plus forte de chaque clé, à partir de lignes `(clé, statut de demande)`. */
+function strongestByKey<K>(rows: ReadonlyArray<{ key: K; status: RequestStatus }>): Map<K, RequestState> {
+  const result = new Map<K, RequestState>();
+  for (const { key, status } of rows) {
+    const shown = REQUEST_DISPLAY[status];
+    const current = result.get(key)?.status;
+    if (shown && (!current || DISPLAY_RANK[shown] > DISPLAY_RANK[current])) result.set(key, { status: shown });
+  }
+  return result;
+}
 
 /**
  * Statut affiché, seule fusion des deux parts : disponible ou en téléchargement l'emportent sur une demande, une
@@ -116,13 +143,41 @@ export const withStatus = <T extends MediaKey>(statuses: ReadonlyMap<string, Ava
 
 type MediaRow = typeof media.$inferSelect;
 
-/** Lecture par lot des statuts d'une page d'affiches, en une requête servie par l'index unique `(type, tmdb_id)`. */
-export function selectCached(db: Db, keys: readonly MediaKey[]) {
+/** `(type, tmdb_id) IN (VALUES …)` : lecture par lot servie par l'index unique `(type, tmdb_id)` de `media`. */
+function mediaKeysIn(keys: readonly MediaKey[]) {
   const values = sql.join(
     keys.map(({ type, tmdbId }) => sql`(${type}, ${tmdbId})`),
     sql`, `,
   );
-  return db.select().from(media).where(sql`(${media.type}, ${media.tmdbId}) IN (VALUES ${values})`);
+  return sql`(${media.type}, ${media.tmdbId}) IN (VALUES ${values})`;
+}
+
+/** Lecture par lot des statuts d'une page d'affiches, en une requête servie par l'index unique `(type, tmdb_id)`. */
+export function selectCached(db: Db, keys: readonly MediaKey[]) {
+  return db.select().from(media).where(mediaKeysIn(keys));
+}
+
+/** Part « demandes » de chaque titre (clé `type:tmdbId`), en une requête pour toute une page d'affiches. */
+export function requestStatesFor(db: Db, keys: readonly MediaKey[]): Map<string, RequestState> {
+  if (keys.length === 0) return new Map();
+  const rows = db
+    .select({ type: media.type, tmdbId: media.tmdbId, status: requests.status })
+    .from(media)
+    .innerJoin(requests, eq(requests.mediaId, media.id))
+    .where(and(mediaKeysIn(keys), inArray(requests.status, shownRequestStatuses)))
+    .all();
+  return strongestByKey(rows.map((row) => ({ key: keyOf(row), status: row.status })));
+}
+
+/** Part « demandes » de chaque saison d'une série (numéro de saison → état). */
+function seasonRequestStates(db: Db, mediaId: number): Map<number, RequestState> {
+  const rows = db
+    .select({ key: requestSeasons.seasonNumber, status: requests.status })
+    .from(requests)
+    .innerJoin(requestSeasons, eq(requestSeasons.requestId, requests.id))
+    .where(and(eq(requests.mediaId, mediaId), inArray(requests.status, shownRequestStatuses)))
+    .all();
+  return strongestByKey(rows);
 }
 
 interface Update {
@@ -452,23 +507,27 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     return items.length > 0 ? mean(progressOf(items)) : undefined;
   }
 
-  async function availabilityOf(row: MediaRow | undefined, settings: Settings): Promise<Availability> {
-    if (!row?.status) return displayStatus(null, null);
+  async function libraryOf(row: MediaRow | undefined, settings: Settings): Promise<LibraryState | null> {
+    if (!row?.status) return null;
     const library: LibraryState = { status: row.status as LibraryStatus };
     if (row.status === 'downloading') {
       const progress = await progressFor(row, settings);
       if (progress !== undefined) library.progress = progress;
     }
-    return displayStatus(library, null);
+    return library;
   }
 
-  /** Statut de chaque titre, par clé `type:tmdbId` (absent de la carte = aucun statut). */
+  /**
+   * Statut de chaque titre, par clé `type:tmdbId` (absent de la carte = aucun statut) : bibliothèque (si un service
+   * est configuré) et demandes, lues chacune en une requête pour tout le lot.
+   */
   async function statusesFor(items: readonly MediaKey[], exact?: ExactSeries) {
     const result = new Map<string, Availability>();
     const resolved = await resolve(items, exact);
-    if (!resolved) return result;
-    for (const [key, row] of resolved.rows) {
-      const availability = await availabilityOf(row, resolved.settings);
+    const requested = requestStatesFor(db, items);
+    for (const key of new Set([...(resolved?.rows.keys() ?? []), ...requested.keys()])) {
+      const library = resolved ? await libraryOf(resolved.rows.get(key), resolved.settings) : null;
+      const availability = displayStatus(library, requested.get(key) ?? null);
       if (availability.status) result.set(key, availability);
     }
     return result;
@@ -503,13 +562,15 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
       const settings = settingsOf();
       const row = selectCached(db, [details]).get();
       const rows = row ? db.select().from(seasons).where(eq(seasons.mediaId, row.id)).all() : [];
-      const byNumber = new Map(rows.map((s) => [s.seasonNumber, s.status]));
+      const byNumber = new Map(rows.map((s) => [s.seasonNumber, s.status as LibraryStatus]));
+      const requested = row ? seasonRequestStates(db, row.id) : new Map<number, RequestState>();
       seasonList = await Promise.all(
         details.seasons.map(async (season) => {
           const status = byNumber.get(season.seasonNumber);
-          if (!status || !row) return { ...season };
-          const progress = status === 'downloading' ? await progressFor(row, settings, season.seasonNumber) : undefined;
-          return { ...season, status, ...(progress !== undefined && { progress }) };
+          const progress =
+            row && status === 'downloading' ? await progressFor(row, settings, season.seasonNumber) : undefined;
+          const library = status ? { status, ...(progress !== undefined && { progress }) } : null;
+          return { ...season, ...displayStatus(library, requested.get(season.seasonNumber) ?? null) };
         }),
       );
     }

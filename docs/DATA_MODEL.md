@@ -24,8 +24,8 @@ Index : `UNIQUE(tmdb_id, type)` (badge de chaque affiche : lecture par lot `WHER
 
 **`seasons`** — `id` PK · `media_id` FK → media `ON DELETE CASCADE` · `season_number` int · `status` text NOT NULL `CHECK IN mediaStatuses` (seules les saisons ayant un statut ont une ligne) · `UNIQUE(media_id, season_number)` (couvre aussi l'accès par média).
 
-**`requests`** — `id` PK · `media_id` FK → media `ON DELETE RESTRICT` · `user_id` FK → users `ON DELETE CASCADE` · `status` text `CHECK IN requestStatuses` · `decided_by` FK → users `ON DELETE SET NULL` · `decline_reason` text · `quality_profile_id` int · `root_folder` text · `is_4k` int NOT NULL DEFAULT 0 (réservé, toujours 0) · `created_at` · `updated_at`.
-Index : `(user_id, created_at)` (« Mes demandes » + quota), `(status, created_at)` (file d'approbation), `(media_id)`.
+**`requests`** — `id` PK · `media_id` FK → media `ON DELETE RESTRICT` · `user_id` FK → users `ON DELETE CASCADE` · `status` text `CHECK IN requestStatuses` · `decided_by` FK → users `ON DELETE SET NULL` · `decline_reason` text · `quality_profile_id` int · `root_folder` text · `series_type` text `CHECK IN seriesTypes` (choix de l'approbation, repris par une relance ; ajouté en 4.1) · `is_4k` int NOT NULL DEFAULT 0 (réservé, toujours 0) · `created_at` · `updated_at`.
+Index : `(user_id, created_at)` (« Mes demandes » + quota), `(status, created_at)` (file d'approbation), `(media_id, status)` (statut affiché d'un titre, sert aussi la clé étrangère), `(decided_by)` partiel.
 
 **`request_seasons`** — **table séparée**, pas de JSON : le quota compte des saisons, Sonarr reçoit une liste, la frise affiche l'état par saison. `request_id` FK `ON DELETE CASCADE` · `season_number` · PK `(request_id, season_number)`.
 
@@ -52,7 +52,7 @@ Servies par `requests(user_id, created_at)`. Vérification et insertion dans **l
 
 ### Double clic
 
-`CREATE UNIQUE INDEX requests_active ON requests(media_id, user_id, is_4k) WHERE status IN ('pending','approved','sent')` : un second POST identique ne crée rien : insertion via `onConflictDoNothing({ target, targetWhere })` de Drizzle, puis lecture de la demande active existante, renvoyée en 200 (pas 409). Pour les séries, le service refuse en plus les saisons déjà couvertes par une demande active.
+`CREATE UNIQUE INDEX requests_active ON requests(media_id, user_id, is_4k) WHERE status IN ('pending','approved','sent','failed')` (`activeRequestStatuses` ; `failed` inclus en 4.1 : une demande en échec attend sa relance, elle ne doit pas être dupliquée) : un second POST identique ne crée rien, la demande active existante est renvoyée en 200 (pas 409). Drizzle 0.45 écrit le `where` de `onConflictDoNothing` après `DO NOTHING` (SQL invalide) : l'insertion passe par `onConflictDoUpdate({ target, targetWhere, setWhere: 0 })`, équivalent exact (`ACTIVE_CONFLICT`, `services/requests.ts`). Pour les séries, le service écarte en plus les saisons déjà couvertes par une demande active ; une nouvelle saison s'ajoute à la demande du membre tant qu'elle est en attente, sinon 409.
 
 ### 4K plus tard
 
@@ -60,7 +60,7 @@ Seule la colonne `requests.is_4k` (et sa présence dans l'index ci-dessus) est p
 
 ## 3. Statuts : une seule source
 
-- `src/shared/status.ts` est l'unique définition : `mediaStatuses` (existant), à compléter de `requestStatuses` (`pending`, `approved`, `declined`, `cancelled`, `sent`, `failed`, `available`) — l'annulation par le membre passe la demande en `cancelled` (historique conservé, hors quota, hors `requests_active`) et `requestEventTypes` (valeurs à fixer en 4.1/4.2 ; `requestStatuses` posé en 3.2). Les `CHECK` SQL et les schémas Zod en dérivent.
+- `src/shared/status.ts` est l'unique définition : `mediaStatuses` (existant), à compléter de `requestStatuses` (`pending`, `approved`, `declined`, `cancelled`, `sent`, `failed`, `available`) — l'annulation par le membre passe la demande en `cancelled` (historique conservé, hors quota, hors `requests_active`) et `requestEventTypes` (fixés en 4.1 : `requested`, `approved`, `declined`, `cancelled`, `sent`, `failed`, `retried`, `available` ; `requestStatuses` posé en 3.2). Les `CHECK` SQL et les schémas Zod en dérivent.
 - **Stockés** : `requests.status` (cycle de vie piloté par l'appli), `request_events` (faits), `media.status` et `seasons.status` (**cache** calculé par le serveur à partir d'Emby + Radarr/Sonarr + demandes).
 - **Dérivés, jamais stockés** : étape courante de la frise (dernier évènement), compteurs de quota, nombre de non lus, progression d'un téléchargement (lue dans la file Radarr/Sonarr, en cache mémoire 30 s). `partial` est calculé depuis les saisons mais **gardé dans `media.status`** (cache) : une page d'affiches se lit en une requête, sans agrégat.
 - **3.2** : `media.status` ne garde que la part bibliothèque (`available`, `partial`, `downloading`, `NULL`). Le statut affiché = `displayStatus(bibliothèque, demande)` (`services/availability.ts`), seule fusion ; la part demande (4.1) y sera branchée sans toucher au calcul. Durée de vie du cache : 5 min (1 min en téléchargement) ; le balayage complet viendra en 5.1.

@@ -180,8 +180,9 @@ describe('findEmbyItems', () => {
     const server = await serve({ 'GET /Items': { Items: [] } });
     const tmdbIds = Array.from({ length: 120 }, (_, i) => i + 1);
     await findEmbyItems(server.config, { type: 'movie', tmdbIds });
-    const batches = server.requests.map((r) => r.query.AnyProviderIdEquals?.split(',').length);
-    expect(batches).toEqual([50, 50, 20]);
+    // Les lots partent en parallèle : leur ordre d'arrivée n'est pas garanti.
+    const batches = server.requests.map((r) => r.query.AnyProviderIdEquals?.split(',').length ?? 0);
+    expect(batches.sort((a, b) => b - a)).toEqual([50, 50, 20]);
   });
 
   it("n'appelle pas Emby sans identifiant", async () => {

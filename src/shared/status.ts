@@ -26,6 +26,45 @@ export const mediaStatusShortLabel: Record<MediaStatus, string> = { ...mediaStat
  */
 export const requestStatuses = ['pending', 'approved', 'declined', 'cancelled', 'sent', 'failed', 'available'] as const;
 export type RequestStatus = (typeof requestStatuses)[number];
+export const requestStatusSchema = z.enum(requestStatuses);
+
+/**
+ * Demandes « en cours » : une seule par membre et par titre (index `requests_active`), elles couvrent leurs saisons,
+ * comptent dans les compteurs et font afficher « Demandé ». `failed` en fait partie : la relance la reprend.
+ */
+export const activeRequestStatuses = [
+  'pending',
+  'approved',
+  'sent',
+  'failed',
+] as const satisfies readonly RequestStatus[];
+export type ActiveRequestStatus = (typeof activeRequestStatuses)[number];
+
+/**
+ * États d'avant l'envoi : l'index `requests_active` n'en couvre pas d'autres, une demande `sent` ne bloque donc pas
+ * une nouvelle demande du même membre (saisons suivantes d'une série).
+ */
+export const preSendRequestStatuses = [
+  'pending',
+  'approved',
+  'failed',
+] as const satisfies readonly ActiveRequestStatus[];
+
+/**
+ * Faits de la frise d'une demande (`request_events`, ajout seulement) : `retried` marque la relance d'un envoi en
+ * échec, suivie d'un nouveau `sent` ou `failed` ; `available` sera posé par la synchronisation (5.1).
+ */
+export const requestEventTypes = [
+  'requested',
+  'approved',
+  'declined',
+  'cancelled',
+  'sent',
+  'failed',
+  'retried',
+  'available',
+] as const;
+export type RequestEventType = (typeof requestEventTypes)[number];
 
 /**
  * Statut affiché d'un titre ou d'une saison : absent du champ `status` = rien dans la bibliothèque ni en demande.

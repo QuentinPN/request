@@ -1,10 +1,11 @@
 import { sql } from 'drizzle-orm';
-import { check, customType, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { check, customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { jobRunStatuses } from '../../shared/jobs.ts';
 import { mediaTypes } from '../../shared/media.ts';
 import { type QuotaOverride, quotaOverrideSchema, roles } from '../../shared/roles.ts';
-import { mediaStatuses } from '../../shared/status.ts';
-import { enumCheck } from './checks.ts';
+import { seriesTypes } from '../../shared/settings.ts';
+import { mediaStatuses, preSendRequestStatuses, requestEventTypes, requestStatuses } from '../../shared/status.ts';
+import { enumCheck, inLiterals } from './checks.ts';
 
 /**
  * JSON validé à la lecture par `quotaOverrideSchema` : une valeur illisible ou hors schéma (base éditée à la main,
@@ -142,5 +143,80 @@ export const jobRuns = sqliteTable(
     uniqueIndex('job_runs_running').on(table.job).where(sql`${table.status} = 'running'`),
     // « Dernier balayage » d'une tâche (`ORDER BY started_at DESC` parcourt l'index à rebours).
     index('job_runs_job_started_at_idx').on(table.job, table.startedAt),
+  ],
+);
+
+/**
+ * Demandes d'un membre (film, ou saisons d'une série dans `requestSeasons`). Profil, dossier et type de série sont
+ * ceux choisis à l'approbation (`NULL` = valeur des réglages), repris tels quels par une relance.
+ */
+export const requests = sqliteTable(
+  'requests',
+  {
+    id: integer().primaryKey(),
+    mediaId: integer()
+      .notNull()
+      .references(() => media.id, { onDelete: 'restrict' }),
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text({ enum: requestStatuses }).notNull(),
+    decidedBy: text().references(() => users.id, { onDelete: 'set null' }),
+    declineReason: text(),
+    qualityProfileId: integer(),
+    rootFolder: text(),
+    seriesType: text({ enum: seriesTypes }),
+    /** Réservé aux demandes 4K (toujours `false` pour l'instant). */
+    is4k: integer('is_4k', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  },
+  (table) => [
+    enumCheck('requests_status_check', table.status, requestStatuses),
+    enumCheck('requests_series_type_check', table.seriesType, seriesTypes),
+    // Double clic : une seule demande avant envoi par membre et par titre (`onConflictDoNothing` sur cet index).
+    uniqueIndex('requests_active')
+      .on(table.mediaId, table.userId, table.is4k)
+      .where(inLiterals(table.status, preSendRequestStatuses)),
+    // « Mes demandes » et quota (fenêtre glissante sur `created_at`).
+    index('requests_user_id_created_at_idx').on(table.userId, table.createdAt),
+    // File d'approbation et compteur des demandes en attente.
+    index('requests_status_created_at_idx').on(table.status, table.createdAt),
+    // Statut affiché d'un titre (demandes par média) ; sert aussi la clé étrangère.
+    index('requests_media_id_status_idx').on(table.mediaId, table.status),
+    index('requests_decided_by_idx').on(table.decidedBy).where(sql`${table.decidedBy} IS NOT NULL`),
+  ],
+);
+
+/** Saisons demandées (séries) : le quota les compte, Sonarr les reçoit, la frise les affiche. */
+export const requestSeasons = sqliteTable(
+  'request_seasons',
+  {
+    requestId: integer()
+      .notNull()
+      .references(() => requests.id, { onDelete: 'cascade' }),
+    seasonNumber: integer().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.requestId, table.seasonNumber] })],
+);
+
+/** Frise d'une demande : ajout seulement, jamais modifiée (une relance ajoute ses évènements). */
+export const requestEvents = sqliteTable(
+  'request_events',
+  {
+    id: integer().primaryKey(),
+    requestId: integer()
+      .notNull()
+      .references(() => requests.id, { onDelete: 'cascade' }),
+    type: text({ enum: requestEventTypes }).notNull(),
+    actorId: text().references(() => users.id, { onDelete: 'set null' }),
+    /** Message lisible (échec d'envoi, motif de refus, id Radarr/Sonarr). */
+    detail: text(),
+    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  },
+  (table) => [
+    enumCheck('request_events_type_check', table.type, requestEventTypes),
+    index('request_events_request_id_created_at_idx').on(table.requestId, table.createdAt),
+    index('request_events_actor_id_idx').on(table.actorId).where(sql`${table.actorId} IS NOT NULL`),
   ],
 );

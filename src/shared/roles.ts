@@ -21,6 +21,8 @@ export type Capabilities = {
   /** Peut changer les rôles et les quotas des membres. */
   canManageUsers: boolean;
   isOwner: boolean;
+  /** Hors quotas de demandes. */
+  quotaExempt: boolean;
 };
 
 /** Droits dérivés du rôle : l'unique endroit où le rôle est traduit en permissions. */
@@ -32,6 +34,7 @@ export function capabilitiesOf(role: Role): Capabilities {
     canManageRequests: rank >= roles.indexOf('manager'),
     canManageUsers: role === 'owner',
     isOwner: role === 'owner',
+    quotaExempt: rank >= roles.indexOf('manager'),
   };
 }
 

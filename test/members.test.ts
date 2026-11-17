@@ -31,14 +31,25 @@ describe('rôles', () => {
       canManageRequests: false,
       canManageUsers: false,
       isOwner: false,
+      quotaExempt: false,
     });
-    expect(capabilitiesOf('auto_approve')).toMatchObject({ autoApprove: true, canManageRequests: false });
+    expect(capabilitiesOf('auto_approve')).toMatchObject({
+      autoApprove: true,
+      canManageRequests: false,
+      quotaExempt: false,
+    });
     expect(capabilitiesOf('manager')).toMatchObject({
       autoApprove: true,
       canManageRequests: true,
       canManageUsers: false,
+      quotaExempt: true,
     });
-    expect(capabilitiesOf('owner')).toMatchObject({ canManageRequests: true, canManageUsers: true, isOwner: true });
+    expect(capabilitiesOf('owner')).toMatchObject({
+      canManageRequests: true,
+      canManageUsers: true,
+      isOwner: true,
+      quotaExempt: true,
+    });
   });
 });
 
