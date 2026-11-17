@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import type { JobRunStatus } from '../../shared/jobs.ts';
 import type { Db } from '../db/index.ts';
 import { jobRuns } from '../db/schema.ts';
@@ -35,3 +35,34 @@ export function failOrphanJobs(db: Db): number {
     .where(eq(jobRuns.status, 'running'))
     .run().changes;
 }
+
+/**
+ * Exécute `work` sous le verrou de `job` et enregistre son issue (`detail` : résumé, ou message d'erreur). `false` si une
+ * exécution est déjà en cours : rien n'est fait. Une erreur est enregistrée, jamais relancée (tâche planifiée).
+ */
+export async function runJob(db: Db, job: string, work: () => Promise<string>): Promise<boolean> {
+  const id = startJob(db, job);
+  if (id === null) return false;
+  try {
+    finishJob(db, id, 'success', await work());
+  } catch (error) {
+    finishJob(db, id, 'failed', error instanceof Error ? error.message : String(error));
+  }
+  return true;
+}
+
+/** Début de la dernière exécution de `job` terminée avec `status` (index `(job, started_at)` parcouru à rebours), `null` si aucune. */
+function lastStartedAt(db: Db, job: string, status: JobRunStatus): Date | null {
+  return (
+    db
+      .select({ startedAt: jobRuns.startedAt })
+      .from(jobRuns)
+      .where(and(eq(jobRuns.job, job), eq(jobRuns.status, status)))
+      .orderBy(desc(jobRuns.startedAt))
+      .limit(1)
+      .get()?.startedAt ?? null
+  );
+}
+
+export const lastSuccessAt = (db: Db, job: string) => lastStartedAt(db, job, 'success');
+export const lastFailureAt = (db: Db, job: string) => lastStartedAt(db, job, 'failed');

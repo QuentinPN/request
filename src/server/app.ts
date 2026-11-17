@@ -13,10 +13,12 @@ import { imageRoutes } from './routes/images.ts';
 import { requestsRoutes } from './routes/requests.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { usersRoutes } from './routes/users.ts';
+import { webhookRoutes } from './routes/webhooks.ts';
 import { type AvailabilityService, createAvailability } from './services/availability.ts';
 import { createImageCache } from './services/images.ts';
 import { failOrphanJobs } from './services/jobs.ts';
 import { failInterruptedSends } from './services/requests.ts';
+import { createSync, startScheduler } from './services/sync.ts';
 import { createTmdbProvider } from './services/tmdb.ts';
 
 declare module 'fastify' {
@@ -60,10 +62,13 @@ export async function buildApp({
   clientDir,
   data,
   upstreams = {},
+  schedule = false,
 }: {
   clientDir?: string;
   data: Data;
   upstreams?: Upstreams;
+  /** Balayages planifiés (services/sync.ts) : le serveur seulement, jamais les tests. */
+  schedule?: boolean;
 }) {
   const app = Fastify({ logger: false, trustProxy });
   app.decorate('data', data);
@@ -72,7 +77,13 @@ export async function buildApp({
   // Démarrage : une tâche restée « en cours », ou un envoi de demande, a été interrompu par l'arrêt précédent.
   failOrphanJobs(data.db);
   failInterruptedSends(data.db);
-  app.addHook('onClose', () => data.db.$client.close());
+  const sync = createSync(data, { availability: app.availability });
+  const scheduler = schedule ? startScheduler(sync, data.db) : null;
+  // Le balayage en cours finit avant la fermeture de la base.
+  app.addHook('onClose', async () => {
+    await scheduler?.stop();
+    data.db.$client.close();
+  });
   app.setErrorHandler(apiErrorHandler);
   // Avant toute route : le garde de /api couvre aussi les plugins enregistrés ensuite (catalogue, images).
   await registerAuth(app);
@@ -82,6 +93,7 @@ export async function buildApp({
   setupRoutes(app);
   usersRoutes(app);
   requestsRoutes(app);
+  webhookRoutes(app, sync);
   await app.register(catalogueRoutes);
   await app.register(
     imageRoutes(createImageCache({ dir: data.dir, ...(upstreams.imagesUrl && { upstreamUrl: upstreams.imagesUrl }) })),

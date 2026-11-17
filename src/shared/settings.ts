@@ -60,13 +60,18 @@ export const settingSchemas = {
       })
       .default({ movies: defaultQuota, seasons: defaultQuota }),
   }),
+  /** Jeton des webhooks entrants Radarr/Sonarr, généré par le serveur (`services/webhooks.ts`), jamais saisi. */
+  webhooks: z.object({ token: z.string().min(32) }),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;
 export type Setting<K extends SettingKey> = z.output<(typeof settingSchemas)[K]>;
 export type SettingInput<K extends SettingKey> = z.input<(typeof settingSchemas)[K]>;
 
-/** Champs chiffrés en base et jamais renvoyés au navigateur. */
+/**
+ * Champs chiffrés en base et jamais renvoyés au navigateur, sauf le jeton des webhooks, montré au seul propriétaire pour
+ * être collé dans Radarr/Sonarr (`routes/webhooks.ts`).
+ */
 export const secretFields = {
   emby: ['apiKey'],
   radarr: ['apiKey'],
@@ -74,6 +79,7 @@ export const secretFields = {
   tmdb: ['apiKey'],
   discord: ['webhookUrl'],
   rules: [],
+  webhooks: ['token'],
 } as const satisfies { [K in SettingKey]: readonly (keyof Setting<K>)[] };
 
 export type SecretField<K extends SettingKey> = (typeof secretFields)[K][number];

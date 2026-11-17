@@ -155,7 +155,8 @@ export async function getQueue(kind: ArrKind, config: ArrConfig): Promise<QueueI
 // --- Webhooks entrants ---
 
 export interface ArrWebhookEvent {
-  event: 'download' | 'grab' | 'test' | 'other';
+  /** `deleted` : film, série ou fichier supprimé ; `other` : sans intérêt pour l'appli (Rename, Health…). */
+  event: 'download' | 'grab' | 'deleted' | 'test' | 'other';
   tmdbId?: number;
   tvdbId?: number;
   /** Saisons concernées (Sonarr), triées, sans doublon. */
@@ -164,7 +165,20 @@ export interface ArrWebhookEvent {
   isUpgrade: boolean;
 }
 
-const EVENTS: Record<string, ArrWebhookEvent['event']> = { download: 'download', grab: 'grab', test: 'test' };
+/**
+ * `eventType` (en minuscules) → évènement. Radarr [V] : `MovieDelete`, `MovieFileDelete`. Sonarr [?] : `SeriesDelete`,
+ * `EpisodeFileDelete`, et `ImportComplete` (v4 récent, fin d'import d'un lot).
+ */
+const EVENTS: Record<string, ArrWebhookEvent['event']> = {
+  download: 'download',
+  importcomplete: 'download',
+  grab: 'grab',
+  moviedelete: 'deleted',
+  moviefiledelete: 'deleted',
+  seriesdelete: 'deleted',
+  episodefiledelete: 'deleted',
+  test: 'test',
+};
 
 const mediaSchema = z.looseObject({ tmdbId: lenient(z.number()), tvdbId: lenient(z.number()) });
 const webhookSchema = z.looseObject({

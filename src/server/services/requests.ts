@@ -1,4 +1,19 @@
-import { and, asc, count, desc, eq, getTableColumns, gte, inArray, notInArray, type SQL, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  getTableColumns,
+  gte,
+  inArray,
+  notExists,
+  notInArray,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
 import type { z } from 'zod';
 import { keyOf, type MediaDetails, type MediaSummary, type MediaType } from '../../shared/media.ts';
 import {
@@ -25,12 +40,14 @@ import {
 } from '../../shared/status.ts';
 import { inLiterals } from '../db/checks.ts';
 import type { Data, Db } from '../db/index.ts';
-import { media, requestEvents, requestSeasons, requests, users } from '../db/schema.ts';
+import { media, requestEvents, requestSeasons, requests, seasons as seasonStatuses, users } from '../db/schema.ts';
 import { IntegrationError } from '../integrations/http.ts';
 import { addMovie } from '../integrations/radarr.ts';
 import { addSeries } from '../integrations/sonarr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { HttpError, NotConfiguredError, UpstreamContractError } from '../lib/api-errors.ts';
+import { one } from '../lib/sql.ts';
+import { DAY_MS } from '../lib/time.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
 import type { AvailabilityService } from './availability.ts';
 import { getSetting } from './settings.ts';
@@ -42,7 +59,6 @@ type ListQuery = z.output<typeof requestListQuerySchema>;
 type BatchInput = z.output<typeof batchRequestSchema>;
 type Writer = Pick<Db, 'select' | 'insert' | 'update'>;
 
-const DAY_MS = 24 * 3600 * 1000;
 const ALREADY_AVAILABLE = 'Ce titre est déjà disponible dans Emby';
 const NOT_FOUND = 'Demande introuvable';
 
@@ -198,6 +214,68 @@ export function failInterruptedSends(db: Db, now = new Date()) {
   });
 }
 
+/**
+ * Transition `sent → available`, la seule que la synchronisation pose : pour les titres `mediaIds` qui viennent d'être
+ * recalculés, chaque demande envoyée dont le titre est arrivé (film disponible ; série disponible, ou chaque saison
+ * demandée disponible) passe `available`, avec l'évènement `available`. Une saison encore manquante laisse la demande
+ * `sent`. Rejouée sur le même état (webhook en double, balayage), elle ne trouve plus rien : aucun évènement en double.
+ */
+export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date): number[] {
+  if (mediaIds.length === 0) return [];
+  const ofRequest = eq(requestSeasons.requestId, requests.id);
+  const seasonArrived = tx
+    .select({ one })
+    .from(seasonStatuses)
+    .where(
+      and(
+        eq(seasonStatuses.mediaId, requests.mediaId),
+        eq(seasonStatuses.seasonNumber, requestSeasons.seasonNumber),
+        eq(seasonStatuses.status, 'available'),
+      ),
+    );
+  const everySeasonArrived = and(
+    exists(tx.select({ one }).from(requestSeasons).where(ofRequest)),
+    notExists(
+      tx
+        .select({ one })
+        .from(requestSeasons)
+        .where(and(ofRequest, notExists(seasonArrived))),
+    ),
+  );
+  const arrived = tx
+    .select({ id: requests.id })
+    .from(requests)
+    .innerJoin(media, eq(media.id, requests.mediaId))
+    .where(
+      and(
+        eq(requests.status, 'sent'),
+        inArray(requests.mediaId, [...mediaIds]),
+        or(eq(media.status, 'available'), and(eq(media.type, 'tv'), everySeasonArrived)),
+      ),
+    )
+    .all();
+  if (arrived.length === 0) return [];
+  const updated = tx
+    .update(requests)
+    .set({ status: 'available', updatedAt: at })
+    .where(
+      and(
+        inArray(
+          requests.id,
+          arrived.map((r) => r.id),
+        ),
+        eq(requests.status, 'sent'),
+      ),
+    )
+    .returning({ id: requests.id })
+    .all();
+  if (updated.length > 0)
+    tx.insert(requestEvents)
+      .values(updated.map(({ id }) => ({ requestId: id, type: 'available' as const, actorId: null, createdAt: at })))
+      .run();
+  return updated.map((r) => r.id);
+}
+
 type SendOutcome = { ok: true; detail: string; arrId: number; tvdbId?: number } | { ok: false; detail: string };
 
 /** Erreurs au message lisible (service injoignable, non configuré, réponse inattendue) : affichées telles quelles. */
@@ -210,7 +288,7 @@ const readable = (error: unknown) =>
 /**
  * Demandes : création (droits, quotas, double clic), approbation, refus, annulation, envoi à Radarr/Sonarr et
  * relance. Toute transition est un `UPDATE … WHERE status = <attendu>` : deux approbateurs simultanés n'envoient
- * jamais deux fois. Les appels réseau (TMDB, Radarr, Sonarr) se font hors transaction.
+ * jamais deux fois. `sent → available` est posée par la synchronisation (`markAvailable`). Les appels réseau (TMDB, Radarr, Sonarr) se font hors transaction.
  */
 export function createRequests(
   data: Data,

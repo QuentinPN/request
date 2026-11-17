@@ -3,6 +3,7 @@ import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { CSRF_HEADER, CSRF_VALUE } from '../../shared/auth.ts';
 import { type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
+import { webhookPath, webhookServices } from '../../shared/webhooks.ts';
 import { HttpError } from '../lib/api-errors.ts';
 import { createSession, revokeSession, SESSION_TTL_MS, validateSession } from '../services/sessions.ts';
 import { hasOwner, type User } from '../services/users.ts';
@@ -42,8 +43,11 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/auth/logout',
   'GET /api/setup/state',
 ]);
-/** Webhooks entrants : authentifiés par leur propre jeton, sans session ni en-tête CSRF. */
-const WEBHOOKS_PREFIX = '/api/webhooks/';
+/**
+ * Webhooks entrants Radarr/Sonarr, ces deux routes exactement : authentifiés par leur propre jeton (routes/webhooks.ts),
+ * sans session ni en-tête CSRF (Radarr et Sonarr ne peuvent envoyer ni l'un ni l'autre).
+ */
+const WEBHOOK_ROUTES = new Set(webhookServices.map((service) => `POST ${webhookPath(service)}`));
 /** Amorçage (PRODUCT §1) : tant qu'aucun propriétaire n'existe, tester et enregistrer Emby est ouvert à tous. */
 const BOOTSTRAP_ROUTES = new Set(['POST /api/setup/:service/test', 'PUT /api/settings/:service']);
 
@@ -137,7 +141,7 @@ export async function registerAuth(app: FastifyInstance) {
 
   app.addHook('onRequest', async (req, reply) => {
     const url = req.routeOptions.url;
-    if (!url?.startsWith('/api/') || url.startsWith(WEBHOOKS_PREFIX)) return;
+    if (!url?.startsWith('/api/') || WEBHOOK_ROUTES.has(routeKey(req))) return;
     if (!passesCsrf(req)) return reply.code(403).send({ error: 'Requête refusée' });
     req.viewer = readViewer(req);
     if (!req.viewer && !isPublic(req)) return reply.code(401).send({ error: 'Connexion requise' });

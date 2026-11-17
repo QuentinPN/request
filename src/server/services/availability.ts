@@ -11,12 +11,13 @@ import type { Setting } from '../../shared/settings.ts';
 import type { Availability, LibraryStatus, MediaStatus, RequestStatus } from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
 import { media, requestSeasons, requests, seasons } from '../db/schema.ts';
-import { getQueue, type QueueItem } from '../integrations/arr.ts';
+import { type ArrKind, getQueue, type QueueItem } from '../integrations/arr.ts';
 import { findEmbyItems, getEmbySeasonAvailability, latestEmbyItems, listEmbyLibraries } from '../integrations/emby.ts';
 import { listMovies } from '../integrations/radarr.ts';
 import { listSeries } from '../integrations/sonarr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { TtlLru } from '../lib/lru.ts';
+import { markAvailable } from './requests.ts';
 import { getSetting } from './settings.ts';
 
 // --- Durées ---
@@ -191,8 +192,13 @@ interface Update {
   seasons?: Array<{ seasonNumber: number; status: LibraryStatus }>;
 }
 
+/**
+ * Écrit les statuts recalculés, puis, dans la même transaction, passe `available` les demandes envoyées dont le titre
+ * est arrivé (`markAvailable`) : fiche, webhook ou balayage, tout recalcul fait avancer les demandes.
+ */
 function writeUpdates(db: Db, updates: Update[], now: Date) {
   db.transaction((tx) => {
+    const written: number[] = [];
     for (const u of updates) {
       const ids = {
         radarrId: u.radarrId ?? null,
@@ -213,6 +219,7 @@ function writeUpdates(db: Db, updates: Update[], now: Date) {
         })
         .returning({ id: media.id })
         .get();
+      written.push(row.id);
       if (!u.seasons) continue;
       tx.delete(seasons).where(eq(seasons.mediaId, row.id)).run();
       if (u.seasons.length > 0)
@@ -220,6 +227,7 @@ function writeUpdates(db: Db, updates: Update[], now: Date) {
           .values(u.seasons.map((s) => ({ mediaId: row.id, ...s })))
           .run();
     }
+    markAvailable(tx, written, now);
   });
 }
 
@@ -280,8 +288,9 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     }
   }
 
+  const listKey = (service: Service, url: string, what: string) => `${service}:${url}:${what}`;
   const cachedList = <T>(service: Service, url: string, what: string, ttl: number, load: () => Promise<T>) =>
-    attempt(service, url, () => lists.getOrLoad(`${service}:${url}:${what}`, ttl, load) as Promise<T>);
+    attempt(service, url, () => lists.getOrLoad(listKey(service, url, what), ttl, load) as Promise<T>);
 
   const radarrMovies = (c: Setting<'radarr'>) =>
     cachedList('radarr', c.url, 'movies', ARR_LIST_TTL_MS, () => listMovies(c));
@@ -461,8 +470,11 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     !row ||
     now() - row.statusUpdatedAt.getTime() >= (row.status === 'downloading' ? DOWNLOADING_TTL_MS : STATUS_TTL_MS);
 
-  /** Lit le cache, rafraîchit par lot ce qui est périmé ou inconnu, puis relit. `exact` est recalculée quoi qu'il arrive. */
-  async function resolve(items: readonly MediaKey[], exact?: ExactSeries) {
+  /**
+   * Lit le cache, rafraîchit par lot ce qui est périmé ou inconnu (tout, avec `force`), puis relit. `exact` est
+   * recalculée quoi qu'il arrive.
+   */
+  async function resolve(items: readonly MediaKey[], exact?: ExactSeries, force = false) {
     const settings = settingsOf();
     if (!settings.emby && !settings.radarr && !settings.sonarr) return undefined;
     const keys = [...new Map(items.map((k) => [keyOf(k), { type: k.type, tmdbId: k.tmdbId }])).values()];
@@ -475,7 +487,7 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
       );
     const cached = read();
     const exactKey = exact && keyOf(exact.key);
-    const stale = keys.filter((k) => keyOf(k) !== exactKey && isStale(cached.get(keyOf(k))));
+    const stale = keys.filter((k) => keyOf(k) !== exactKey && (force || isStale(cached.get(keyOf(k)))));
     if (stale.length === 0 && !exact) return { settings, rows: cached };
 
     const movies = stale.filter((k) => k.type === 'movie');
@@ -599,7 +611,52 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     return settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
   }
 
-  return { statusesFor, withStatuses, withDetailsStatus, recentlyAdded };
+  // --- Synchronisation (webhooks, balayages) ---
+
+  /** Oublie la liste et la file d'un service qui vient de signaler un changement : le prochain calcul les relit. */
+  function forgetLists(kind: ArrKind) {
+    const config = settingsOf()[kind];
+    if (!config) return;
+    for (const what of [kind === 'radarr' ? 'movies' : 'series', 'queue'])
+      lists.delete(listKey(kind, config.url, what));
+  }
+
+  /**
+   * Recalcule ces titres tout de suite, sans attendre la fin de vie de leur cache (webhook, balayage) ; `forget` :
+   * liste et file de ce service relues d'abord. Seuls ces titres sont recalculés, rien d'autre.
+   */
+  async function refresh(items: readonly MediaKey[], { forget }: { forget?: ArrKind } = {}) {
+    if (forget) forgetLists(forget);
+    await resolve(items, undefined, true);
+  }
+
+  /**
+   * Grab : le titre (et les saisons concernées) passe « en téléchargement » sans attendre la file, sauf ce qui est déjà
+   * disponible (mise à niveau d'un fichier). Écriture directe du cache, que le calcul complet remplace dès sa fin de vie
+   * (`DOWNLOADING_TTL_MS`) ; la file du service est relue pour la progression.
+   */
+  function markDownloading(kind: ArrKind, mediaId: number, seasonNumbers: readonly number[] = []) {
+    forgetLists(kind);
+    const at = new Date(now());
+    const notAvailable = sql`${media.status} IS NOT 'available'`;
+    db.transaction((tx) => {
+      tx.update(media)
+        .set({ status: 'downloading', statusUpdatedAt: at })
+        .where(and(eq(media.id, mediaId), notAvailable))
+        .run();
+      if (seasonNumbers.length > 0)
+        tx.insert(seasons)
+          .values(seasonNumbers.map((seasonNumber) => ({ mediaId, seasonNumber, status: 'downloading' as const })))
+          .onConflictDoUpdate({
+            target: [seasons.mediaId, seasons.seasonNumber],
+            set: { status: 'downloading' },
+            setWhere: sql`${seasons.status} <> 'available'`,
+          })
+          .run();
+    });
+  }
+
+  return { statusesFor, withStatuses, withDetailsStatus, recentlyAdded, refresh, markDownloading };
 }
 
 export type AvailabilityService = ReturnType<typeof createAvailability>;

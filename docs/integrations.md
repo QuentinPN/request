@@ -60,6 +60,11 @@ Auth et base identiques à Radarr. Sources : https://sonarr.tv/docs/api/, code h
 - **Webhook** : `series` contient `id`, `title`, `path`, `tvdbId`, `tvMazeId`, `tmdbId`, `imdbId`, `type`, `year`, `genres`, `images`, `tags`, `originalLanguage` [V] (code actuel de la branche develop). `tmdbId` est donc présent en v4 récent, pas garanti en v3 [?]. `episodes[]` contient `seasonNumber` et `episodeNumber` ; `eventType` vaut `Download` [?].
 - **Auth du webhook** [V] : identique à Radarr (`Username`, `Password`, `Headers`, `Method`). Doc : https://wiki.servarr.com/sonarr/settings#connections
 
+### Webhooks reçus par l'appli (5.1)
+
+- Adresses : `POST /api/webhooks/radarr` et `POST /api/webhooks/sonarr` (méthode **POST** à choisir dans *arr, PUT refusé). Jeton en `?token=` dans l'adresse (toutes versions) ou en-tête `X-Webhook-Token` via `Headers` (versions récentes [?]) ; adresses et jeton dans `GET /api/settings/webhooks` (propriétaire). L'adresse est construite depuis celle par laquelle le propriétaire joint l'appli : que Radarr/Sonarr la joignent aussi (réseau Docker) est [?].
+- Évènements traités : `Grab`, `Download`, `MovieDelete`, `MovieFileDelete` (Radarr [V]) ; `SeriesDelete`, `EpisodeFileDelete`, `ImportComplete` (Sonarr [?]) ; `Test`. Les autres reçoivent 200 et sont ignorés.
+
 ## TMDB v3
 
 Sources : https://developer.themoviedb.org/docs/authentication-application, https://developer.themoviedb.org/docs/rate-limiting, https://developer.themoviedb.org/reference/intro/getting-started

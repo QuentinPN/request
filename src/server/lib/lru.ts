@@ -48,6 +48,11 @@ export class TtlLru<V = unknown> {
     }
   }
 
+  /** Oublie une entrée (un chargement en cours n'est pas interrompu). */
+  delete(key: string): void {
+    this.entries.delete(key);
+  }
+
   clear(): void {
     this.entries.clear();
   }

@@ -395,6 +395,14 @@ describe('webhooks', () => {
     expect(parseRadarrWebhook({ eventType: 'Rename', movie: { tmdbId: 1 } }).event).toBe('other');
   });
 
+  it('suppressions (titre ou fichier) et fin d’import', () => {
+    for (const eventType of ['MovieDelete', 'MovieFileDelete'])
+      expect(parseRadarrWebhook({ eventType, movie: { tmdbId: 1 } }).event).toBe('deleted');
+    for (const eventType of ['SeriesDelete', 'EpisodeFileDelete'])
+      expect(parseSonarrWebhook({ eventType, series: { tvdbId: 5 } }).event).toBe('deleted');
+    expect(parseSonarrWebhook({ eventType: 'ImportComplete', series: { tvdbId: 5 } }).event).toBe('download');
+  });
+
   it("charge malformée : 'other', sans lever d'erreur", () => {
     for (const body of [null, undefined, 'texte', 42, [], {}, { eventType: 7 }]) {
       expect(parseRadarrWebhook(body)).toEqual({ event: 'other', isUpgrade: false });
