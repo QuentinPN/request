@@ -76,3 +76,10 @@
     @apply bg-background text-foreground font-sans antialiased;
   }
 }
+
+/* Verre des barres de navigation (maquette request.css, .glass) ; plein si la transparence est réduite. */
+@utility glass {
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border-1);
+}

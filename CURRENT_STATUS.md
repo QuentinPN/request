@@ -5,7 +5,7 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 ## Où on en est (2026-11-17)
 
 - **Phase 0** : direction de design validée (DESIGN.md, « Direction validée »). Restent 0.4 (README de Seerr) et 0.5 (API et versions réelles), à faire avant la phase 2.
-- **Phase 1** : 1.1 à 1.3 faits (`npm run verify` vert : lint, types, 11 tests unitaires, build, 6 tests Playwright). Prochain lot : **1.4 Shell** puis 1.5 et 1.6.
+- **Phase 1** : 1.1 à 1.3 faits (`npm run verify` vert : lint, types, 11 tests unitaires, build, 6 tests Playwright). 1.4 Shell fait (navigation, routes, `Ctrl+K`, états globaux ; captures `docs/captures/1.4`). Prochain lot : **1.5** puis **1.6**.
 - **Dépôt** : `github.com/QuentinPN/Request` (privé). `main` = production, `dev` = intégration.
 
 ## Ce qui existe réellement
@@ -28,6 +28,6 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 
 ## Prochaines actions
 
-1. 1.4 Shell (branche `feat/shell`).
-2. 1.5 Corrections API, 1.6 CI.
+1. 1.5 Corrections API (404 JSON, type `data`).
+2. 1.6 CI GitHub Actions.
 3. 0.4 / 0.5, puis phase 2 (intégrations, assistant, connexion).

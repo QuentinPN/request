@@ -17,7 +17,7 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 - [x] **1.1** (P0) Vite + React + TS strict, Fastify, Biome, Vitest, Playwright, `npm run verify` → la commande passe
 - [x] **1.2** (P0) Tokens d'Hub, correspondance shadcn, composants de base → page de démonstration, captures `docs/captures/1.2`
 - [x] **1.3** (P0) SQLite + Drizzle, migrations, chiffrement des secrets, réglages typés Zod → tests de migration et de lecture/écriture chiffrée
-- [ ] **1.4** (P0) Shell : navigation pilule (ordinateur) et barre d'onglets flottante (mobile), routes TanStack Router à chargement différé, `Ctrl+K`, états globaux (chargement, vide, erreur « Réessayer »)
+- [x] **1.4** (P0) Shell : navigation pilule (ordinateur) et barre d'onglets flottante (mobile), routes TanStack Router à chargement différé, `Ctrl+K`, états globaux (chargement, vide, erreur « Réessayer »)
   - Critères : navigation au clavier complète, `Ctrl+K` ouvre la recherche, `Échap` la ferme ; aucune violation axe à 1440 et 390 px ; captures `docs/captures/1.4`
   - Validation : Playwright clavier + axe, `npm run verify`
 - [ ] **1.5** (P1) API : `FastifyInstance.data` typé honnêtement ; tout chemin `/api` inconnu (y compris `/api` et `/api?x`) renvoie un 404 JSON, avec ou sans client compilé → test de route

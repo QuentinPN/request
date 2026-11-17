@@ -1,10 +1,10 @@
 import { Moon, Plus, Sun } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { type MediaStatus, mediaStatuses } from '../shared/status.ts';
-import { Poster, PosterSkeleton } from './components/media/poster.tsx';
-import { StatusPill } from './components/media/status-pill.tsx';
-import { Button } from './components/ui/button.tsx';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card.tsx';
+import { type MediaStatus, mediaStatuses } from '../../shared/status.ts';
+import { Poster, PosterSkeleton } from '../components/media/poster.tsx';
+import { StatusPill } from '../components/media/status-pill.tsx';
+import { Button } from '../components/ui/button.tsx';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import {
   Dialog,
   DialogClose,
@@ -14,10 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from './components/ui/dialog.tsx';
-import { Skeleton } from './components/ui/skeleton.tsx';
+} from '../components/ui/dialog.tsx';
+import { Skeleton } from '../components/ui/skeleton.tsx';
 
-// Page de démonstration du jalon 1.2 : remplacée par le shell au jalon 1.4.
+// Page de démonstration du jalon 1.2, conservée hors navigation sur /composants.
 const posters: { title: string; year: number; status?: MediaStatus }[] = [
   { title: 'Titre disponible', year: 2024, status: 'available' },
   { title: 'Série partielle', year: 2022, status: 'partial' },
@@ -38,7 +38,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 const seasons = [{ n: 1, status: 'available' as const }, { n: 2, status: 'available' as const }, { n: 3 }];
 
-export function App() {
+export function ComposantsPage() {
   const [light, setLight] = useState(false);
   const toggleTheme = () => {
     setLight(!light);
@@ -46,7 +46,7 @@ export function App() {
   };
 
   return (
-    <main className="mx-auto max-w-6xl space-y-12 px-(--space-page) py-10">
+    <div className="mx-auto max-w-6xl space-y-12">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Composants de base</h1>
@@ -164,6 +164,6 @@ export function App() {
           </div>
         </Section>
       </div>
-    </main>
+    </div>
   );
 }
