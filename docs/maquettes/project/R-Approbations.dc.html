@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Recommandation · Approbations</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}.side{width:248px;flex:none;padding:32px 20px;box-sizing:border-box;border-right:1px solid var(--border-1);background:var(--surface-0)}.side a{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;color:var(--text-2);text-decoration:none;font-weight:500}.side a.on{background:var(--surface-2);color:var(--text)}.side a .count{margin-left:auto}.gt{display:flex;flex-direction:column;width:100%}.gr{display:grid;grid-template-columns:36px minmax(0,1fr) 150px 80px 120px 210px;align-items:center;gap:12px;padding:12px;border-bottom:1px solid var(--border-1);font-size:14px}.gh{padding:10px 12px;font-size:12px;font-weight:600;color:var(--text-2)}.gr.sel{background:var(--surface-2);border-radius:10px}</style>
+</helmet>
+<div class="scr col" style="width: 1440px; height: 1000px;">
+  <header class="row sb" style="padding: 24px 64px; flex: none;">
+    <div class="b" style="font-size: 18px; letter-spacing: -0.01em; width: 220px;">Request</div>
+    <nav class="navpill glass" aria-label="Navigation principale">
+      <a class="navl" href="#">Découvrir</a>
+      <a class="navl" href="#">Films</a>
+      <a class="navl" href="#">Séries</a>
+      <a class="navl" href="#">Demandes</a>
+      <a class="navl on" href="#">Approbations <span class="count">3</span></a>
+      <button class="navl" type="button" aria-label="Rechercher"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span class="muted">Rechercher</span><span class="kbd">Ctrl K</span></button>
+    </nav>
+    <div class="row g12" style="width: 220px; justify-content: flex-end;">
+      <button class="iconbtn" type="button" aria-label="Notifications, 2 non lues"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button>
+      <span class="avatar" aria-label="Compte de Quentin">Q</span>
+    </div>
+  </header>
+  <main class="row grow" style="min-width: 0; align-items: stretch; border-top: 1px solid var(--border-1);">
+    <section class="col g20 grow" style="padding: 40px 32px 40px 64px; min-width: 0;">
+      <div class="rowh"><h1 style="font-size: 32px; font-weight: 800; letter-spacing: -0.02em;">Approbations</h1><div class="row g8"><button class="fp on" type="button">En attente <span class="n">3</span></button><button class="fp" type="button">Échecs <span class="n">1</span></button><button class="fp" type="button">Historique</button></div></div>
+      <div class="msg tint-err row g12"><span class="small grow"><span class="b">Gladiator II</span> : Radarr a refusé l'ajout (dossier /films plein).</span><button class="btn btn-sm btn-g" type="button">Réessayer</button></div>
+      <div class="gt" role="table" aria-label="Demandes en attente">
+        <div class="gr gh" role="row"><span class="chk"></span><span>Titre</span><span>Demandé par</span><span>Qualité</span><span>Quand</span><span style="text-align: right;">Actions</span></div>
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="3">
+          <div class="gr {{r.cls}}" role="row"><span class="chk {{r.chk}}"></span><div class="row g12" style="min-width: 0;"><div class="poster p-xs" style="--p: {{r.p}}; flex: none; width: 36px;"></div><div class="col g2" style="min-width: 0;"><span class="b">{{r.t}}</span><span class="tiny muted">{{r.k}}</span></div></div><div class="row g8"><span class="avatar s">{{r.i}}</span><span>{{r.who}}</span></div><span>{{r.q}}</span><span class="muted">{{r.d}}</span><div class="row g8" style="justify-content: flex-end;"><button class="btn btn-sm btn-g" type="button">Refuser</button><button class="btn btn-sm btn-ok" type="button">Approuver</button></div></div>
+        </sc-for>
+      </div>
+      <div class="row sb small muted"><span>1 sélectionnée</span><div class="row g8"><button class="btn btn-sm btn-g" type="button">Refuser la sélection</button><button class="btn btn-sm btn-ok" type="button">Tout approuver</button></div></div>
+    </section>
+    <aside class="col g20" style="width: 400px; flex: none; padding: 40px 32px; box-sizing: border-box; border-left: 1px solid var(--border-1); background: var(--surface-0);">
+      <div class="row g16"><div class="poster p-sm" style="--p: #3d3d45; flex: none;"></div><div class="col g6"><span class="b" style="font-size: 20px;">Conclave</span><span class="small muted">2024 · Film · 2 h</span><span class="st flat wait" style="align-self: flex-start;">Pas dans Emby</span></div></div>
+      <div class="card col g8" style="padding: 16px;"><span class="tiny muted b">NOTE DE MARION</span><span class="small">« Vu la bande-annonce, ça a l'air top. VF si possible. »</span></div>
+      <div class="col g8"><span class="lbl">Envoyer à</span><div class="inp row sb">Radarr · HD-1080p · /films <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div><span class="hint">Espace libre : 412 Go</span></div>
+      <div class="col g6 small"><div class="row sb"><span class="muted">Quota de Marion</span><span>4 / 10 films</span></div><div class="row sb"><span class="muted">Demandes acceptées</span><span>18 sur 19</span></div></div>
+      <div class="col g8"><span class="lbl">Motif si refus</span><div class="inp" style="height: 64px; align-items: flex-start;"><span class="muted">Visible par Marion</span></div></div>
+      <div class="row g8" style="margin-top: auto;"><button class="btn btn-g grow" type="button">Refuser</button><button class="btn btn-ok grow" type="button">Approuver et envoyer</button></div>
+    </aside>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { rows: [
+      { t: 'Conclave', k: 'Film · 2024', p: '#3d3d45', i: 'M', who: 'Marion', q: '1080p', d: 'il y a 12 min', cls: 'sel', chk: 'on' },
+      { t: 'Andor · S2', k: 'Série · 12 épisodes', p: '#30353f', i: 'T', who: 'Théo', q: '1080p', d: 'il y a 2 h', cls: '', chk: '' },
+      { t: 'Furiosa', k: 'Film · 2024', p: '#5a3e22', i: 'L', who: 'Léa', q: '4K', d: 'hier', cls: '', chk: '' }
+    ] };
+  }
+}
+</script>
+</body>
+</html>

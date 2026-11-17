@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>A · Feuille de demande</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<div class="scr" style="width: 1440px; height: 900px;">
+  <div class="backdrop" style="--t: #4b2f2f;"></div>
+  <div class="veil-l"></div><div class="veil-b"></div>
+  <div style="position: absolute; left: 64px; top: 300px; font-size: 64px; font-weight: 800; letter-spacing: -0.03em;">Shōgun</div>
+  <div class="scrim" style="position: absolute; inset: 0;"></div>
+
+  <div role="dialog" aria-modal="true" aria-labelledby="dlg-t" class="col g20" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 560px; padding: 28px; border-radius: var(--r-card); background: var(--glass-dialog); backdrop-filter: var(--blur-strong); box-shadow: var(--shadow-card), inset 0 0 0 1px var(--border-2);">
+    <div class="row g16">
+      <div class="poster p-xs" style="--p: #4b2f2f; flex: none;"></div>
+      <div class="col g4 grow"><span class="tiny muted">Demander une série</span><h2 id="dlg-t" style="font-size: 22px; font-weight: 700;">Shōgun</h2><span class="small muted">2024 · FX · 1 saison</span></div>
+      <button class="iconbtn" type="button" aria-label="Fermer"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="col g8">
+      <div class="row sb"><span class="lbl">Saisons</span><a class="small accent b" href="#">Tout sélectionner</a></div>
+      <label class="row sb card" style="padding: 14px 16px;"><span class="row g12"><span class="chk on" aria-hidden="true"></span><span><span class="b">Saison 1</span> <span class="small muted">· épisodes 8 à 10 manquants</span></span></span><span class="st flat part">7 / 10</span></label>
+      <label class="row sb card" style="padding: 14px 16px; opacity: .55;"><span class="row g12"><span class="chk dis" aria-hidden="true"></span><span><span class="b">Saison 2</span> <span class="small muted">· pas encore diffusée</span></span></span><span class="st flat wait">2026</span></label>
+    </div>
+    <div class="row g12">
+      <div class="col g6 grow"><span class="lbl">Qualité</span><div class="inp row sb">HD-1080p <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div></div>
+      <div class="col g6 grow"><span class="lbl">Dossier</span><div class="inp row sb">/series <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div></div>
+    </div>
+    <div class="msg tint-acc row g12">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <span class="small">Quota : <span class="b">2 demandes de séries sur 5</span> cette semaine. Celle-ci sera vue par un admin avant l'envoi à Sonarr.</span>
+    </div>
+    <div class="row g12" style="justify-content: flex-end;">
+      <button class="btn btn-g" type="button">Annuler</button>
+      <button class="btn btn-w" type="button">Demander 3 épisodes</button>
+    </div>
+    <p class="tiny muted">Qualité et dossier visibles seulement pour les membres autorisés à les changer. Échap ferme, Entrée valide.</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic { renderVals() { return {}; } }
+</script>
+</body>
+</html>

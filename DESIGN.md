@@ -8,6 +8,20 @@ Même famille que mes autres projets : **Apple TV cinématique**, fond quasi noi
 
 Rappel des valeurs clés : fond `#07080A`, surfaces `rgba(255,255,255,.05–.12)`, bordures `rgba(255,255,255,.07/.14)`, texte `#F5F5F7` et `#A1A1A6`, accent `#E8C9A6`, états `#30D158` / `#FFD60A` / `#FF453A` / `#8E8E93`, Inter Variable, rayons 20 / 16 / 14 px et pilules, flou 20–24 px, focus ×1,06 en 220 ms `cubic-bezier(.2,.8,.2,1)`.
 
+## Direction validée
+
+Maquettes : [canevas « Request — directions de design »](https://claude.ai/artifact/UVig26hmQYFHEsaaqDoL3H), page **Recommandation** (validée par le propriétaire le 2026-11-17). Copie versionnée (référence, hors lint) : `docs/maquettes/project/` (`R-*.dc.html`, `request.css`).
+
+| Élément                                 | Direction                                                                                            |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Navigation, Découvrir, fiche titre      | A « Salle obscure » (hero plein cadre, rangées d'affiches, fiche plein fond)                         |
+| Suivi des demandes                      | C : bande « Vos demandes en cours » sur l'accueil (si demande en cours), frise de suivi sur la fiche |
+| Approbations                            | ordinateur : tableau C + panneau de détail ; mobile : carte par carte (B)                            |
+| Assistant                               | C : une seule page, sections en accordéon, chacune testée en direct                                  |
+| Feuille de demande, Mes demandes, états | A                                                                                                    |
+
+Navigation ordinateur : nom de l'appli à gauche, pilule en verre centrée (Découvrir, Films, Séries, Demandes, Approbations avec compteur pour les admins, Rechercher `Ctrl K`), cloche et avatar à droite. Mobile : barre d'onglets flottante en verre (Découvrir, Rechercher, Demandes, Approuver avec compteur pour les admins, Compte).
+
 ## Correspondance avec shadcn
 
 shadcn lit ses propres variables. On les dérive des tokens, sans dupliquer de valeur :

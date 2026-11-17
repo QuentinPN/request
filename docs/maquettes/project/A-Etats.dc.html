@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>A · Chargement, vide, erreur</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<div class="scr col g32" style="width: 1440px; height: 1100px; padding: 56px 64px; box-sizing: border-box;">
+  <section class="col g16">
+    <span class="tiny muted b">CHARGEMENT · Découvrir</span>
+    <div class="sk" style="height: 300px; border-radius: var(--r-card);"></div>
+    <div class="sk ln" style="width: 180px; height: 18px;"></div>
+    <div class="rail"><sc-for list="{{n}}" as="i" hint-placeholder-count="7"><div class="sk p"></div></sc-for></div>
+    <span class="tiny muted">Squelettes aux dimensions réelles, sans animation si « réduire les animations » est actif.</span>
+  </section>
+  <div class="row g24" style="align-items: stretch;">
+    <section class="card col g16 grow" style="padding: 40px; align-items: center; text-align: center;">
+      <span class="tiny muted b" style="align-self: flex-start;">VIDE · Mes demandes</span>
+      <div style="width: 72px; height: 72px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center;"><svg class="ico l" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M8 4v5M16 4v5"/></svg></div>
+      <h2 style="font-size: 22px; font-weight: 700;">Aucune demande pour l'instant</h2>
+      <p class="muted small" style="max-width: 360px;">Parcours les tendances ou cherche un titre, puis demande-le en deux clics.</p>
+      <button class="btn btn-w" type="button">Découvrir</button>
+    </section>
+    <section class="card col g16 grow" style="padding: 40px; align-items: center; text-align: center;">
+      <span class="tiny muted b" style="align-self: flex-start;">AUCUN RÉSULTAT · Recherche</span>
+      <div style="width: 72px; height: 72px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center;"><svg class="ico l" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+      <h2 style="font-size: 22px; font-weight: 700;">Rien pour « Shogn »</h2>
+      <p class="muted small" style="max-width: 360px;">Vérifie l'orthographe ou essaie le titre original. Vouliez-vous dire <a class="accent b" href="#">Shōgun</a> ?</p>
+    </section>
+    <section class="card col g16 grow tint-err" style="padding: 40px; align-items: center; text-align: center;">
+      <span class="tiny muted b" style="align-self: flex-start;">ERREUR · Service injoignable</span>
+      <div style="width: 72px; height: 72px; border-radius: 50%; background: var(--tint-danger-bg); display: grid; place-items: center; color: var(--text-danger);"><svg class="ico l" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+      <h2 style="font-size: 22px; font-weight: 700;">TMDB ne répond pas</h2>
+      <p class="muted small" style="max-width: 360px;">Les rangées affichent la dernière version en cache (il y a 2 h). Tes demandes ne sont pas touchées.</p>
+      <button class="btn btn-g" type="button">Réessayer</button>
+    </section>
+  </div>
+  <section class="row g16">
+    <div class="msg tint-ok row g12 grow"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span class="small">Toast de succès : « Le Robot sauvage demandé. Tu seras prévenu quand il sera dans Emby. »</span></div>
+    <div class="msg tint-err row g12 grow"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg><span class="small">Toast d'erreur : « Quota de séries atteint (5 / 5). Il se libère lundi. »</span></div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic { renderVals() { return { n: [1, 2, 3, 4, 5, 6, 7] }; } }
+</script>
+</body>
+</html>

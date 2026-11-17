@@ -125,7 +125,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Project-specific notes
 
-**Request** : remplaçant personnel de Seerr (demandes de films et séries pour les membres d'Emby, envoi à Radarr/Sonarr). Lire [PRODUCT.md](PRODUCT.md), [ARCHITECTURE.md](ARCHITECTURE.md), [DESIGN.md](DESIGN.md) et [ROADMAP.md](ROADMAP.md) ; prompt de départ dans [PROMPT_CLAUDE.md](PROMPT_CLAUDE.md).
+**Request** : remplaçant personnel de Seerr (demandes de films et séries pour les membres d'Emby, envoi à Radarr/Sonarr). Lire [PRODUCT.md](PRODUCT.md), [ARCHITECTURE.md](ARCHITECTURE.md), [DESIGN.md](DESIGN.md), [ROADMAP.md](ROADMAP.md), puis [CURRENT_STATUS.md](CURRENT_STATUS.md) (état et prochaines actions) et [DECISIONS.md](DECISIONS.md) ; prompt de départ dans [PROMPT_CLAUDE.md](PROMPT_CLAUDE.md).
 
 - L'utilisateur écrit en **français** : réponses, docs, textes d'interface en français.
 - Stack : Node 26, Vite + React 19 + TS strict, TanStack Router/Query, shadcn/ui (Base UI) + Tailwind v4, Fastify 5, Zod partagé (`src/shared`), SQLite + Drizzle. Pas de SSR, pas de GraphQL, pas de Watt.

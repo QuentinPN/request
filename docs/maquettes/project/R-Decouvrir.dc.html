@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Recommandation · Découvrir</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}.trk{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}</style>
+</helmet>
+<div class="scr" style="width: 1440px; height: 1760px;">
+  <header class="row sb" style="position: absolute; top: 24px; left: 64px; right: 64px; z-index: 5;">
+    <div class="b" style="font-size: 18px; letter-spacing: -0.01em; width: 220px;">Request</div>
+    <nav class="navpill glass" aria-label="Navigation principale">
+      <a class="navl on" href="#">Découvrir</a>
+      <a class="navl" href="#">Films</a>
+      <a class="navl" href="#">Séries</a>
+      <a class="navl" href="#">Demandes</a>
+      <a class="navl" href="#">Approbations <span class="count">3</span></a>
+      <button class="navl" type="button" aria-label="Rechercher"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span class="muted">Rechercher</span><span class="kbd">Ctrl K</span></button>
+    </nav>
+    <div class="row g12" style="width: 220px; justify-content: flex-end;">
+      <button class="iconbtn" type="button" aria-label="Notifications, 2 non lues"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button>
+      <span class="avatar" aria-label="Compte de Quentin">Q</span>
+    </div>
+  </header>
+
+  <section style="position: relative; height: 700px;" aria-label="À la une">
+    <div class="backdrop" style="--t: #4a3420;"></div>
+    <div class="veil-l"></div><div class="veil-b"></div>
+    <span class="phl">Fond TMDB</span>
+    <div class="col g16" style="position: absolute; left: 64px; bottom: 150px; width: 560px;">
+      <span class="small b accent">N° 1 des tendances cette semaine</span>
+      <h1 style="font-size: 72px; font-weight: 800; letter-spacing: -0.03em; line-height: 0.98;">Dune :<br>Deuxième partie</h1>
+      <div class="meta"><span>2024</span><i></i><span>Film</span><i></i><span>2 h 46</span><i></i><span class="rating">12</span></div>
+      <p class="muted" style="font-size: 17px;">Paul Atréides s'unit à Chani et aux Fremen pour mener la révolte contre ceux qui ont anéanti sa famille.</p>
+      <div class="row g12" style="margin-top: 8px;">
+        <button class="btn btn-w" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>Demander</button>
+        <button class="btn btn-g" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>Plus d'infos</button>
+      </div>
+    </div>
+    <div class="row g8" style="position: absolute; left: 64px; bottom: 112px;" aria-hidden="true">
+      <span style="width: 22px; height: 4px; border-radius: 2px; background: var(--text);"></span>
+      <span style="width: 8px; height: 4px; border-radius: 2px; background: var(--track);"></span>
+      <span style="width: 8px; height: 4px; border-radius: 2px; background: var(--track);"></span>
+      <span style="width: 8px; height: 4px; border-radius: 2px; background: var(--track);"></span>
+    </div>
+  </section>
+
+  <div class="col" style="position: relative; margin-top: -60px; padding: 0 64px; gap: 44px;">
+    <section aria-label="Vos demandes en cours">
+      <div class="rowh"><h2>Vos demandes en cours</h2><a href="#">Mes demandes</a></div>
+      <div class="trk">
+        <sc-for list="{{track}}" as="r" hint-placeholder-count="3">
+          <article class="glass row g16" style="padding: 16px; border-radius: 16px;">
+            <div class="poster p-xs" style="--p: {{r.p}}; flex: none;"></div>
+            <div class="col g8 grow">
+              <div class="row sb"><span class="b">{{r.t}}</span><span class="st flat {{r.c}}">{{r.st}}</span></div>
+              <div class="row g4"><sc-for list="{{r.steps}}" as="s" hint-placeholder-count="4"><span style="flex: 1; height: 4px; border-radius: 2px; background: {{s}};"></span></sc-for></div>
+              <div class="row sb tiny muted"><span>Demandé</span><span>Approuvé</span><span>Téléchargé</span><span>Dans Emby</span></div>
+              <span class="tiny">{{r.step}}</span>
+            </div>
+          </article>
+        </sc-for>
+      </div>
+      <p class="tiny muted" style="margin-top: 12px;">Emprunt à C. La bande n'apparaît que si le membre a une demande en cours ; sinon les rangées remontent.</p>
+    </section>
+    <section>
+      <div class="rowh"><h2>Tendances</h2><a href="#">Tout voir</a></div>
+      <div class="rail" style="padding-top: 8px;">
+        <div class="poster focus" style="--p: #2d3e4f;">
+          <span class="st ok">Disponible</span>
+          <a class="btn btn-w preq" href="#"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 3 14 9-14 9z"/></svg>Regarder</a>
+        </div>
+        <div class="poster focus" style="--p: #5a4630; transform: none; box-shadow: inset 0 0 0 1px var(--border-1);">
+          <div class="pt">Le Comte de Monte-Cristo<span class="py">2024 · Film</span></div>
+        </div>
+        <sc-for list="{{trend}}" as="it" hint-placeholder-count="6">
+          <div class="poster" style="--p: {{it.p}};">
+            <sc-if value="{{it.st}}" hint-placeholder-val="{{true}}"><span class="st {{it.c}}">{{it.st}}</span></sc-if>
+            <div class="pt">{{it.t}}<span class="py">{{it.y}}</span></div>
+            <sc-if value="{{it.pct}}" hint-placeholder-val="{{false}}"><div class="pbar"><i style="width: {{it.pct}};"></i></div></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <p class="tiny muted" style="margin-top: 12px;">Au survol ou au focus clavier : élévation ×1,06 et action principale. « Regarder » si le titre est dans Emby, « Demander » sinon.</p>
+    </section>
+    <section>
+      <div class="rowh"><h2>Ajoutés récemment dans Emby</h2><a href="#">Tout voir</a></div>
+      <div class="rail">
+        <sc-for list="{{recent}}" as="it" hint-placeholder-count="8">
+          <div class="poster" style="--p: {{it.p}};"><span class="st ok">Disponible</span><div class="pt">{{it.t}}<span class="py">{{it.y}}</span></div></div>
+        </sc-for>
+      </div>
+    </section>
+    <section>
+      <div class="rowh"><h2>Par plateforme</h2></div>
+      <div class="row g16">
+        <sc-for list="{{plat}}" as="it" hint-placeholder-count="6">
+          <a class="card row" href="#" style="width: 200px; height: 96px; justify-content: center; text-decoration: none; color: var(--text); font-weight: 700; font-size: 17px;">{{it}}</a>
+        </sc-for>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const d = 'var(--text-ok)', on = 'var(--accent-play)', off = 'var(--track)';
+    return {
+      track: [
+        { t: 'Le Robot sauvage', p: '#2f4a52', st: '42 %', c: 'dl', steps: [d, d, on, off], step: 'Téléchargement, fin dans 18 min' },
+        { t: 'Shōgun · S1', p: '#4b2f2f', st: 'Approuvé', c: 'part', steps: [d, on, off, off], step: 'Sonarr cherche une source' },
+        { t: 'Conclave', p: '#3d3d45', st: 'En attente', c: 'req', steps: [on, off, off, off], step: 'Quentin doit valider' }
+      ],
+      trend: [
+        { t: 'Shōgun', y: '2024 · Série', p: '#4b2f2f', st: 'Partiellement disponible', c: 'part' },
+        { t: 'Le Robot sauvage', y: '2024 · Film', p: '#2f4a52', st: 'Téléchargement 42 %', c: 'dl', pct: '42%' },
+        { t: 'Conclave', y: '2024 · Film', p: '#3d3d45', st: 'Demandé', c: 'req' },
+        { t: 'Severance', y: '2022 · Série', p: '#33443a' },
+        { t: 'Gladiator II', y: '2024 · Film', p: '#5a5230' },
+        { t: 'Arcane', y: '2021 · Série', p: '#2b3550', st: 'Refusé', c: 'no' }
+      ],
+      recent: [
+        { t: 'Anatomie d’une chute', y: '2023 · Film', p: '#3e3a33' },
+        { t: 'The Bear', y: 'Saison 3', p: '#4a3a2a' },
+        { t: 'Flow', y: '2024 · Film', p: '#234046' },
+        { t: 'Oppenheimer', y: '2023 · Film', p: '#4f3524' },
+        { t: 'Slow Horses', y: 'Saison 4', p: '#3a4038' },
+        { t: 'Furiosa', y: '2024 · Film', p: '#5a3e22' },
+        { t: 'Andor', y: 'Saison 1', p: '#30353f' }
+      ],
+      plat: ['Netflix', 'Prime Video', 'Disney+', 'Apple TV+', 'Canal+', 'Max']
+    };
+  }
+}
+</script>
+</body>
+</html>
