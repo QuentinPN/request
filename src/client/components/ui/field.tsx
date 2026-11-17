@@ -20,6 +20,19 @@ export function Input({ className, ...props }: React.ComponentProps<'input'>) {
   return <input className={cn(inputClass, className)} {...props} />;
 }
 
+/** Zone de saisie de plusieurs lignes (motif d'un refus, message d'un signalement). */
+export function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
+  return (
+    <textarea
+      className={cn(
+        'w-full resize-none rounded-(--r-button) border border-input bg-(--field-bg) px-3.5 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/20 disabled:opacity-50 aria-invalid:border-(--tint-danger-border)',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 /** Liste déroulante native (clavier et lecteurs d'écran gérés par le navigateur), habillée comme un champ. */
 export function NativeSelect({ className, ...props }: React.ComponentProps<'select'>) {
   return (

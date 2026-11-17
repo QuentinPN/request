@@ -14,6 +14,7 @@ export const sampleNotifications = (): NotificationView[] => [
     read: false,
     createdAt: ago(12),
     requestId: 30,
+    issueId: null,
     media: { type: 'movie', tmdbId: 693134 },
   },
   {
@@ -24,6 +25,7 @@ export const sampleNotifications = (): NotificationView[] => [
     read: false,
     createdAt: ago(130),
     requestId: 20,
+    issueId: null,
     media: { type: 'tv', tmdbId: 136315 },
   },
   {
@@ -34,6 +36,7 @@ export const sampleNotifications = (): NotificationView[] => [
     read: true,
     createdAt: ago(3 * 24 * 60),
     requestId: 10,
+    issueId: null,
     media: { type: 'movie', tmdbId: 974576 },
   },
 ];

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { mediaTypeSchema } from './media.ts';
+import { mediaTypeSchema, pagedSchema } from './media.ts';
 
 /** Nature d'un problème signalé sur un titre disponible. */
 export const issueTypes = ['video', 'audio', 'subtitles', 'other'] as const;
@@ -31,12 +31,16 @@ export const issueCreateSchema = z
     type: issueTypeSchema,
     mediaType: mediaTypeSchema,
     tmdbId: z.number().int().positive(),
-    seasonNumber: z.number().int().nonnegative().nullable().default(null),
-    episodeNumber: z.number().int().positive().nullable().default(null),
+    seasonNumber: z.number().int().nonnegative().max(100).nullable().default(null),
+    episodeNumber: z.number().int().positive().max(1000).nullable().default(null),
     message,
   })
   .refine((i) => i.episodeNumber === null || i.seasonNumber !== null, {
     message: 'Saison requise pour un épisode',
+    path: ['seasonNumber'],
+  })
+  .refine((i) => i.mediaType === 'tv' || (i.seasonNumber === null && i.episodeNumber === null), {
+    message: 'Saison et épisode : séries seulement',
     path: ['seasonNumber'],
   });
 export type IssueCreateInput = z.input<typeof issueCreateSchema>;
@@ -75,3 +79,36 @@ export const issueSchema = z.object({
   resolvedAt: z.string().nullable(),
 });
 export type Issue = z.output<typeof issueSchema>;
+
+// --- Listes et détail ---
+
+export const ISSUES_PAGE_SIZE = 20;
+
+export const issueListQuerySchema = z.object({
+  status: issueStatusSchema.optional(),
+  page: z.coerce.number().int().positive().default(1),
+});
+export type IssueListQuery = z.input<typeof issueListQuerySchema>;
+
+export const issueIdParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+
+/** Signalement avec le titre du média (résumé TMDB, `null` si TMDB est en panne). */
+export const issueViewSchema = issueSchema.extend({
+  title: z.string().nullable(),
+  posterPath: z.string().nullable(),
+});
+export type IssueView = z.output<typeof issueViewSchema>;
+
+export const issueDetailSchema = issueViewSchema.extend({ comments: z.array(issueCommentSchema) });
+export type IssueDetail = z.output<typeof issueDetailSchema>;
+
+/** Une page de signalements ; `totals` compte chaque statut du périmètre du membre (les siens, ou tous). */
+export const issuePageSchema = pagedSchema(issueViewSchema).extend({
+  totals: z.object({ open: z.number().int(), resolved: z.number().int() }),
+});
+export type IssuePage = z.output<typeof issuePageSchema>;
+
+/** Signalements ouverts du périmètre du membre (pastille de la navigation). */
+export interface IssueCounts {
+  open: number;
+}

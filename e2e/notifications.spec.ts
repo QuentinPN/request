@@ -58,12 +58,12 @@ test('mobile : l’onglet « Alertes » tient dans la barre et ouvre la feuille 
   const state = await mockNotifications(page);
   await page.goto('/demandes');
   const tabs = page.getByRole('navigation', { name: 'Navigation', exact: true });
-  // Propriétaire : six onglets, tous dans la barre, sans chevauchement.
+  // Propriétaire : sept onglets, tous dans la barre, sans chevauchement.
   const bar = await tabs.boundingBox();
   const boxes = await Promise.all(
     (await tabs.locator(':scope > a, :scope > button').all()).map((el) => el.boundingBox()),
   );
-  expect(boxes).toHaveLength(6);
+  expect(boxes).toHaveLength(7);
   for (const [i, box] of boxes.entries()) {
     expect(box?.height).toBeGreaterThanOrEqual(44);
     expect(box && bar && box.x >= bar.x && box.x + box.width <= bar.x + bar.width).toBe(true);

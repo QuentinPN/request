@@ -13,6 +13,7 @@ import {
 import { AppShell } from '@/components/shell/app-shell';
 import { ErrorState, LoadingState } from '@/components/states';
 import { genreSearchSchema } from '@/lib/catalogue';
+import { issueSearchSchema } from '@/lib/issues';
 import { guardRedirect, safeReturnPath, setupStateQuery, viewerQuery } from '@/lib/session';
 import { IntrouvablePage } from '@/pages/introuvable';
 
@@ -102,6 +103,10 @@ const routeTree = rootRoute.addChildren([
     createRoute(page('/demandes', () => import('@/pages/demandes'), 'DemandesPage')),
     createRoute(page('/ma-liste', () => import('@/pages/ma-liste'), 'MaListePage')),
     createRoute(page('/approbations', () => import('@/pages/approbations'), 'ApprobationsPage')),
+    createRoute({
+      ...page('/signalements', () => import('@/pages/signalements'), 'SignalementsPage'),
+      validateSearch: issueSearchSchema,
+    }),
     createRoute(page('/statistiques', () => import('@/pages/statistiques'), 'StatistiquesPage')),
     createRoute(page('/compte', () => import('@/pages/compte'), 'ComptePage')),
     createRoute(page('/reglages', () => import('@/pages/reglages'), 'ReglagesPage')),

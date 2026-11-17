@@ -185,7 +185,7 @@ export const ACTIVE_CONFLICT = {
   setWhere: sql`0`,
 };
 
-const toPerson = (user: User): RequestPerson => ({ id: user.id, name: user.name, avatarUrl: avatarUrlOf(user) });
+export const toPerson = (user: User): RequestPerson => ({ id: user.id, name: user.name, avatarUrl: avatarUrlOf(user) });
 
 function addEvent(
   tx: Writer,

@@ -49,9 +49,13 @@ const toQueue: Record<NotificationKind, boolean> = {
   issue_reopened: false,
 };
 
-/** Destination d'une notification : la file d'approbation, ou la fiche du titre ; `null` si la demande n'existe plus. */
+/**
+ * Destination d'une notification : la file d'approbation, le signalement, ou la fiche du titre ; `null` si la demande
+ * ou le signalement n'existe plus.
+ */
 export function notificationLink(notification: NotificationView): LinkProps | null {
   if (toQueue[notification.kind]) return { to: '/approbations' };
+  if (notification.issueId !== null) return { to: '/signalements', search: { id: notification.issueId } };
   const { media } = notification;
   return media ? { to: '/titre/$type/$id', params: { type: media.type, id: String(media.tmdbId) } } : null;
 }

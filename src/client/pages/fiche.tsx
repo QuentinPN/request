@@ -3,6 +3,7 @@ import { useCanGoBack, useNavigate, useParams, useRouter } from '@tanstack/react
 import { cn } from 'cn';
 import { ChevronLeft, Film, Play, User, X } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
+import { ReportIssueButton } from '@/components/issues/report-sheet';
 import { MediaRail, Rail, SectionHeading } from '@/components/media/rail';
 import { DownloadBar, StatusPill } from '@/components/media/status-pill';
 import { Backdrop, GlassPill, MetaLine, RequestButton, WatchlistButton } from '@/components/media/title-parts';
@@ -262,6 +263,7 @@ function Fiche({ media }: { media: MediaDetails }) {
           <WatchLink media={media} className="grow sm:grow-0" />
           <WatchlistButton media={media} className="grow sm:grow-0" />
           {isYoutubeKey(media.trailerKey) && <TrailerButton title={media.title} trailerKey={media.trailerKey} />}
+          <ReportIssueButton media={media} className="grow sm:grow-0" />
         </div>
       </FicheFrame>
 

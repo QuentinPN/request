@@ -4,7 +4,7 @@ import { cn } from 'cn';
 import { Film } from 'lucide-react';
 import { useId } from 'react';
 import { Avatar } from '@/components/shell/avatar';
-import { FieldHint, Label } from '@/components/ui/field';
+import { FieldHint, Label, Textarea } from '@/components/ui/field';
 
 /** Bouton « Approuver » vert des maquettes (request.css, .btn-ok). */
 export const approveClass =
@@ -74,7 +74,7 @@ export function ReasonField({
   return (
     <div>
       <Label htmlFor={id}>Motif si refus</Label>
-      <textarea
+      <Textarea
         id={id}
         value={value}
         maxLength={DECLINE_REASON_MAX}
@@ -83,7 +83,6 @@ export function ReasonField({
         aria-describedby={`${id}-hint`}
         rows={3}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full resize-none rounded-(--r-button) border border-input bg-(--field-bg) px-3.5 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/20 disabled:opacity-50 aria-invalid:border-(--tint-danger-border)"
         placeholder={hint}
       />
       <FieldHint id={`${id}-hint`} className={cn(error && 'text-(--text-danger)')}>

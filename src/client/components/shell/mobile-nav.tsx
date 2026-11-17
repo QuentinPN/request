@@ -8,9 +8,9 @@ import { activeOptions, focusRing, useNavItems } from './nav-items';
 import { NotificationsSheet, useUnreadCount } from './notifications';
 import { searchShortcut, useOpenSearch } from './search';
 
-// Jusqu'à six onglets (gestionnaire) dans 390 px : chacun prend une part égale, 64 px au plus.
+// Jusqu'à sept onglets (gestionnaire) dans 390 px : chacun prend la place de son libellé et une part du reste, 64 px au plus.
 const tab = cn(
-  'relative flex min-h-11 max-w-16 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl py-1 text-[10px] font-semibold text-muted-foreground aria-[current=page]:text-foreground',
+  'relative flex min-h-11 max-w-16 min-w-0 flex-auto flex-col items-center justify-center gap-1 rounded-2xl py-1 text-[10px] font-semibold text-muted-foreground aria-[current=page]:text-foreground',
   focusRing,
 );
 const tabBadge = 'absolute -top-1.5 right-2 h-[18px] min-w-[18px] text-[10px]';

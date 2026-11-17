@@ -1,6 +1,6 @@
 import type { Capabilities } from '@shared/roles.ts';
 import type { LinkProps } from '@tanstack/react-router';
-import { Bookmark, ChartColumn, Check, Clapperboard, House, List, type LucideIcon, Tv, User } from 'lucide-react';
+import { Bookmark, ChartColumn, Check, Clapperboard, Flag, House, List, type LucideIcon, Tv, User } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { useViewer } from '@/hooks/use-viewer';
 
@@ -17,7 +17,7 @@ export type NavItem = {
   /** Droit requis pour voir l'entrée. */
   capability?: keyof Capabilities;
   /** Compteur affiché à côté du libellé. */
-  count?: 'pendingApprovals';
+  count?: 'pendingApprovals' | 'openIssues';
 };
 
 // Seule définition de la navigation, lue par la pilule et par la barre d'onglets.
@@ -35,6 +35,14 @@ export const navItems: readonly NavItem[] = [
     in: ['pill', 'tabs'],
     capability: 'canManageRequests',
     count: 'pendingApprovals',
+  },
+  {
+    to: '/signalements',
+    label: 'Signalements',
+    mobileLabel: 'Problèmes',
+    icon: Flag,
+    in: ['pill', 'tabs'],
+    count: 'openIssues',
   },
   // Sur mobile, la barre d'onglets est pleine : la page s'ouvre depuis Compte.
   { to: '/statistiques', label: 'Statistiques', icon: ChartColumn, in: ['pill'], capability: 'canViewStats' },

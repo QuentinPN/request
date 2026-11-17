@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { useViewer } from '@/hooks/use-viewer';
+import { issueCountsQuery } from '@/lib/issues';
 import { requestCountsQuery } from '@/lib/requests';
 import type { NavItem } from './nav-items';
 
@@ -26,14 +27,22 @@ export function CountBadge({ count, label, className }: { count: number; label: 
 }
 
 /**
- * Compteur d'une entrée de navigation : demandes en attente d'approbation. Rien tant que le chiffre manque, qu'il est
- * nul ou que le serveur ne répond pas ; ne bloque jamais la navigation.
+ * Compteur d'une entrée de navigation, pour qui la gère : demandes en attente d'approbation, signalements ouverts.
+ * Rien tant que le chiffre manque, qu'il est nul ou que le serveur ne répond pas ; ne bloque jamais la navigation.
  */
 export function NavBadge({ item, className }: { item: NavItem; className?: string }) {
-  const canManage = useViewer()?.capabilities.canManageRequests === true;
-  const { data } = useQuery({ ...requestCountsQuery(), enabled: item.count === 'pendingApprovals' && canManage });
+  const capabilities = useViewer()?.capabilities;
+  const approvals = useQuery({
+    ...requestCountsQuery(),
+    enabled: item.count === 'pendingApprovals' && capabilities?.canManageRequests === true,
+  });
+  const issues = useQuery({
+    ...issueCountsQuery(),
+    enabled: item.count === 'openIssues' && capabilities?.canManageIssues === true,
+  });
   // Le cache est partagé : sans ce test, chaque entrée de la navigation afficherait le chiffre.
-  const count = item.count === 'pendingApprovals' ? data?.pendingApprovals : null;
-  if (!count) return null;
-  return <CountBadge count={count} label={`${count} en attente`} className={className} />;
+  const count = item.count === 'pendingApprovals' ? approvals.data?.pendingApprovals : issues.data?.open;
+  if (!item.count || !count) return null;
+  const label = item.count === 'openIssues' ? `${count} ouvert${count > 1 ? 's' : ''}` : `${count} en attente`;
+  return <CountBadge count={count} label={label} className={className} />;
 }

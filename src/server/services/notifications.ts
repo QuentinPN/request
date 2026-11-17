@@ -1,7 +1,8 @@
-import { and, count, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { keyOf } from '../../shared/media.ts';
 import {
+  type IssueNotificationKind,
   isRequestNotificationKind,
   type markNotificationsReadSchema,
   NOTIFICATIONS_PAGE_SIZE,
@@ -11,10 +12,10 @@ import {
   type notificationListQuerySchema,
   type RequestNotificationKind,
 } from '../../shared/notifications.ts';
-import { capabilitiesOf, roles } from '../../shared/roles.ts';
+import { type Capabilities, capabilitiesOf, roles } from '../../shared/roles.ts';
 import type { RequestEventType } from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
-import { media, notifications, requests, users } from '../db/schema.ts';
+import { issueComments, issues, media, notifications, requests, users } from '../db/schema.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { DAY_MS } from '../lib/time.ts';
 import { loadSummaries } from './tmdb.ts';
@@ -88,7 +89,9 @@ const RECIPIENTS: Record<RequestNotificationKind, 'requester' | 'managers'> = {
   declined: 'requester',
   available: 'requester',
 };
-const managerRoles = roles.filter((role) => capabilitiesOf(role).canManageRequests);
+const rolesWith = (capability: keyof Capabilities) => roles.filter((role) => capabilitiesOf(role)[capability]);
+const managerRoles = rolesWith('canManageRequests');
+const issueManagerRoles = rolesWith('canManageIssues');
 
 export interface RequestEventFact {
   requestId: number;
@@ -147,6 +150,51 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
     .run();
 }
 
+export interface IssueEventFact {
+  issueId: number;
+  kind: IssueNotificationKind;
+  actorId: string | null;
+  at: Date;
+}
+
+/**
+ * Notifications d'un évènement de signalement, écrites dans sa transaction : un nouveau signalement prévient les
+ * gestionnaires des signalements ; un commentaire, l'auteur du signalement et ceux qui ont déjà commenté (celui de
+ * l'auteur : les gestionnaires déjà intervenus, à défaut tous) ; résolu ou
+ * rouvert, l'auteur. Le membre qui agit n'est jamais prévenu de sa propre action.
+ */
+export function notifyIssueEvent(tx: Pick<Db, 'select' | 'insert'>, { issueId, kind, actorId, at }: IssueEventFact) {
+  const issue = tx.select({ userId: issues.userId }).from(issues).where(eq(issues.id, issueId)).get();
+  if (!issue) return;
+  const managers = tx
+    .select({ id: users.id })
+    .from(users)
+    .where(inArray(users.role, issueManagerRoles))
+    .all()
+    .map((u) => u.id);
+  let to: string[];
+  if (kind === 'issue_created') to = managers;
+  else if (kind === 'issue_commented') {
+    // Seuls ceux qui peuvent encore voir le signalement : son auteur et les gestionnaires.
+    const commenters = tx
+      .select({ id: issueComments.userId })
+      .from(issueComments)
+      .where(and(eq(issueComments.issueId, issueId), isNotNull(issueComments.userId)))
+      .all()
+      .flatMap((c) => (c.id && (c.id === issue.userId || managers.includes(c.id)) ? [c.id] : []));
+    if (actorId !== issue.userId) to = [issue.userId, ...commenters];
+    else {
+      const managing = commenters.filter((id) => id !== issue.userId);
+      to = managing.length > 0 ? managing : managers;
+    }
+  } else to = [issue.userId];
+  const recipients = [...new Set(to)].filter((id) => id !== actorId);
+  if (recipients.length === 0) return;
+  tx.insert(notifications)
+    .values(recipients.map((userId) => ({ userId, kind, issueId, createdAt: at })))
+    .run();
+}
+
 /** Supprime les notifications lues créées avant `before` (balayage complet quotidien). */
 export function purgeReadNotifications(db: Db, before: Date): number {
   return db
@@ -180,7 +228,9 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
       })
       .from(notifications)
       .leftJoin(requests, eq(requests.id, notifications.requestId))
-      .leftJoin(media, eq(media.id, requests.mediaId))
+      .leftJoin(issues, eq(issues.id, notifications.issueId))
+      // Le titre vient de la demande ou du signalement de la notification (jamais des deux).
+      .leftJoin(media, eq(media.id, sql`coalesce(${requests.mediaId}, ${issues.mediaId})`))
       .leftJoin(users, eq(users.id, requests.userId))
       .where(mine(userId))
       .orderBy(desc(notifications.createdAt), desc(notifications.id))
@@ -215,6 +265,7 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
         read: n.readAt !== null,
         createdAt: n.createdAt.toISOString(),
         requestId: n.requestId,
+        issueId: n.issueId,
         media: key,
       })),
     };

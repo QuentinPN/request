@@ -77,7 +77,9 @@ export interface NotificationView {
   read: boolean;
   createdAt: string;
   requestId: number | null;
-  /** Titre concerné (lien vers sa fiche) ; `null` si la demande n'existe plus. */
+  /** Signalement concerné (notifications `issue_*`) ; `null` si le signalement n'existe plus. */
+  issueId: number | null;
+  /** Titre concerné (lien vers sa fiche) ; `null` si la demande ou le signalement n'existe plus. */
   media: MediaKey | null;
 }
 
