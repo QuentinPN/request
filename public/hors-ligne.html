@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#07080a" />
+    <title>Hors ligne · Request</title>
+    <style>
+      :root {
+        --bg: #07080a;
+        --text: #f5f5f7;
+        --muted: rgba(245, 245, 247, 0.62);
+        --accent: #e8c9a6;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f2f2f5;
+          --text: #1d1d1f;
+          --muted: rgba(29, 29, 31, 0.62);
+          --accent: #b07a45;
+          color-scheme: light;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        text-align: center;
+      }
+      main {
+        max-width: 360px;
+      }
+      img {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+      }
+      h1 {
+        margin: 20px 0 8px;
+        font-size: 22px;
+      }
+      p {
+        margin: 0 0 24px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      button {
+        min-height: 44px;
+        padding: 0 20px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #0a0a0c;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 3px solid var(--text);
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icon-192.png" alt="" />
+      <h1>Pas de connexion</h1>
+      <p>Request n’est pas joignable pour l’instant. Vérifiez votre connexion, puis réessayez.</p>
+      <button type="button" onclick="location.reload()">Réessayer</button>
+    </main>
+  </body>
+</html>

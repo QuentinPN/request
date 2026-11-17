@@ -20,6 +20,20 @@ export function Input({ className, ...props }: React.ComponentProps<'input'>) {
   return <input className={cn(inputClass, className)} {...props} />;
 }
 
+/** Case à cocher et son libellé, dans un bandeau cliquable de 44 px (réglages, Compte). */
+export function CheckboxField({
+  className,
+  children,
+  ...props
+}: Omit<React.ComponentProps<'input'>, 'type'> & { children: React.ReactNode }) {
+  return (
+    <label className={cn('flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm', className)}>
+      <input type="checkbox" className="size-4 shrink-0 accent-(--accent-play)" {...props} />
+      {children}
+    </label>
+  );
+}
+
 /** Zone de saisie de plusieurs lignes (motif d'un refus, message d'un signalement). */
 export function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
   return (

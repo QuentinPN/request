@@ -4,6 +4,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/index.css';
 import { AuthRequiredError, shouldRetry } from './lib/http.ts';
+import { registerServiceWorker } from './lib/push.ts';
 import { forgetSession } from './lib/session.ts';
 import { router } from './router.tsx';
 
@@ -22,6 +23,8 @@ const queryClient: QueryClient = new QueryClient({
     queries: { retry: shouldRetry, staleTime: 30_000, refetchOnWindowFocus: false },
   },
 });
+
+registerServiceWorker();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root introuvable');

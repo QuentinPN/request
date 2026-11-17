@@ -1,11 +1,11 @@
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { LinkProps } from '@tanstack/react-router';
-import type {
-  MarkNotificationsReadInput,
-  NotificationKind,
-  NotificationPage,
-  NotificationsRead,
-  NotificationView,
+import {
+  type MarkNotificationsReadInput,
+  type NotificationPage,
+  type NotificationsRead,
+  type NotificationView,
+  notificationTarget,
 } from '../../shared/notifications.ts';
 import { apiGet, apiSend } from './http.ts';
 
@@ -35,29 +35,13 @@ export function useMarkNotificationsRead() {
   });
 }
 
-/** Les gestionnaires vont à la file d'approbation, le demandeur à la fiche du titre. */
-const toQueue: Record<NotificationKind, boolean> = {
-  requested: true,
-  failed: true,
-  approved: false,
-  declined: false,
-  available: false,
-  requested_on_behalf: false,
-  issue_created: false,
-  issue_commented: false,
-  issue_resolved: false,
-  issue_reopened: false,
-};
-
-/**
- * Destination d'une notification : la file d'approbation, le signalement, ou la fiche du titre ; `null` si la demande
- * ou le signalement n'existe plus.
- */
+/** Destination d'une notification (`notificationTarget`) : la file d'approbation, le signalement, la fiche, ou aucune. */
 export function notificationLink(notification: NotificationView): LinkProps | null {
-  if (toQueue[notification.kind]) return { to: '/approbations' };
-  if (notification.issueId !== null) return { to: '/signalements', search: { id: notification.issueId } };
-  const { media } = notification;
-  return media ? { to: '/titre/$type/$id', params: { type: media.type, id: String(media.tmdbId) } } : null;
+  const target = notificationTarget(notification);
+  if (target === 'queue') return { to: '/approbations' };
+  if (target === null) return null;
+  if ('issueId' in target) return { to: '/signalements', search: { id: target.issueId } };
+  return { to: '/titre/$type/$id', params: { type: target.type, id: String(target.tmdbId) } };
 }
 
 /** « 1 non lue », « 3 non lues ». */

@@ -69,20 +69,39 @@ export function maskSetting<K extends SettingKey>(key: K, value: Setting<K>): Ma
   return mapFields(key, value, (v) => ({ set: typeof v === 'string' && v !== '' })) as MaskedSetting<K>;
 }
 
+/** Champs qui désignent où et comment part le secret d'un réglage : l'adresse du service, ou le serveur SMTP (hôte, port, chiffrement) et le compte. */
+const SECRET_DESTINATIONS: Partial<Record<SettingKey, readonly string[]>> = {
+  smtp: ['host', 'port', 'security', 'username'],
+};
+
+/** Valeur comparable d'un champ de destination : sans espaces ni `/` final, vide comme absent. */
+const destinationValue = (v: unknown) => (typeof v === 'string' ? normalizeUrl(v.trim()) || null : (v ?? null));
+
 /**
  * Le navigateur ne reçoit jamais les secrets enregistrés : un secret vide ou absent dans un formulaire
- * signifie « garder l'actuel ». Seulement vers la même adresse : sinon un appelant pourrait faire envoyer
- * la clé enregistrée à un serveur de son choix (le test d'Emby est public pendant l'amorçage).
+ * signifie « garder l'actuel ». Seulement vers la même destination (adresse ; hôte, port et identifiant SMTP) :
+ * sinon un appelant pourrait faire envoyer le secret enregistré à un serveur de son choix (le test d'Emby est public
+ * pendant l'amorçage).
  */
 export const withStoredSecrets = (key: SettingKey, input: unknown, stored: object | null): unknown =>
-  withStoredFields(secretFields[key], input, stored);
+  withStoredFields(secretFields[key], input, stored, SECRET_DESTINATIONS[key]);
 
-/** Même règle pour d'autres secrets que ceux des réglages (clé d'API d'un serveur Radarr/Sonarr). */
-export function withStoredFields(fields: readonly string[], input: unknown, stored: object | null): unknown {
+/**
+ * Même règle pour d'autres secrets que ceux des réglages (clé d'API d'un serveur Radarr/Sonarr). `destinations` :
+ * les champs qui doivent rester les mêmes, l'adresse (`url`) par défaut.
+ */
+export function withStoredFields(
+  fields: readonly string[],
+  input: unknown,
+  stored: object | null,
+  destinations: readonly string[] = ['url'],
+): unknown {
   if (typeof input !== 'object' || input === null || !stored) return input;
-  const { url } = input as Fields;
-  const storedUrl = (stored as Fields).url;
-  if (typeof storedUrl === 'string' && (typeof url !== 'string' || normalizeUrl(url) !== storedUrl)) return input;
+  const moved = destinations.some(
+    (field) =>
+      field in stored && destinationValue((input as Fields)[field]) !== destinationValue((stored as Fields)[field]),
+  );
+  if (moved) return input;
   return mapEach(fields, input as Fields, (v, field) => (v === undefined || v === '' ? (stored as Fields)[field] : v));
 }
 

@@ -16,6 +16,7 @@ import { arrServersQuery, settingQuery } from './queries';
 import { RulesSection } from './rules-section';
 import { SectionFrame, type SectionFrameProps } from './section-frame';
 import { SeerrImportSection } from './seerr-import-section';
+import { SmtpSection } from './smtp-section';
 import { TraktSection } from './trakt-section';
 import { WebhooksSection } from './webhooks-section';
 
@@ -65,6 +66,7 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
           <SeerrImportSection section="seerr" open={open === 'seerr'} onToggle={() => toggle('seerr')} />
           <DiscordSection section="discord" open={open === 'discord'} onToggle={() => toggle('discord')} />
+          <SmtpSection section="smtp" open={open === 'smtp'} onToggle={() => toggle('smtp')} />
           <TraktSection section="trakt" open={open === 'trakt'} onToggle={() => toggle('trakt')} />
           <ApiKeysSection section="api" open={open === 'api'} onToggle={() => toggle('api')} />
         </>

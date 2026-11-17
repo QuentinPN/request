@@ -1,5 +1,8 @@
+import type { UseQueryResult } from '@tanstack/react-query';
 import { cn } from 'cn';
 import type { ReactNode } from 'react';
+import { ErrorState } from '@/components/states';
+import { Skeleton } from '@/components/ui/skeleton';
 import { type SectionId, sectionText, settingsSectionOrder } from './config';
 
 export type SectionStatus = 'done' | 'todo' | 'active' | 'error';
@@ -105,6 +108,31 @@ export function SectionFrame({
       </section>
     </div>
   );
+}
+
+/** Section facultative (Discord, courriel) qui lit son réglage : squelette, erreur à réessayer, puis le formulaire. */
+export function LoadedSection<T>({
+  query,
+  children,
+  ...frame
+}: SectionFrameProps & { query: UseQueryResult<T>; children: (data: T) => ReactNode }) {
+  if (query.isPending)
+    return (
+      <SectionFrame {...frame} status="todo" todoLabel="Désactivé">
+        <div role="status" className="space-y-4">
+          <span className="sr-only">Chargement…</span>
+          <Skeleton className="h-12 w-full rounded-(--r-button)" />
+          <Skeleton className="h-12 w-full rounded-(--r-button)" />
+        </div>
+      </SectionFrame>
+    );
+  if (query.isError)
+    return (
+      <SectionFrame {...frame} status="error">
+        <ErrorState message="Ces réglages n’ont pas pu se charger." onRetry={() => void query.refetch()} />
+      </SectionFrame>
+    );
+  return children(query.data);
 }
 
 /** Boutons d'une section : à droite sur ordinateur, pleine largeur et empilés sur mobile. */

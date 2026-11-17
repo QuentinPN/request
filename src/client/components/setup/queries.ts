@@ -11,7 +11,7 @@ import { ApiError, apiGet, apiSend } from '@/lib/http';
 import { setupStateQuery } from '@/lib/session';
 
 /** Réglage enregistré (secrets masqués), `null` s'il ne l'a jamais été. */
-export const settingQuery = <K extends SettingSection>(key: K) =>
+export const settingQuery = <K extends SettingSection | 'smtp'>(key: K) =>
   queryOptions({
     queryKey: ['settings', key],
     queryFn: async (): Promise<MaskedSetting<K> | null> => {

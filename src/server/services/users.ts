@@ -1,5 +1,6 @@
 import { asc, count, eq } from 'drizzle-orm';
 import type { Member, Viewer } from '../../shared/auth.ts';
+import type { NotificationPreferences } from '../../shared/notifications.ts';
 import { capabilitiesOf, type QuotaOverride, type Role } from '../../shared/roles.ts';
 import type { Db } from '../db/index.ts';
 import { users } from '../db/schema.ts';
@@ -127,6 +128,23 @@ export function setRole(db: Db, id: string, role: Role, now = new Date()): User 
  */
 export function setQuotaOverride(db: Db, id: string, quotaOverride: QuotaOverride | null, now = new Date()): User {
   const user = db.update(users).set({ quotaOverride, updatedAt: now }).where(eq(users.id, id)).returning().get();
+  if (!user) throw new UsersError('not_found', 'Membre introuvable');
+  return user;
+}
+
+/** Adresse et canaux de notification du membre, déjà validés par `notificationPreferencesSchema`. */
+export function setNotificationPreferences(
+  db: Db,
+  id: string,
+  preferences: NotificationPreferences,
+  now = new Date(),
+): User {
+  const user = db
+    .update(users)
+    .set({ ...preferences, updatedAt: now })
+    .where(eq(users.id, id))
+    .returning()
+    .get();
   if (!user) throw new UsersError('not_found', 'Membre introuvable');
   return user;
 }

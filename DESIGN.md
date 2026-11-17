@@ -64,7 +64,9 @@ Piège : chez shadcn, `--accent` est le fond de survol. L'accent de marque `#E8C
 | `icon.svg`, `icon-light.svg`                                                               | icône (R complet : fût, verre, manche) sur tuile sombre ou claire, dès 48 px                                                           |
 | `favicon.svg`                                                                              | petit format (16 et 32 px) : traits épaissis, verre plein sans liseré, tuile selon `prefers-color-scheme`                              |
 | `mark.svg`, `mark-light.svg`, `mark-mono.svg`                                              | R seul sans tuile ; `mark-mono` en une couleur (`currentColor`), verre vide                                                            |
-| `public/` : `favicon*.png`, `apple-touch-icon.png`, `icon-192/512.png`, `site.webmanifest` | exports servis par l'appli ; l'icône Apple est carrée et opaque (iOS arrondit lui-même)                                                |
+| `public/` : `favicon*.png`, `apple-touch-icon.png`, `icon-*.png` et `manifest.webmanifest` | exports servis par l'appli ; l'icône Apple est carrée et opaque (iOS arrondit lui-même)                                                |
+
+Icône « maskable » (Android, `icon-maskable-512.png`) : `mark.svg` à 90 % sur fond plein `#07080A`, dans la zone sûre.
 
 Tailles minimales : mot-symbole 16 px de haut (`h-[1.3em]` sur un texte de 13 px au moins) ; icône grand format 48 px, en dessous le petit format `favicon.svg`. Zone de protection : la largeur du fût du R tout autour. Ne pas recolorer le verre hors `--brand`, ne pas déformer, ne pas remettre la loupe seule sans le fût.
 

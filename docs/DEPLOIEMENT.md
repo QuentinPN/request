@@ -22,7 +22,13 @@ Variables (`.env`, voir `.env.example`) :
 | `IMAGE_CACHE_MAX_MB` | `500`            | Taille maximale du cache d'images ; les fichiers les moins récemment vus sont supprimés au-delà.                        |
 | `BACKUP_KEEP`        | `7`              | Sauvegardes quotidiennes conservées dans `/data/backups` ; `0` désactive la sauvegarde automatique.                     |
 
-Variables de l'appli, déjà fixées par l'image : `PORT=3000`, `DATA_DIR=/data`. `HOST` (défaut `0.0.0.0`) n'a pas à changer.
+Variables de l'appli, déjà fixées par l'image : `PORT=3000`, `DATA_DIR=/data`. `HOST` (défaut `0.0.0.0`) n'a pas à changer. `compose.yml` fixe aussi `PUBLIC_URL=https://${DOMAIN}` : lien vers l'appli dans les courriels et contact des notifications push (hors Compose, renseignez-la à la main ; sans elle, les courriels n'ont pas de lien).
+
+### Notifications par courriel et push
+
+- **Courriel** (facultatif) : Réglages › Notifications par courriel. L'appli se connecte au serveur SMTP en sortie : le port choisi (587 STARTTLS, 465 TLS, 25 sans chiffrement) doit être ouvert en sortie depuis l'hôte (beaucoup de fournisseurs d'accès bloquent le 25 : préférez 587 ou 465 d'un service d'envoi). « Envoyer un essai » écrit à l'adresse du propriétaire, à renseigner d'abord dans Compte. Chaque membre saisit son adresse et ses choix dans Compte.
+- **Push** : rien à régler côté serveur (clés VAPID créées au premier besoin). Il exige l'appli en HTTPS (Caddy s'en charge) ; chaque membre l'active sur chacun de ses appareils dans Compte. Sur iPhone et iPad (iOS 16.4 et plus), il faut d'abord ajouter l'appli à l'écran d'accueil (Partager › Sur l'écran d'accueil).
+- **Appli installable** : Chrome, Edge et Android proposent « Installer l'application » ; le manifeste et le service worker sont servis par l'appli, sans réglage.
 
 Le conteneur est durci : système de fichiers en lecture seule (hors `/data` et `/tmp`), `cap_drop: [ALL]`, `no-new-privileges`, utilisateur `node` (uid 1000), aucun port publié (seul Caddy joint l'appli).
 

@@ -59,12 +59,54 @@ export const notificationPreferencesSchema = z.object({
 });
 export type NotificationPreferences = z.output<typeof notificationPreferencesSchema>;
 
+/**
+ * Services push des navigateurs, seuls destinataires des envois du serveur (pas d'adresse interne) : l'hôte d'un
+ * endpoint doit être un sous-domaine de l'un d'eux. FCM (Chrome, Edge Chromium) : `fcm.googleapis.com` ; Firefox :
+ * `updates.push.services.mozilla.com` ; WNS (Windows) : `*.notify.windows.com` ; Safari : `web.push.apple.com`.
+ */
+export const PUSH_SERVICE_DOMAINS = [
+  'googleapis.com',
+  'push.services.mozilla.com',
+  'notify.windows.com',
+  'push.apple.com',
+] as const;
+
+/** Endpoint HTTPS d'un service push connu (`PUSH_SERVICE_DOMAINS`), sans port explicite. */
+export function isPushServiceEndpoint(endpoint: string): boolean {
+  if (!URL.canParse(endpoint)) return false;
+  const { protocol, hostname, port } = new URL(endpoint);
+  return protocol === 'https:' && port === '' && PUSH_SERVICE_DOMAINS.some((domain) => hostname.endsWith(`.${domain}`));
+}
+
+/** Longueurs maximales : un endpoint réel fait quelques centaines de caractères, les clés 87 (`p256dh`) et 22 (`auth`). */
+export const PUSH_ENDPOINT_MAX = 2048;
+export const PUSH_KEY_MAX = 128;
+const pushKey = z.string().min(1).max(PUSH_KEY_MAX);
+
 /** Abonnement push d'un appareil, tel que `PushSubscription.toJSON()` le donne dans le navigateur. */
 export const pushSubscriptionInputSchema = z.object({
-  endpoint: z.url({ protocol: /^https$/ }),
-  keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+  endpoint: z
+    .url({ protocol: /^https$/ })
+    .max(PUSH_ENDPOINT_MAX)
+    .refine(isPushServiceEndpoint, 'Service de notifications push inconnu'),
+  keys: z.object({ p256dh: pushKey, auth: pushKey }),
 });
 export type PushSubscriptionInput = z.input<typeof pushSubscriptionInputSchema>;
+/** Un appareil, par son `endpoint` : désabonnement (les siens seulement), ou « est-il à moi ? ». */
+export const pushEndpointSchema = pushSubscriptionInputSchema.pick({ endpoint: true });
+
+/** Préférences du membre connecté (Compte), et l'avis des « Envoyer un essai ». */
+export const NOTIFICATION_PREFERENCES_PATH = '/api/account/notifications';
+/** Push : clé publique VAPID, abonnement de l'appareil (`PUT`, `DELETE`, vérification), essai vers ses appareils. */
+export const PUSH_PUBLIC_KEY_PATH = '/api/push/public-key';
+export const PUSH_SUBSCRIPTION_PATH = '/api/push/subscription';
+export const PUSH_SUBSCRIPTION_CHECK_PATH = `${PUSH_SUBSCRIPTION_PATH}/check`;
+export const PUSH_TEST_PATH = '/api/push/test';
+/** Service worker de l'appli installable (`public/sw.js`), servi à la racine : sa portée est tout le site. */
+export const SERVICE_WORKER_PATH = '/sw.js';
+/** Réglage SMTP (propriétaire) et courriel d'essai vers son adresse. */
+export const SMTP_SETTINGS_PATH = '/api/settings/smtp';
+export const SMTP_TEST_PATH = `${SMTP_SETTINGS_PATH}/test`;
 
 // --- Réponses ---
 
@@ -90,4 +132,58 @@ export interface NotificationPage extends Paged<NotificationView> {
 
 export interface NotificationsRead {
   unread: number;
+}
+
+/** Préférences, et ce qui les rend utiles : courriel réglé par le propriétaire, appareils abonnés au push. */
+export interface NotificationPreferencesView extends NotificationPreferences {
+  emailAvailable: boolean;
+  pushDevices: number;
+}
+
+export interface PushPublicKey {
+  publicKey: string;
+}
+
+/** Cet appareil (son `endpoint`) est-il abonné pour le membre connecté ? Faux s'il l'est pour un autre membre. */
+export interface PushSubscriptionCheck {
+  subscribed: boolean;
+}
+
+// --- Destination ---
+
+/** Les gestionnaires vont à la file d'approbation, les autres à la fiche du titre. */
+const toQueue: Record<NotificationKind, boolean> = {
+  requested: true,
+  failed: true,
+  approved: false,
+  declined: false,
+  available: false,
+  requested_on_behalf: false,
+  issue_created: false,
+  issue_commented: false,
+  issue_resolved: false,
+  issue_reopened: false,
+};
+
+type NotificationTargetInput = Pick<NotificationView, 'kind' | 'issueId' | 'media'>;
+
+/**
+ * Destination d'une notification : la file d'approbation, le signalement, ou la fiche du titre ; `null` si la demande
+ * ou le signalement n'existe plus.
+ */
+export function notificationTarget({
+  kind,
+  issueId,
+  media,
+}: NotificationTargetInput): 'queue' | { issueId: number } | MediaKey | null {
+  if (toQueue[kind]) return 'queue';
+  return issueId !== null ? { issueId } : media;
+}
+
+/** Même destination en chemin de l'appli (courriel, push) ; l'accueil si elle n'existe plus. */
+export function notificationPath(notification: NotificationTargetInput): string {
+  const target = notificationTarget(notification);
+  if (target === 'queue') return '/approbations';
+  if (target === null) return '/';
+  return 'issueId' in target ? `/signalements?id=${target.issueId}` : `/titre/${target.type}/${target.tmdbId}`;
 }

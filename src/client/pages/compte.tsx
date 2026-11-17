@@ -2,12 +2,14 @@ import { roleLabels } from '@shared/roles.ts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Bookmark, ChartColumn, LogOut, Settings } from 'lucide-react';
+import { NotificationSettings } from '@/components/account/notification-settings';
 import { Notice } from '@/components/notice';
 import { Page } from '@/components/page';
 import { Avatar } from '@/components/shell/avatar';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { useViewer } from '@/hooks/use-viewer';
 import { apiSend } from '@/lib/http';
+import { releaseDevicePush } from '@/lib/push';
 import { forgetSession } from '@/lib/session';
 
 export function ComptePage() {
@@ -15,7 +17,10 @@ export function ComptePage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const logout = useMutation({
-    mutationFn: () => apiSend('POST', '/api/auth/logout'),
+    mutationFn: async () => {
+      await releaseDevicePush();
+      await apiSend('POST', '/api/auth/logout');
+    },
     onSuccess: async () => {
       forgetSession(queryClient);
       await navigate({ to: '/connexion' });
@@ -59,6 +64,7 @@ export function ComptePage() {
         </div>
       </section>
       {logout.isError && <Notice tone="error">{logout.error.message}</Notice>}
+      <NotificationSettings />
     </Page>
   );
 }

@@ -9,10 +9,11 @@ import {
   type NotificationKind,
   type NotificationPage,
   type NotificationsRead,
+  type NotificationView,
   type notificationListQuerySchema,
   type RequestNotificationKind,
 } from '../../shared/notifications.ts';
-import { type Capabilities, capabilitiesOf, roles } from '../../shared/roles.ts';
+import { type Capabilities, capabilitiesOf, type Role, roles } from '../../shared/roles.ts';
 import type { RequestEventType } from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
 import { issueComments, issues, media, notifications, requests, users } from '../db/schema.ts';
@@ -93,6 +94,73 @@ const rolesWith = (capability: keyof Capabilities) => roles.filter((role) => cap
 const managerRoles = rolesWith('canManageRequests');
 const issueManagerRoles = rolesWith('canManageIssues');
 
+/** Membres de ces rôles (gestionnaires des demandes ou des signalements) : destinataires des notifications « à traiter ». */
+const memberIdsWithRoles = (tx: Pick<Db, 'select'>, withRoles: readonly Role[]) =>
+  tx
+    .select({ id: users.id })
+    .from(users)
+    .where(inArray(users.role, withRoles))
+    .all()
+    .map((u) => u.id);
+
+/** Une notification de l'appli, pour chacun de ses destinataires. */
+export interface NotificationFact {
+  kind: NotificationKind;
+  recipients: readonly string[];
+  /** Le membre qui agit n'est jamais prévenu de sa propre action. */
+  actorId: string | null;
+  requestId?: number | null;
+  issueId?: number | null;
+  /** Donnée brute de l'évènement (motif du refus, raison de l'échec). */
+  detail: string | null;
+  at: Date;
+}
+
+/** Notifications écrites ensemble (un évènement) : relues après la validation pour les autres canaux. */
+export interface CreatedNotifications {
+  kind: NotificationKind;
+  at: Date;
+  rows: ReadonlyArray<{ id: number; userId: string }>;
+}
+
+type CreatedListener = (created: CreatedNotifications) => void;
+const createdListeners = new Set<CreatedListener>();
+
+/**
+ * S'abonne aux notifications écrites par `notify` (courriel, push). Appelé dans la transaction : l'écouteur ne fait que
+ * planifier son travail (`AfterCommit`), qui relit les lignes après la validation. Renvoie le désabonnement.
+ */
+export function onNotificationsCreated(listener: CreatedListener): () => void {
+  createdListeners.add(listener);
+  return () => createdListeners.delete(listener);
+}
+
+/**
+ * Seul point d'entrée des notifications : une ligne par destinataire, dans la transaction de l'évènement (annulée avec
+ * elle), puis distribution aux autres canaux après validation selon les préférences de chacun (`services/delivery.ts`).
+ * Tout type de `notificationKinds` passe par ici : rien à ajouter pour qu'il parte aussi par courriel et en push.
+ */
+export function notify(tx: Pick<Db, 'insert'>, fact: NotificationFact) {
+  const { kind, actorId, detail, at } = fact;
+  const recipients = [...new Set(fact.recipients)].filter((id) => id !== actorId);
+  if (recipients.length === 0) return;
+  const rows = tx
+    .insert(notifications)
+    .values(
+      recipients.map((userId) => ({
+        userId,
+        kind,
+        requestId: fact.requestId ?? null,
+        issueId: fact.issueId ?? null,
+        detail,
+        createdAt: at,
+      })),
+    )
+    .returning({ id: notifications.id, userId: notifications.userId })
+    .all();
+  for (const listener of createdListeners) listener({ kind, at, rows });
+}
+
 export interface RequestEventFact {
   requestId: number;
   type: RequestEventType;
@@ -134,20 +202,8 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
   if (!request) return;
   if (kind === 'requested' && (detail !== null || capabilitiesOf(request.role).autoApprove)) return;
   for (const listener of requestEventListeners) listener(event);
-  const to =
-    RECIPIENTS[kind] === 'requester'
-      ? [request.userId]
-      : tx
-          .select({ id: users.id })
-          .from(users)
-          .where(inArray(users.role, managerRoles))
-          .all()
-          .map((u) => u.id);
-  const recipients = to.filter((id) => id !== actorId);
-  if (recipients.length === 0) return;
-  tx.insert(notifications)
-    .values(recipients.map((userId) => ({ userId, kind, requestId, detail, createdAt: at })))
-    .run();
+  const recipients = RECIPIENTS[kind] === 'requester' ? [request.userId] : memberIdsWithRoles(tx, managerRoles);
+  notify(tx, { kind, recipients, actorId, requestId, detail, at });
 }
 
 export interface IssueEventFact {
@@ -166,12 +222,7 @@ export interface IssueEventFact {
 export function notifyIssueEvent(tx: Pick<Db, 'select' | 'insert'>, { issueId, kind, actorId, at }: IssueEventFact) {
   const issue = tx.select({ userId: issues.userId }).from(issues).where(eq(issues.id, issueId)).get();
   if (!issue) return;
-  const managers = tx
-    .select({ id: users.id })
-    .from(users)
-    .where(inArray(users.role, issueManagerRoles))
-    .all()
-    .map((u) => u.id);
+  const managers = memberIdsWithRoles(tx, issueManagerRoles);
   let to: string[];
   if (kind === 'issue_created') to = managers;
   else if (kind === 'issue_commented') {
@@ -188,11 +239,7 @@ export function notifyIssueEvent(tx: Pick<Db, 'select' | 'insert'>, { issueId, k
       to = managing.length > 0 ? managing : managers;
     }
   } else to = [issue.userId];
-  const recipients = [...new Set(to)].filter((id) => id !== actorId);
-  if (recipients.length === 0) return;
-  tx.insert(notifications)
-    .values(recipients.map((userId) => ({ userId, kind, issueId, createdAt: at })))
-    .run();
+  notify(tx, { kind, recipients: to, actorId, issueId, detail: null, at });
 }
 
 /** Supprime les notifications lues créées avant `before` (balayage complet quotidien). */
@@ -205,7 +252,10 @@ export function purgeReadNotifications(db: Db, before: Date): number {
 
 // --- Lecture ---
 
-/** Notifications du membre connecté : liste paginée, non lues, marquage comme lues. Jamais celles d'un autre. */
+/**
+ * Notifications du membre connecté : liste paginée, non lues, marquage comme lues. Jamais celles d'un autre. Aussi le
+ * rendu des notifications à distribuer (`committed`, courriel et push).
+ */
 export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; now?: () => number }) {
   const { db } = data;
   const now = deps.now ?? Date.now;
@@ -218,7 +268,8 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
       .from(notifications)
       .where(and(mine(userId), isNull(notifications.readAt)));
 
-  const listQuery = (userId: string, page: number) =>
+  /** Notification et de quoi la rendre : titre concerné (par sa demande ou son signalement), nom du demandeur. */
+  const viewSelect = () =>
     db
       .select({
         notification: notifications,
@@ -231,7 +282,11 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
       .leftJoin(issues, eq(issues.id, notifications.issueId))
       // Le titre vient de la demande ou du signalement de la notification (jamais des deux).
       .leftJoin(media, eq(media.id, sql`coalesce(${requests.mediaId}, ${issues.mediaId})`))
-      .leftJoin(users, eq(users.id, requests.userId))
+      .leftJoin(users, eq(users.id, requests.userId));
+  type ViewRow = ReturnType<ReturnType<typeof viewSelect>['all']>[number];
+
+  const listQuery = (userId: string, page: number) =>
+    viewSelect()
       .where(mine(userId))
       .orderBy(desc(notifications.createdAt), desc(notifications.id))
       .limit(NOTIFICATIONS_PAGE_SIZE)
@@ -239,9 +294,8 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
 
   const unread = (userId: string) => unreadQuery(userId).get()?.n ?? 0;
 
-  async function list(userId: string, query: ListQuery): Promise<NotificationPage> {
-    const total = db.select({ n: count() }).from(notifications).where(mine(userId)).get()?.n ?? 0;
-    const rows = listQuery(userId, query.page).all();
+  /** Seul rendu des notifications (titres TMDB chargés en un lot) : pour la cloche, le courriel et le push. */
+  async function render(rows: ViewRow[]): Promise<Array<{ userId: string; view: NotificationView }>> {
     const keyed = rows.map((r) => ({
       ...r,
       key: r.type && r.tmdbId !== null ? { type: r.type, tmdbId: r.tmdbId } : null,
@@ -250,11 +304,9 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
       deps.tmdb,
       keyed.flatMap((r) => (r.key ? [r.key] : [])),
     );
-    return {
-      page: query.page,
-      totalPages: Math.ceil(total / NOTIFICATIONS_PAGE_SIZE),
-      unread: unread(userId),
-      results: keyed.map(({ notification: n, key, requesterName }) => ({
+    return keyed.map(({ notification: n, key, requesterName }) => ({
+      userId: n.userId,
+      view: {
         id: n.id,
         kind: n.kind,
         ...notificationMessage(n.kind, {
@@ -267,8 +319,39 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
         requestId: n.requestId,
         issueId: n.issueId,
         media: key,
-      })),
+      },
+    }));
+  }
+
+  async function list(userId: string, query: ListQuery): Promise<NotificationPage> {
+    const total = db.select({ n: count() }).from(notifications).where(mine(userId)).get()?.n ?? 0;
+    const rendered = await render(listQuery(userId, query.page).all());
+    return {
+      page: query.page,
+      totalPages: Math.ceil(total / NOTIFICATIONS_PAGE_SIZE),
+      unread: unread(userId),
+      results: rendered.map((r) => r.view),
     };
+  }
+
+  /**
+   * Notifications écrites par `notify`, rendues, si leur transaction a été validée (vide sinon) : relues par id avec
+   * destinataire, type et date, car l'id d'une ligne annulée peut resservir. `only` : ces destinataires seulement.
+   */
+  async function committed(created: CreatedNotifications, only: ReadonlySet<string>) {
+    const expected = new Map(created.rows.filter((r) => only.has(r.userId)).map((r) => [r.id, r.userId]));
+    if (expected.size === 0) return [];
+    const rows = viewSelect()
+      .where(
+        and(
+          inArray(notifications.id, [...expected.keys()]),
+          eq(notifications.kind, created.kind),
+          eq(notifications.createdAt, created.at),
+        ),
+      )
+      .all()
+      .filter((r) => expected.get(r.notification.id) === r.notification.userId);
+    return render(rows);
   }
 
   /** Marque comme lues les notifications choisies (celles d'un autre membre sont ignorées), ou toutes. */
@@ -286,7 +369,7 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
     return { unread: unread(userId) };
   }
 
-  return { list, markRead, unread, unreadQuery, listQuery };
+  return { list, committed, markRead, unread, unreadQuery, listQuery };
 }
 
 export type NotificationService = ReturnType<typeof createNotifications>;

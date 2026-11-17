@@ -19,6 +19,8 @@ services:
       TRUST_PROXY: ${PROXY_SUBNET:-172.28.80.0/24}
       IMAGE_CACHE_MAX_MB: ${IMAGE_CACHE_MAX_MB:-500}
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      # Adresse publique : lien des courriels et contact des notifications push.
+      PUBLIC_URL: https://${DOMAIN}
     volumes:
       - data:/data
     # Aucun port publié : seul Caddy joint l'appli, par le réseau `proxy`.

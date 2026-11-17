@@ -1,6 +1,6 @@
 import type { ArrKind } from '@shared/arr-servers.ts';
 import type { RequestNotificationKind } from '@shared/notifications.ts';
-import type { IntegrationKey, minimumAvailabilities, seriesTypes } from '@shared/settings.ts';
+import type { IntegrationKey, minimumAvailabilities, seriesTypes, smtpSecurities } from '@shared/settings.ts';
 import type { ArrTestResult, SetupSection, TestResults } from '@shared/setup.ts';
 
 /** Ordre des sections à l'écran (DESIGN.md, maquette R-Assistant) : Emby, TMDB, Radarr, Sonarr, Règles. */
@@ -10,15 +10,16 @@ const _complete: Exclude<SetupSection, (typeof sectionOrder)[number]> extends ne
 void _complete;
 
 /**
- * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord, Trakt, l'import facultatif des demandes de Seerr
- * et les clés d'API (propriétaire, hors assistant : rien à tester ou facultatif).
+ * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord, le courriel, Trakt, l'import facultatif des
+ * demandes de Seerr et les clés d'API (propriétaire, hors assistant : rien à tester ou facultatif).
  */
-export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord' | 'trakt' | 'api';
+export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord' | 'smtp' | 'trakt' | 'api';
 export const settingsSectionOrder = [
   ...sectionOrder,
   'webhooks',
   'seerr',
   'discord',
+  'smtp',
   'trakt',
   'api',
 ] as const satisfies readonly SectionId[];
@@ -41,6 +42,7 @@ export const sectionText: Record<SectionId, { title: string; description: string
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
   seerr: { title: 'Importer depuis Seerr', description: 'Reprendre une fois les demandes de Jellyseerr ou Overseerr' },
   discord: { title: 'Notifications Discord', description: 'Facultatif : les évènements des demandes dans un salon' },
+  smtp: { title: 'Notifications par courriel', description: 'Facultatif : serveur SMTP pour écrire aux membres' },
   trakt: { title: 'Listes externes', description: 'Facultatif : import des listes de souhaits Trakt des membres' },
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
 };
@@ -89,6 +91,13 @@ export const seriesTypeLabels: Record<(typeof seriesTypes)[number], string> = {
   standard: 'Standard',
   anime: 'Anime',
   daily: 'Quotidienne',
+};
+
+/** Sécurité SMTP et son port habituel, repris quand le propriétaire change de sécurité sans avoir changé le port. */
+export const smtpSecurityOptions: Record<(typeof smtpSecurities)[number], { label: string; port: number }> = {
+  starttls: { label: 'STARTTLS (port 587)', port: 587 },
+  tls: { label: 'TLS (port 465)', port: 465 },
+  none: { label: 'Aucune (port 25, réseau local seulement)', port: 25 },
 };
 
 export const libraryTypeLabels = { movies: 'Films', tvshows: 'Séries', other: 'Autre' } as const;
