@@ -24,7 +24,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { Skeleton } from '../ui/skeleton.tsx';
 import { RequestThumb } from './request-progress.tsx';
 
-const RequestSheetContext = createContext<((media: MediaSummary) => void) | null>(null);
+const RequestSheetContext = createContext<((media: MediaSummary, is4k: boolean) => void) | null>(null);
 
 /**
  * Action « Demander » d'un titre : ouvre la feuille de demande. `undefined` si le membre n'a pas le droit de demander
@@ -34,7 +34,27 @@ export function useRequestAction(media: MediaSummary | undefined): (() => void) 
   const open = useContext(RequestSheetContext);
   const viewer = useViewer();
   if (!open || !media || !viewer?.capabilities.canRequest || !canRequest(media.status)) return undefined;
-  return () => open(media);
+  return () => open(media, false);
+}
+
+/**
+ * La 4K se demande seulement si un serveur 4K du type existe (`fourK` présent), si le membre en a le droit et si la
+ * version 4K n'est ni disponible, ni en cours, ni déjà demandée.
+ */
+const can4k = (viewer: ReturnType<typeof useViewer>, media: MediaDetails | undefined): media is MediaDetails =>
+  !!media?.fourK && !!viewer?.capabilities.canRequest4k && canRequest(media.fourK.status);
+
+/** Action « Demander en 4K » de la fiche (voir `can4k`) : ouvre la feuille en 4K. */
+export function useRequest4kAction(media: MediaDetails | undefined): (() => void) | undefined {
+  const open = useContext(RequestSheetContext);
+  const viewer = useViewer();
+  if (!open || !can4k(viewer, media)) return undefined;
+  return () => open(media, true);
+}
+
+/** Saison vue en 4K : statut, progression et épisodes de la version 4K à la place de ceux de la version normale. */
+function seasonIn4k({ fourK, status: _status, progress: _progress, episodes: _episodes, ...season }: Season): Season {
+  return { ...season, ...fourK };
 }
 
 // Ordinateur : dialogue centré (maquette A-Demande). Mobile : feuille posée en bas de l'écran (maquette R-Mobile).
@@ -48,11 +68,13 @@ export const bottomSheet = cn(
 /** Feuille de demande, montée une fois pour toute l'appli : affiches, hero et fiche l'ouvrent par `useRequestAction`. */
 export function RequestSheetProvider({ children }: { children: ReactNode }) {
   const [media, setMedia] = useState<MediaSummary | null>(null);
+  const [is4k, setIs4k] = useState(false);
   const [open, setOpen] = useState(false);
   // Chaque ouverture repart d'un formulaire neuf (sélection, erreur, confirmation).
   const [session, setSession] = useState(0);
-  const show = useCallback((next: MediaSummary) => {
+  const show = useCallback((next: MediaSummary, fourK: boolean) => {
     setMedia(next);
+    setIs4k(fourK);
     setSession((n) => n + 1);
     setOpen(true);
   }, []);
@@ -63,7 +85,7 @@ export function RequestSheetProvider({ children }: { children: ReactNode }) {
         {media && (
           <DialogContent showCloseButton={false} className={bottomSheet}>
             <span aria-hidden className="h-[5px] w-10 justify-self-center rounded-full bg-(--track) lg:hidden" />
-            <RequestForm key={session} media={media} onClose={() => setOpen(false)} />
+            <RequestForm key={session} media={media} is4k={is4k} onClose={() => setOpen(false)} />
           </DialogContent>
         )}
       </Dialog>
@@ -71,13 +93,14 @@ export function RequestSheetProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function SheetHeader({ media }: { media: MediaSummary }) {
+function SheetHeader({ media, is4k }: { media: MediaSummary; is4k: boolean }) {
   return (
     <div className="flex items-start gap-4">
       <RequestThumb posterPath={media.posterPath} className="w-12 lg:w-16" />
       <div className="min-w-0 grow space-y-1">
         <p className="text-xs text-muted-foreground">
           {media.type === 'movie' ? 'Demander un film' : 'Demander une série'}
+          {is4k && ' en 4K'}
         </p>
         <DialogTitle className="text-lg font-bold lg:text-[22px]">{media.title}</DialogTitle>
         <DialogDescription>{summaryMeta(media).join(' · ')}</DialogDescription>
@@ -89,11 +112,18 @@ function SheetHeader({ media }: { media: MediaSummary }) {
   );
 }
 
-function RequestForm({ media, onClose }: { media: MediaSummary; onClose: () => void }) {
-  const details = useQuery({ ...mediaQuery(media.type, media.tmdbId), enabled: media.type === 'tv' });
+function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; is4k: boolean; onClose: () => void }) {
+  // Détails lus aussi pour un film : ils disent si la 4K se demande (`fourK`).
+  const details = useQuery(mediaQuery(media.type, media.tmdbId));
+  const viewer = useViewer();
+  const [is4k, setIs4k] = useState(opened4k);
+  // Choix de la version quand les deux se demandent ; ouverte en 4K depuis la fiche, la version normale peut être déjà là.
+  const choice = canRequest(media.status) && can4k(viewer, details.data);
+  // Changer de version repart d'une sélection neuve (les saisons manquantes ne sont pas les mêmes).
+  const bodyProps = { media, is4k, onClose };
   let body: ReactNode;
-  if (media.type === 'movie') body = <RequestBody media={media} onClose={onClose} />;
-  else if (details.data) body = <RequestBody media={media} details={details.data} onClose={onClose} />;
+  if (media.type === 'movie') body = <RequestBody key={String(is4k)} {...bodyProps} />;
+  else if (details.data) body = <RequestBody key={String(is4k)} {...bodyProps} details={details.data} />;
   else if (details.isPending)
     body = (
       <div role="status" className="space-y-2">
@@ -111,9 +141,33 @@ function RequestForm({ media, onClose }: { media: MediaSummary; onClose: () => v
     );
   return (
     <>
-      <SheetHeader media={media} />
+      <SheetHeader media={media} is4k={is4k} />
+      {choice && <QualityChoice is4k={is4k} onChange={setIs4k} />}
       {body}
     </>
+  );
+}
+
+/** Version demandée : standard ou 4K (serveurs 4K à part, statut suivi à part). */
+function QualityChoice({ is4k, onChange }: { is4k: boolean; onChange: (is4k: boolean) => void }) {
+  const legend = useId();
+  return (
+    <fieldset aria-labelledby={legend} className="flex flex-wrap items-center gap-2">
+      <span id={legend} className="mr-1 text-[13px] font-semibold text-muted-foreground">
+        Version
+      </span>
+      {[false, true].map((fourK) => (
+        <Button
+          key={String(fourK)}
+          type="button"
+          variant={is4k === fourK ? 'default' : 'secondary'}
+          aria-pressed={is4k === fourK}
+          onClick={() => onChange(fourK)}
+        >
+          {fourK ? 'Demander en 4K' : 'Standard'}
+        </Button>
+      ))}
+    </fieldset>
   );
 }
 
@@ -123,14 +177,17 @@ const isRequestable = (season: Season, day: string) => isAiredSeason(season, day
 function RequestBody({
   media,
   details,
+  is4k,
   onClose,
 }: {
   media: MediaSummary;
   details?: MediaDetails;
+  is4k: boolean;
   onClose: () => void;
 }) {
   const day = isoDay();
-  const seasons = details ? regularSeasons(details.seasons) : [];
+  // Demande 4K : les saisons déjà là, en cours ou demandées le sont en 4K, la version normale ne compte pas.
+  const seasons = details ? regularSeasons(details.seasons).map((s) => (is4k ? seasonIn4k(s) : s)) : [];
   const missing = seasons.filter((s) => isRequestable(s, day)).map((s) => s.seasonNumber);
   // « Toutes les saisons manquantes » présélectionné.
   const [selected, setSelected] = useState<Set<number>>(() => new Set(missing));
@@ -152,9 +209,11 @@ function RequestBody({
     // Double clic ou Entrée répétée : une seule demande part.
     if (submitting.current || disabled) return;
     submitting.current = true;
+    // `is4k` seulement pour une demande 4K : absent, le serveur en fait une demande normale.
+    const quality = is4k ? { is4k } : {};
     const input: CreateRequestInput = isTv
-      ? { type: 'tv', tmdbId: media.tmdbId, seasons: [...selected].sort((a, b) => a - b) }
-      : { type: 'movie', tmdbId: media.tmdbId };
+      ? { type: 'tv', tmdbId: media.tmdbId, seasons: [...selected].sort((a, b) => a - b), ...quality }
+      : { type: 'movie', tmdbId: media.tmdbId, ...quality };
     mutation.mutate(input, {
       onSettled: () => {
         submitting.current = false;
@@ -169,9 +228,9 @@ function RequestBody({
       return next;
     });
 
-  const submitLabel = isTv
-    ? `Demander ${wanted > 0 ? plural(wanted, 'saison', 'saisons') : 'des saisons'}`
-    : 'Demander ce film';
+  const submitLabel = `${
+    isTv ? `Demander ${wanted > 0 ? plural(wanted, 'saison', 'saisons') : 'des saisons'}` : 'Demander ce film'
+  }${is4k ? ' en 4K' : ''}`;
 
   return (
     <form onSubmit={onSubmit} className="grid gap-5">
@@ -189,8 +248,8 @@ function RequestBody({
         quota={quota.data}
         isTv={isTv}
         wanted={wanted}
-        arr={arrName(media.type)}
-        autoApprove={!!viewer?.capabilities.autoApprove}
+        arr={arrName(media.type, is4k)}
+        autoApprove={!!viewer?.capabilities[is4k ? 'autoApprove4k' : 'autoApprove']}
       />
       {mutation.error && (
         <Notice tone="error" role="alert">

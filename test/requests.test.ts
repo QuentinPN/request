@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { type Db, openDataDir, openDb } from '../src/server/db/index.ts';
 import { media, requestSeasons, requests } from '../src/server/db/schema.ts';
+import { deleteArrServer, saveArrServer } from '../src/server/services/arr-servers.ts';
 import { requestStatesFor } from '../src/server/services/availability.ts';
 import {
   ACTIVE_CONFLICT,
@@ -14,12 +15,13 @@ import {
 } from '../src/server/services/requests.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { setQuotaOverride, upsertFromEmby } from '../src/server/services/users.ts';
+import { arrServerInputSchema } from '../src/shared/arr-servers.ts';
 import type { MediaType } from '../src/shared/media.ts';
 import type { RequestDetail, RequestPage, SendOptions } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import type { RequestStatus } from '../src/shared/status.ts';
 import { type FakeRoutes, sequence, status } from './fake-server.ts';
-import { loginAs, queryPlan, trackFakeServers, trackTempDirs } from './helpers.ts';
+import { addArrServer, loginAs, queryPlan, trackFakeServers, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const startServer = trackFakeServers();
@@ -118,34 +120,49 @@ interface Actor {
   post: (url: string, payload?: object) => Promise<LightMyRequestResponse>;
 }
 
-/** Appli branchée sur un faux TMDB, un faux Radarr et un faux Sonarr. */
+/**
+ * Appli branchée sur un faux TMDB, un faux Radarr et un faux Sonarr ; `radarr4k`/`sonarr4k` ajoutent un serveur 4K du
+ * type (« Radarr 4K », « Sonarr 4K »).
+ */
 async function setup({
   radarr = radarrRoutes(),
   sonarr = sonarrRoutes(),
+  radarr4k,
+  sonarr4k,
 }: {
   radarr?: FakeRoutes;
   sonarr?: FakeRoutes;
+  radarr4k?: FakeRoutes;
+  sonarr4k?: FakeRoutes;
 } = {}) {
   const servers = {
     tmdb: await startServer({ 'GET /movie/603': matrix, 'GET /tv/1396': breakingBad }),
     radarr: await startServer(radarr),
     sonarr: await startServer(sonarr),
+    radarr4k: radarr4k && (await startServer(radarr4k)),
+    sonarr4k: sonarr4k && (await startServer(sonarr4k)),
   };
   const data = openDataDir(tempDir());
   const { db, cryptoKey } = data;
   setSetting(db, cryptoKey, 'tmdb', { apiKey: V3_KEY });
-  setSetting(db, cryptoKey, 'radarr', {
-    url: servers.radarr.url,
-    apiKey: 'k',
-    qualityProfileId: 1,
-    rootFolderPath: '/films',
-  });
-  setSetting(db, cryptoKey, 'sonarr', {
-    url: servers.sonarr.url,
-    apiKey: 'k',
-    qualityProfileId: 2,
-    rootFolderPath: '/series',
-  });
+  addArrServer(data, { type: 'radarr', url: servers.radarr.url, rootFolderPath: '/films' });
+  addArrServer(data, { type: 'sonarr', url: servers.sonarr.url, qualityProfileId: 2, rootFolderPath: '/series' });
+  if (servers.radarr4k)
+    addArrServer(data, {
+      type: 'radarr',
+      url: servers.radarr4k.url,
+      is4k: true,
+      qualityProfileId: 5,
+      rootFolderPath: '/4k',
+    });
+  if (servers.sonarr4k)
+    addArrServer(data, {
+      type: 'sonarr',
+      url: servers.sonarr4k.url,
+      is4k: true,
+      qualityProfileId: 5,
+      rootFolderPath: '/4k',
+    });
   const app = await buildApp({ data, upstreams: { tmdbUrl: servers.tmdb.url } });
   cleanups.push(() => app.close());
   const as = async (role: Role, id?: string): Promise<Actor> => {
@@ -317,23 +334,6 @@ describe('POST /api/requests', () => {
     expect(res.json<RequestDetail>().id).not.toBe(fourK.id);
   });
 
-  it('une demande 4K ne s’approuve ni ne se relance : 409, rien n’est envoyé', async () => {
-    const { db, as, servers } = await setup();
-    await as('member', 'a');
-    const owner = await as('owner', 'proprietaire');
-    for (const status of ['pending', 'failed'] as const) {
-      const { id } = seedRequest(db, { userId: 'a', tmdbId: 603, status });
-      db.update(requests).set({ is4k: true }).where(eq(requests.id, id)).run();
-      const action = status === 'pending' ? 'approve' : 'retry';
-      const res = await owner.post(`/api/requests/${id}/${action}`);
-      expect(res.statusCode).toBe(409);
-      expect(res.json()).toEqual({ error: 'Les demandes 4K ne sont pas prises en charge' });
-      expect(db.select().from(requests).where(eq(requests.id, id)).get()?.status).toBe(status);
-      db.delete(requests).where(eq(requests.id, id)).run();
-    }
-    expect(posted(servers.radarr, '/api/v3/movie')).toHaveLength(0);
-  });
-
   it('série : les saisons déjà demandées par d’autres sont écartées, les siennes en attente s’enrichissent', async () => {
     const { as } = await setup();
     const a = await as('member', 'a');
@@ -428,6 +428,171 @@ describe('POST /api/requests', () => {
 });
 
 // --- Quotas ---
+
+describe('demandes 4K', () => {
+  /** Faux Radarr 4K : `hasFile` du film 603 réglable (statut 4K). */
+  function radarr4kRoutes() {
+    const state = { hasFile: false };
+    const routes = radarrRoutes({
+      'GET /api/v3/movie': (req, res) =>
+        status(200, state.hasFile ? [{ id: 9, tmdbId: 603, hasFile: true, monitored: true }] : [])(req, res),
+      'POST /api/v3/movie': { id: 9, hasFile: false, monitored: true },
+    });
+    return { state, routes };
+  }
+
+  it('sans serveur 4K du type : 409, rien n’est créé', async () => {
+    const { as, db } = await setup();
+    const res = await (await as('member')).post('/api/requests', { type: 'movie', tmdbId: 603, is4k: true });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'Aucun serveur Radarr 4K n’est configuré' });
+    expect(countRequests(db)).toBe(0);
+  });
+
+  it('membre : en attente, puis approuvée vers le serveur 4K par défaut, à côté de la demande normale', async () => {
+    const fourK = radarr4kRoutes();
+    const { app, as, db, servers } = await setup({ radarr4k: fourK.routes });
+    const member = await as('member');
+    const owner = await as('owner', 'proprietaire');
+    const normal = (await member.post('/api/requests', { type: 'movie', tmdbId: 603 })).json<RequestDetail>();
+    const created = await member.post('/api/requests', { type: 'movie', tmdbId: 603, is4k: true });
+    expect(created.statusCode).toBe(201);
+    const request = created.json<RequestDetail>();
+    expect(request).toMatchObject({ status: 'pending', is4k: true, server: null });
+    expect(request.id).not.toBe(normal.id);
+    // Double clic : la même demande 4K revient.
+    expect((await member.post('/api/requests', { type: 'movie', tmdbId: 603, is4k: true })).statusCode).toBe(200);
+
+    const approved = (await owner.post(`/api/requests/${request.id}/approve`)).json<RequestDetail>();
+    expect(approved).toMatchObject({
+      status: 'sent',
+      is4k: true,
+      server: { id: 3, name: 'Radarr 4K' },
+      qualityProfileId: 5,
+      rootFolder: '/4k',
+    });
+    expect(approved.events.at(-1)?.detail).toBe('Radarr 4K #9');
+    expect(posted(servers.radarr4k as NonNullable<typeof servers.radarr4k>, '/api/v3/movie')).toHaveLength(1);
+    expect(posted(servers.radarr, '/api/v3/movie')).toHaveLength(0);
+    expect(db.select().from(media).get()).toMatchObject({ radarr4kId: 9, radarrId: null });
+
+    // Fichier 4K arrivé : la demande 4K passe disponible, la normale reste en attente.
+    fourK.state.hasFile = true;
+    await app.availability.refresh([{ type: 'movie', tmdbId: 603 }], { forget: 'radarr', serverId: 3 });
+    const details = (await member.get('/api/media/movie/603')).json();
+    expect(details.status).toBe('pending');
+    expect(details.fourK).toEqual({ status: 'available' });
+    expect((await member.get(`/api/requests/${request.id}`)).json<RequestDetail>().status).toBe('available');
+    expect((await member.get(`/api/requests/${normal.id}`)).json<RequestDetail>().status).toBe('pending');
+    // Déjà disponible en 4K : plus de demande 4K possible ; la normale, si.
+    const again = await (await as('member', 'autre')).post('/api/requests', { type: 'movie', tmdbId: 603, is4k: true });
+    expect(again.json()).toEqual({ error: 'Ce titre est déjà disponible en 4K' });
+  });
+
+  it('approbation automatique 4K : envoyée aussitôt au serveur 4K', async () => {
+    const { as, servers } = await setup({ radarr4k: radarr4kRoutes().routes });
+    const res = await (await as('auto_approve')).post('/api/requests', { type: 'movie', tmdbId: 603, is4k: true });
+    expect(res.json<RequestDetail>()).toMatchObject({ status: 'sent', is4k: true });
+    expect(posted(servers.radarr4k as NonNullable<typeof servers.radarr4k>, '/api/v3/movie')).toHaveLength(1);
+  });
+
+  it('série 4K : saisons envoyées au Sonarr 4K, sans toucher au Sonarr normal', async () => {
+    const { as, servers } = await setup({ sonarr4k: sonarrRoutes() });
+    const res = await (await as('auto_approve')).post('/api/requests', {
+      type: 'tv',
+      tmdbId: 1396,
+      seasons: [1],
+      is4k: true,
+    });
+    expect(res.json<RequestDetail>()).toMatchObject({ status: 'sent', is4k: true, seasons: [1] });
+    const sent = posted(servers.sonarr4k as NonNullable<typeof servers.sonarr4k>, '/api/v3/series');
+    expect(sent[0]).toMatchObject({ tvdbId: 81189, qualityProfileId: 5, rootFolderPath: '/4k' });
+    expect(posted(servers.sonarr, '/api/v3/series')).toHaveLength(0);
+  });
+
+  it('une demande 4K compte dans le quota comme une autre', async () => {
+    const { app, as, db } = await setup({ radarr4k: radarr4kRoutes().routes });
+    setSetting(db, app.data.cryptoKey, 'rules', {
+      defaultQuota: { movies: { limit: 1, days: 7 } },
+    });
+    const member = await as('member');
+    expect((await member.post('/api/requests', { type: 'movie', tmdbId: 603 })).statusCode).toBe(201);
+    const fourK = await member.post('/api/requests', { type: 'movie', tmdbId: 603, is4k: true });
+    expect(fourK.statusCode).toBe(409);
+    expect(fourK.json().error).toMatch(/^Quota atteint/);
+  });
+
+  it('choix du serveur à l’approbation : du bon type et de la bonne qualité, sinon 400', async () => {
+    const { app, as, servers } = await setup({ radarr4k: radarr4kRoutes().routes });
+    const second = await startServer(radarrRoutes({ 'POST /api/v3/movie': { id: 77, hasFile: false } }));
+    addArrServer(app.data, { type: 'radarr', url: second.url, name: 'Radarr bis' });
+    const owner = await as('owner', 'proprietaire');
+    const options = (await owner.get('/api/requests/send-options/movie')).json<SendOptions>();
+    expect(options.servers).toEqual([
+      { id: 1, name: 'Radarr', is4k: false, isDefault: true },
+      { id: 4, name: 'Radarr bis', is4k: false, isDefault: false },
+    ]);
+    expect(options.serverId).toBe(1);
+    const fourKOptions = (await owner.get('/api/requests/send-options/movie?is4k=true')).json<SendOptions>();
+    expect(fourKOptions).toMatchObject({ serverId: 3, servers: [{ id: 3, name: 'Radarr 4K' }], defaultFolder: '/4k' });
+    expect((await owner.get('/api/requests/send-options/movie?serverId=3')).statusCode).toBe(400);
+
+    const { id } = (
+      await (await as('member')).post('/api/requests', { type: 'movie', tmdbId: 603 })
+    ).json<RequestDetail>();
+    const wrong = await owner.post(`/api/requests/${id}/approve`, { serverId: 3 });
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json()).toEqual({ error: 'Serveur inconnu parmi les serveurs Radarr' });
+    const res = await owner.post(`/api/requests/${id}/approve`, { serverId: 4 });
+    expect(res.json<RequestDetail>()).toMatchObject({ status: 'sent', server: { id: 4, name: 'Radarr bis' } });
+    expect(posted(second, '/api/v3/movie')).toHaveLength(1);
+    expect(posted(servers.radarr, '/api/v3/movie')).toHaveLength(0);
+  });
+
+  it('serveur visé par une demande en échec : 4K figée (409) ; supprimé, la relance part au défaut avec ses réglages', async () => {
+    const { app, as, servers } = await setup();
+    const second = await startServer(radarrRoutes({ 'POST /api/v3/movie': status(500) }));
+    const bis = addArrServer(app.data, {
+      type: 'radarr',
+      url: second.url,
+      name: 'Radarr bis',
+      qualityProfileId: 5,
+      rootFolderPath: '/anime',
+    });
+    const owner = await as('owner', 'proprietaire');
+    const { id } = (
+      await (await as('member')).post('/api/requests', { type: 'movie', tmdbId: 603 })
+    ).json<RequestDetail>();
+    const failed = (await owner.post(`/api/requests/${id}/approve`, { serverId: bis.id })).json<RequestDetail>();
+    expect(failed).toMatchObject({
+      status: 'failed',
+      server: { id: bis.id },
+      qualityProfileId: 5,
+      rootFolder: '/anime',
+    });
+
+    const values = (patch: object) =>
+      arrServerInputSchema.parse({ type: 'radarr', name: 'Radarr bis', url: second.url, apiKey: 'k', ...patch });
+    // Passer en 4K (ou changer de type) : 409, la demande en échec resterait sans serveur de sa qualité.
+    expect(() =>
+      saveArrServer(app.data, values({ qualityProfileId: 5, rootFolderPath: '/anime', is4k: true }), bis.id),
+    ).toThrow(expect.objectContaining({ statusCode: 409 }));
+    // Le reste se modifie librement.
+    expect(saveArrServer(app.data, values({ qualityProfileId: 2, rootFolderPath: '/anime' }), bis.id)).toMatchObject({
+      is4k: false,
+      qualityProfileId: 2,
+    });
+
+    deleteArrServer(app.data.db, bis.id);
+    const orphan = (await owner.get(`/api/requests/${id}`)).json<RequestDetail>();
+    expect(orphan).toMatchObject({ status: 'failed', server: null, qualityProfileId: null, rootFolder: null });
+    const retried = (await owner.post(`/api/requests/${id}/retry`)).json<RequestDetail>();
+    expect(retried).toMatchObject({ status: 'sent' });
+    expect(posted(servers.radarr, '/api/v3/movie')).toEqual([
+      expect.objectContaining({ qualityProfileId: 1, rootFolderPath: '/films' }),
+    ]);
+  });
+});
 
 describe('quotas', () => {
   const NOW = Date.parse('2026-11-17T10:00:00Z');
@@ -619,6 +784,8 @@ describe('approbation et envoi', () => {
   it('GET /api/requests/send-options/:type : profils et dossiers pour les approbateurs, sans adresse ni clé', async () => {
     const { as, db } = await setup();
     const expected: SendOptions = {
+      servers: [{ id: 2, name: 'Sonarr', is4k: false, isDefault: true }],
+      serverId: 2,
       qualityProfiles: [
         { id: 1, name: 'HD-1080p' },
         { id: 2, name: 'HD-720p' },
@@ -641,7 +808,7 @@ describe('approbation et envoi', () => {
     expect((await manager.get('/api/requests/send-options/livre')).statusCode).toBe(400);
     expect((await (await as('member')).get('/api/requests/send-options/movie')).statusCode).toBe(403);
 
-    db.$client.prepare("delete from settings where key = 'radarr'").run();
+    db.$client.prepare("delete from arr_servers where type = 'radarr'").run();
     const missing = await manager.get('/api/requests/send-options/movie');
     expect(missing.statusCode).toBe(503);
     expect(missing.json()).toEqual({ error: "Radarr n'est pas encore configuré" });
@@ -669,7 +836,7 @@ describe('approbation et envoi', () => {
 
   it('Radarr non configuré : la demande passe en échec avec un message clair', async () => {
     const { as, db } = await setup();
-    db.$client.prepare("delete from settings where key = 'radarr'").run();
+    db.$client.prepare("delete from arr_servers where type = 'radarr'").run();
     const res = await (await as('auto_approve')).post('/api/requests', { type: 'movie', tmdbId: 603 });
     expect(res.json<RequestDetail>()).toMatchObject({ status: 'failed', qualityProfileId: null });
     expect(res.json<RequestDetail>().events.at(-1)?.detail).toBe("Radarr n'est pas encore configuré");

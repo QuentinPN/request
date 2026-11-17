@@ -32,14 +32,23 @@ export type MediaSummary = z.infer<typeof mediaSummarySchema>;
 export const genreSchema = z.object({ id: z.number().int(), name: z.string() });
 export type Genre = z.infer<typeof genreSchema>;
 
+/** Épisodes présents et attendus (diffusés) quand la saison a un statut : « 8/10 épisodes ». */
+const episodesSchema = z.object({ present: z.number().int(), expected: z.number().int() }).optional();
+
+/**
+ * Statut 4K d'un titre ou d'une saison, calculé depuis les seuls serveurs 4K ; absent quand aucun serveur 4K du type
+ * n'existe (ni pastille ni « Demander en 4K »).
+ */
+const fourKSchema = availabilitySchema.extend({ episodes: episodesSchema }).optional();
+
 /** Saison d'une série, avec son statut propre (fiche titre). */
 export const seasonSchema = z
   .object({
     seasonNumber: z.number().int(),
     episodeCount: z.number().int(),
     airDate: z.string().nullable(),
-    /** Épisodes présents et attendus (diffusés) quand la saison a un statut : « 8/10 épisodes ». */
-    episodes: z.object({ present: z.number().int(), expected: z.number().int() }).optional(),
+    episodes: episodesSchema,
+    fourK: fourKSchema,
   })
   .extend(availabilitySchema.shape);
 export type Season = z.infer<typeof seasonSchema>;
@@ -78,6 +87,7 @@ export const mediaDetailsSchema = mediaSummarySchema.extend({
   recommendations: z.array(mediaSummarySchema),
   similar: z.array(mediaSummarySchema),
   externalIds: z.object({ imdb: z.string().nullable(), tvdb: z.number().int().nullable() }),
+  fourK: fourKSchema,
   /** Série : dernier épisode diffusé (TMDB), pour compter les épisodes attendus d'une saison en cours ; usage serveur. */
   lastAired: z.object({ seasonNumber: z.number().int(), episodeNumber: z.number().int() }).nullish(),
 });

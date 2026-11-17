@@ -1,8 +1,7 @@
-import { arrKindLabels } from '@shared/arr-servers.ts';
+import type { ArrKind } from '@shared/arr-servers.ts';
 import type { RequestNotificationKind } from '@shared/notifications.ts';
 import type { IntegrationKey, minimumAvailabilities, seriesTypes } from '@shared/settings.ts';
 import type { ArrTestResult, SetupSection, TestResults } from '@shared/setup.ts';
-import type { WebhookService } from '@shared/webhooks.ts';
 
 /** Ordre des sections à l'écran (DESIGN.md, maquette R-Assistant) : Emby, TMDB, Radarr, Sonarr, Règles. */
 export const sectionOrder = ['emby', 'tmdb', 'radarr', 'sonarr', 'rules'] as const satisfies readonly SetupSection[];
@@ -24,8 +23,6 @@ export const settingsSectionOrder = [
   'api',
 ] as const satisfies readonly SectionId[];
 
-export const webhookLabels: Record<WebhookService, string> = arrKindLabels;
-
 /** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande. */
 export const discordEventLabels: Record<RequestNotificationKind, string> = {
   requested: 'Nouvelle demande à approuver',
@@ -38,8 +35,8 @@ export const discordEventLabels: Record<RequestNotificationKind, string> = {
 export const sectionText: Record<SectionId, { title: string; description: string }> = {
   emby: { title: 'Emby', description: 'Connexion des membres et détection de ce qui est déjà là' },
   tmdb: { title: 'TMDB', description: 'Catalogue, affiches et tendances en français' },
-  radarr: { title: 'Radarr', description: 'Films : profil de qualité et dossier racine' },
-  sonarr: { title: 'Sonarr', description: 'Séries : profil de qualité, dossier racine et type' },
+  radarr: { title: 'Radarr', description: 'Films : serveurs, profil de qualité et dossier racine' },
+  sonarr: { title: 'Sonarr', description: 'Séries : serveurs, profil de qualité, dossier racine et type' },
   rules: { title: 'Règles et quotas', description: 'Quotas de demandes par défaut des membres' },
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
   seerr: { title: 'Importer depuis Seerr', description: 'Reprendre une fois les demandes de Jellyseerr ou Overseerr' },
@@ -48,9 +45,12 @@ export const sectionText: Record<SectionId, { title: string; description: string
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
 };
 
-/** Champs de connexion de chaque intégration ; `url: null` = clé seule (TMDB). */
+/** Service qui se teste à la connexion : une intégration (réglage) ou un serveur Radarr/Sonarr. */
+export type ConnectionKey = IntegrationKey | ArrKind;
+
+/** Champs de connexion de chaque service ; `url: null` = clé seule (TMDB). */
 export const connectionText: Record<
-  IntegrationKey,
+  ConnectionKey,
   { url: { placeholder: string } | null; apiKeyLabel: string; apiKeyHint: string }
 > = {
   emby: {
@@ -99,7 +99,7 @@ const arrSummary = (name: string, r: ArrTestResult) =>
   `${name} v${r.version} · ${plural(r.qualityProfiles.length, 'profil')}, ${plural(r.rootFolders.length, 'dossier')}`;
 
 /** Ligne affichée après un test réussi : « Connexion réussie · Sonarr v4.0.11 · 3 profils, 2 dossiers ». */
-export function testSummary<K extends IntegrationKey>(key: K, result: TestResults[K]): string {
+export function testSummary<K extends ConnectionKey>(key: K, result: TestResults[K]): string {
   const detail = {
     emby: () => {
       const r = result as TestResults['emby'];

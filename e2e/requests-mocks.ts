@@ -69,6 +69,8 @@ interface RequestOptions {
   createdAt?: string;
   qualityProfileId?: number | null;
   rootFolder?: string | null;
+  is4k?: boolean;
+  server?: RequestDetail['server'];
 }
 
 const actorOf = (type: RequestEventType) =>
@@ -89,6 +91,8 @@ export function makeRequest(
     createdAt = at(day),
     qualityProfileId = null,
     rootFolder = null,
+    is4k = false,
+    server = null,
   }: RequestOptions = {},
 ): RequestDetail {
   return {
@@ -103,6 +107,8 @@ export function makeRequest(
     qualityProfileId,
     rootFolder,
     seriesType: null,
+    is4k,
+    server,
     createdAt,
     updatedAt: createdAt,
     media,
@@ -162,6 +168,8 @@ export const approvalQueue = (): RequestDetail[] => {
 
 /** Listes de Radarr que lit l'approbateur, avec les valeurs par défaut des réglages. */
 export const radarrOptions: SendOptions = {
+  servers: [{ id: 1, name: 'Radarr', is4k: false, isDefault: true }],
+  serverId: 1,
   defaultProfileId: 4,
   defaultFolder: '/films',
   qualityProfiles: [
@@ -190,8 +198,13 @@ export class RequestsMock {
   declines: { id: number; body: unknown }[] = [];
   retries: number[] = [];
   batches: BatchRequestInput[] = [];
-  /** Réponses de `/api/requests/send-options/:type` ; absent : service pas encore configuré (503). */
-  sendOptions: Partial<Record<MediaType, SendOptions>> = {};
+  /**
+   * Réponses de `/api/requests/send-options/:type` (clé `movie-4k` pour `?is4k=true`) ; absent : service pas encore
+   * configuré (503). Avec `?serverId=`, les mêmes listes, ce serveur choisi.
+   */
+  sendOptions: Partial<Record<MediaType | `${MediaType}-4k`, SendOptions>> = {};
+  /** Requêtes de listes reçues (`type`, `is4k`, `serverId`), pour vérifier le serveur demandé. */
+  optionReads: string[] = [];
 
   readonly page: Page;
 
@@ -280,8 +293,12 @@ export class RequestsMock {
     }
     const optionsOf = path.match(/^\/api\/requests\/send-options\/(movie|tv)$/)?.[1] as MediaType | undefined;
     if (method === 'GET' && optionsOf) {
-      const options = this.sendOptions[optionsOf];
-      return options ? json(200, options) : json(503, { error: "Radarr n'est pas encore configuré" });
+      const is4k = url.searchParams.get('is4k') === 'true';
+      const serverId = url.searchParams.get('serverId');
+      this.optionReads.push(`${optionsOf}${is4k ? '-4k' : ''}${serverId ? `:${serverId}` : ''}`);
+      const options = this.sendOptions[is4k ? (`${optionsOf}-4k` as const) : optionsOf];
+      if (!options) return json(503, { error: "Radarr n'est pas encore configuré" });
+      return json(200, serverId ? { ...options, serverId: Number(serverId) } : options);
     }
     if (method === 'GET' && path === '/api/requests/quota') return json(200, this.quota);
     if (method === 'GET' && path === '/api/requests/counts')
@@ -307,6 +324,7 @@ export class RequestsMock {
       if (!media) return json(404, { error: 'Introuvable' });
       const created = makeRequest(mediaNamed(media.title), 'pending', {
         seasons: input.type === 'tv' && Array.isArray(input.seasons) ? input.seasons : [],
+        is4k: input.is4k ?? false,
       });
       this.requests.unshift(created);
       return json(201, created);

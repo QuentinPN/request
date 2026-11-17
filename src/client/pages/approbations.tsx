@@ -25,6 +25,7 @@ import {
   profileName,
   type SendChoice,
   sendOutcome,
+  sendTargetOf,
   useApprovalActions,
   useSendOptions,
 } from '@/lib/approvals';
@@ -73,9 +74,10 @@ export function ApprobationsPage() {
   const rows = list.data?.results ?? [];
   const failed = failedList.data?.results ?? [];
   const failedTotal = failedList.data?.totals.failed ?? 0;
-  const movieOptions = useSendOptions('movie', canManage && tab !== 'failed' && rows.some((r) => r.type === 'movie'));
-  const tvOptions = useSendOptions('tv', canManage && tab !== 'failed' && rows.some((r) => r.type === 'tv'));
-  const optionsOf = (type: RequestView['type']) => (type === 'movie' ? movieOptions.data : tvOptions.data);
+  const targetOf = (request: RequestView) => sendTargetOf(request, choices[request.id]);
+  const sendOptionsOf = useSendOptions(canManage && tab !== 'failed' ? rows.map(targetOf) : []);
+  const optionsQueryOf = (request: RequestView) => sendOptionsOf(targetOf(request));
+  const optionsOf = (request: RequestView) => optionsQueryOf(request)?.data;
 
   const selected = rows.find((r) => r.id === selectedId) ?? rows[0];
   const checkedIds = rows.filter((r) => checked.has(r.id)).map((r) => r.id);
@@ -84,7 +86,7 @@ export function ApprobationsPage() {
     return request ? requestTitle(request) : `Demande n° ${id}`;
   };
   const qualityOf = (request: RequestView) => {
-    const options = optionsOf(request.type);
+    const options = optionsOf(request);
     const id =
       request.status === 'pending'
         ? (choices[request.id]?.qualityProfileId ?? options?.defaultProfileId)
@@ -283,7 +285,8 @@ export function ApprobationsPage() {
                       key={selected.id}
                       tab={tab}
                       request={selected}
-                      options={optionsOf(selected.type)}
+                      options={optionsOf(selected)}
+                      optionsLoading={optionsQueryOf(selected)?.isPlaceholderData === true}
                       choice={choices[selected.id] ?? {}}
                       onChoice={(patch) =>
                         setChoices((all) => ({ ...all, [selected.id]: { ...all[selected.id], ...patch } }))

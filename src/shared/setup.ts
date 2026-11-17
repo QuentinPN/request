@@ -1,10 +1,18 @@
 import { z } from 'zod';
+import { arrKinds } from './arr-servers.ts';
 import { type IntegrationKey, integrationKeys, type SettingKey } from './settings.ts';
 
-/** Les cinq sections de l'assistant, dans l'ordre de la page. */
-export const setupSections = [...integrationKeys, 'rules'] as const satisfies readonly SettingKey[];
+/** Sections de l'assistant enregistrées comme réglages (`/api/settings/:service`). */
+export const settingSections = [...integrationKeys, 'rules'] as const satisfies readonly SettingKey[];
+export type SettingSection = (typeof settingSections)[number];
+export const settingSectionSchema = z.enum(settingSections);
+
+/**
+ * Les cinq sections de l'assistant, dans l'ordre de la page. Radarr et Sonarr sont des serveurs (`arr_servers`) : leur
+ * section est faite dès qu'un serveur du type existe.
+ */
+export const setupSections = [...integrationKeys, ...arrKinds, 'rules'] as const;
 export type SetupSection = (typeof setupSections)[number];
-export const setupSectionSchema = z.enum(setupSections);
 export const integrationKeySchema = z.enum(integrationKeys as [IntegrationKey, ...IntegrationKey[]]);
 
 export interface SetupState {

@@ -1,19 +1,26 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import { API_KEYS_PATH, type ApiKey, type ApiKeyCreated, apiKeyPath } from '../../src/shared/api-keys.ts';
+import {
+  ARR_SERVERS_PATH,
+  ARR_SERVERS_TEST_PATH,
+  type ArrKind,
+  type ArrServer,
+  type ArrServerInput,
+} from '../../src/shared/arr-servers.ts';
 import type { Viewer } from '../../src/shared/auth.ts';
 import { EMBY_LINK_PATH, type EmbyLink } from '../../src/shared/emby.ts';
 import type { NotificationPage } from '../../src/shared/notifications.ts';
 import { capabilitiesOf, type Role } from '../../src/shared/roles.ts';
 import { type MaskedSetting, settingSchemas } from '../../src/shared/settings.ts';
-import type { SetupSection, SetupState, TestResults } from '../../src/shared/setup.ts';
+import type { SettingSection, SetupState, TestResults } from '../../src/shared/setup.ts';
 import {
+  WEBHOOK_SERVER_QUERY,
   WEBHOOK_SETTINGS_PATH,
   WEBHOOK_TOKEN_PATH,
   WEBHOOK_TOKEN_QUERY,
   type WebhookSettings,
   webhookPath,
-  webhookServices,
 } from '../../src/shared/webhooks.ts';
 
 // Faux serveur des tests du client : chaque `/api` est servi depuis un état en mémoire, typé par les contrats partagés.
@@ -58,18 +65,51 @@ export const sonarrTest: TestResults['sonarr'] = {
   ],
 };
 
-/** Réglages des webhooks pour un jeton donné, comme les bâtit le serveur (`routes/webhooks.ts`). */
-export const webhookSettingsOf = (token: string): WebhookSettings => ({
+/** Serveur Radarr/Sonarr enregistré, tel que le renvoie `/api/arr-servers` (clé masquée). */
+export function arrServer(id: number, type: ArrKind, patch: Partial<ArrServer> = {}): ArrServer {
+  return {
+    id,
+    type,
+    name: type === 'radarr' ? 'Radarr' : 'Sonarr',
+    url: type === 'radarr' ? 'http://192.0.2.20:7878' : 'http://192.0.2.20:8989',
+    apiKey: { set: true },
+    is4k: false,
+    isDefault: true,
+    qualityProfileId: 4,
+    rootFolderPath: type === 'radarr' ? '/films' : '/series',
+    minimumAvailability: type === 'radarr' ? 'released' : null,
+    seriesType: type === 'sonarr' ? 'standard' : null,
+    languageProfileId: null,
+    tags: [],
+    ...patch,
+  };
+}
+
+/** Un Radarr et un Sonarr, comme après l'assistant. */
+export const defaultArrServers = (): ArrServer[] => [arrServer(1, 'radarr'), arrServer(2, 'sonarr')];
+
+/** Réglages des webhooks pour un jeton donné, comme les bâtit le serveur (`routes/webhooks.ts`) : une adresse par serveur. */
+export const webhookSettingsOf = (token: string, servers = defaultArrServers()): WebhookSettings => ({
   token,
-  urls: Object.fromEntries(
-    webhookServices.map((s) => [s, `http://localhost:3100${webhookPath(s)}?${WEBHOOK_TOKEN_QUERY}=${token}`]),
-  ) as WebhookSettings['urls'],
+  servers: servers.map(({ id, name, type, is4k }) => ({
+    id,
+    name,
+    type,
+    is4k,
+    url: `http://localhost:3100${webhookPath(type)}?${WEBHOOK_TOKEN_QUERY}=${token}&${WEBHOOK_SERVER_QUERY}=${id}`,
+  })),
 });
+
+/** Adresse du webhook d'un serveur, par son nom. */
+export const webhookUrl = (settings: WebhookSettings, name: string) =>
+  settings.servers.find((s) => s.name === name)?.url ?? '';
 
 type MockState = {
   setup: SetupState;
   viewer: Viewer | null;
-  settings: { [K in SetupSection]?: MaskedSetting<K> };
+  settings: { [K in SettingSection]?: MaskedSetting<K> };
+  /** Serveurs Radarr/Sonarr ; ajouts, modifications et suppressions s'y appliquent (sans test de connexion). */
+  arrServers: ArrServer[];
   /** Adresse publique d'Emby et id du serveur : `null` tant qu'aucune adresse publique n'est réglée. */
   embyLink: EmbyLink | null;
   webhooks: WebhookSettings;
@@ -88,6 +128,7 @@ export class ApiMock {
     setup: completeSetup,
     viewer: viewerAs('owner'),
     settings: {},
+    arrServers: defaultArrServers(),
     embyLink: null,
     webhooks: webhookSettingsOf('jeton-initial'),
     apiKeys: [],
@@ -126,6 +167,7 @@ export class ApiMock {
       state.webhooks = webhookSettingsOf('jeton-regenere');
       return json(route, 200, state.webhooks);
     }
+    if (pathname.startsWith(ARR_SERVERS_PATH)) return this.arrServers(route, method, pathname);
     if (method === 'GET' && pathname === API_KEYS_PATH) return json(route, 200, state.apiKeys);
     if (method === 'POST' && pathname === API_KEYS_PATH) {
       const { name } = route.request().postDataJSON() as { name: string };
@@ -146,10 +188,41 @@ export class ApiMock {
       revoked.revokedAt = new Date().toISOString();
       return json(route, 204);
     }
-    const setting = pathname.match(/^\/api\/settings\/(\w+)$/)?.[1] as SetupSection | undefined;
+    const setting = pathname.match(/^\/api\/settings\/(\w+)$/)?.[1] as SettingSection | undefined;
     if (method === 'GET' && setting) {
       const value = state.settings[setting] ?? (setting === 'rules' ? settingSchemas.rules.parse({}) : undefined);
       return value ? json(route, 200, value) : json(route, 404, { error: 'Pas encore configuré' });
+    }
+    return json(route, 404, { error: 'Introuvable' });
+  }
+
+  /** `/api/arr-servers` : un seul serveur par défaut par couple (type, 4K), comme le serveur. Le test répond `sonarrTest`. */
+  private arrServers(route: Route, method: string, pathname: string) {
+    const { state } = this;
+    if (method === 'GET' && pathname === ARR_SERVERS_PATH) return json(route, 200, state.arrServers);
+    if (method === 'POST' && pathname === ARR_SERVERS_TEST_PATH) return json(route, 200, sonarrTest);
+    const id = Number(pathname.match(/\/(\d+)$/)?.[1]);
+    if (method === 'DELETE') {
+      state.arrServers = state.arrServers.filter((s) => s.id !== id);
+      return json(route, 204);
+    }
+    if (method === 'POST' || method === 'PUT') {
+      const { apiKey: _key, ...input } = route.request().postDataJSON() as ArrServerInput;
+      const saved = arrServer(
+        method === 'POST' ? Math.max(0, ...state.arrServers.map((s) => s.id)) + 1 : id,
+        input.type,
+        {
+          ...input,
+          is4k: input.is4k ?? false,
+          isDefault: input.isDefault ?? false,
+        } as Partial<ArrServer>,
+      );
+      const samePair = (s: ArrServer) => s.type === saved.type && s.is4k === saved.is4k && s.id !== saved.id;
+      if (saved.isDefault) for (const s of state.arrServers.filter(samePair)) s.isDefault = false;
+      else if (!state.arrServers.some((s) => samePair(s) && s.isDefault)) saved.isDefault = true;
+      state.arrServers =
+        method === 'POST' ? [...state.arrServers, saved] : state.arrServers.map((s) => (s.id === id ? saved : s));
+      return json(route, method === 'POST' ? 201 : 200, saved);
     }
     return json(route, 404, { error: 'Introuvable' });
   }

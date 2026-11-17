@@ -5,10 +5,10 @@ import type { RequestDetail, RequestEventView } from '../../../shared/requests.t
 import type { RequestEventType } from '../../../shared/status.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
 import {
-  arrName,
   formatDateTime,
   isActiveRequest,
   myRequestsForQuery,
+  requestArrName,
   requestDetailQuery,
   requestProgress,
   type StepState,
@@ -44,7 +44,7 @@ const eventNode = (event: RequestEventView, arr: string): Node => ({
  * tirées de la même traduction en étapes que la barre de Mes demandes.
  */
 function timelineNodes(request: RequestDetail): Node[] {
-  const arr = arrName(request.type);
+  const arr = requestArrName(request);
   const nodes = request.events.map((event) => eventNode(event, arr));
   const progress = requestProgress(request);
   if (!isActiveRequest(request.status) || progress.tone === 'available') return nodes;

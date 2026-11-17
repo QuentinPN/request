@@ -8,7 +8,7 @@ import { type RequestNotificationKind, requestNotificationKinds } from '../src/s
 import type { RequestDetail } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { status } from './fake-server.ts';
-import { loginAs, trackFakeServers, trackTempDirs } from './helpers.ts';
+import { addArrServer, loginAs, trackFakeServers, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const startServer = trackFakeServers();
@@ -62,7 +62,7 @@ async function setup(discord?: { enabled?: boolean; events?: readonly RequestNot
   const data = openDataDir(tempDir());
   const { db, cryptoKey } = data;
   setSetting(db, cryptoKey, 'tmdb', { apiKey: 'abcdef0123456789abcdef0123456789' });
-  setSetting(db, cryptoKey, 'radarr', { url: radarr.url, apiKey: 'k', qualityProfileId: 1, rootFolderPath: '/films' });
+  addArrServer({ db, cryptoKey }, { type: 'radarr', url: radarr.url, rootFolderPath: '/films' });
   if (discord)
     setSetting(db, cryptoKey, 'discord', {
       webhookUrl: WEBHOOK,

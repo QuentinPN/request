@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { MediaType } from './media.ts';
 import { minimumAvailabilities, profileId, rootFolderPath, seriesTypes, serviceConnectionSchema } from './settings.ts';
 
 /** Gestionnaires de téléchargement : Radarr pour les films, Sonarr pour les séries. */
@@ -7,6 +8,13 @@ export type ArrKind = (typeof arrKinds)[number];
 export const arrKindSchema = z.enum(arrKinds);
 
 export const arrKindLabels: Record<ArrKind, string> = { radarr: 'Radarr', sonarr: 'Sonarr' };
+export const isArrKind = (key: string): key is ArrKind => (arrKinds as readonly string[]).includes(key);
+
+/** Service qui reçoit un titre : Radarr pour un film, Sonarr pour une série. */
+export const arrKindOf = (type: MediaType): ArrKind => (type === 'movie' ? 'radarr' : 'sonarr');
+
+/** « Radarr », « Sonarr 4K » : le service tel que le lisent l'approbateur et le membre. */
+export const arrLabel = (kind: ArrKind, is4k = false) => `${arrKindLabels[kind]}${is4k ? ' 4K' : ''}`;
 
 /**
  * Serveur Radarr ou Sonarr (table `arr_servers`). Au plus un serveur par défaut par couple (type, 4K) ; les réglages
@@ -39,3 +47,22 @@ export const arrServerSchema = z.object({
   ...arrServerFields,
 });
 export type ArrServer = z.output<typeof arrServerSchema>;
+
+/** Serveurs Radarr/Sonarr (propriétaire seulement) : liste, ajout, `/:id` modification et suppression, `/test`. */
+export const ARR_SERVERS_PATH = '/api/arr-servers';
+export const ARR_SERVERS_TEST_PATH = `${ARR_SERVERS_PATH}/test`;
+
+/**
+ * Test de connexion d'un serveur. `id` : serveur déjà enregistré dont la clé est reprise si elle est laissée vide (même
+ * adresse seulement, comme pour les réglages).
+ */
+export const arrServerTestSchema = serviceConnectionSchema.extend({
+  type: arrKindSchema,
+  id: z.number().int().positive().optional(),
+});
+export type ArrServerTestInput = z.input<typeof arrServerTestSchema>;
+
+export const arrServerIdParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+
+/** Serveur tel que le voit un approbateur : ni adresse ni clé. */
+export type ArrServerSummary = Pick<ArrServer, 'id' | 'name' | 'is4k' | 'isDefault'>;

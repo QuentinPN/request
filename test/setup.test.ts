@@ -2,16 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
 import { CSRF_HEADERS } from '../src/shared/auth.ts';
-import { closedPortUrl, type FakeHandler, status } from './fake-server.ts';
+import { type FakeHandler, status } from './fake-server.ts';
 import librariesFixture from './fixtures/emby/libraries.json';
 import systemInfoFixture from './fixtures/emby/system-info.json';
-import { loginAs, loginAsOwner, trackApps, trackFakeServers } from './helpers.ts';
+import { addArrServer, loginAs, loginAsOwner, trackApps, trackFakeServers } from './helpers.ts';
 
 const newApp = trackApps();
 const serve = trackFakeServers();
 
 const EMBY_KEY = 'CLE-EMBY-SECRETE';
-const RADARR_KEY = 'CLE-RADARR-SECRETE';
 
 /** Répond `body` seulement si l'en-tête `header` porte la bonne clé, sinon 401. */
 const keyed =
@@ -23,13 +22,6 @@ const fakeEmby = () =>
   serve({
     'GET /System/Info': keyed('x-emby-token', EMBY_KEY, systemInfoFixture),
     'GET /Library/VirtualFolders/Query': keyed('x-emby-token', EMBY_KEY, librariesFixture),
-  });
-
-const fakeRadarr = () =>
-  serve({
-    'GET /api/v3/system/status': keyed('x-api-key', RADARR_KEY, { version: '5.14.0' }),
-    'GET /api/v3/qualityprofile': keyed('x-api-key', RADARR_KEY, [{ id: 4, name: 'HD-1080p' }]),
-    'GET /api/v3/rootfolder': keyed('x-api-key', RADARR_KEY, [{ id: 1, path: '/films', freeSpace: 1.2e12 }]),
   });
 
 const csrf = CSRF_HEADERS;
@@ -54,8 +46,8 @@ describe('GET /api/setup/state', () => {
     const service = { url: 'http://service', apiKey: 'k' };
     setSetting(db, cryptoKey, 'emby', service);
     setSetting(db, cryptoKey, 'tmdb', { apiKey: 'k' });
-    setSetting(db, cryptoKey, 'radarr', { ...service, qualityProfileId: 1, rootFolderPath: '/films' });
-    setSetting(db, cryptoKey, 'sonarr', { ...service, qualityProfileId: 1, rootFolderPath: '/series' });
+    addArrServer(app.data, { ...service, type: 'radarr' });
+    addArrServer(app.data, { ...service, type: 'sonarr' });
     setSetting(db, cryptoKey, 'rules', {});
     expect((await call(app, 'GET', '/api/setup/state')).json()).toMatchObject({ hasOwner: false, complete: false });
     await loginAsOwner(app);
@@ -134,28 +126,6 @@ describe('POST /api/setup/:service/test', () => {
     const wrongKey = await call(app, 'POST', '/api/setup/emby/test', { url: emby.url, apiKey: 'faux' }, headers);
     expect(wrongKey.statusCode).toBe(422);
     expect(wrongKey.json()).toEqual({ error: "Clé d'API refusée par Emby" });
-
-    const down = await call(
-      app,
-      'POST',
-      '/api/setup/radarr/test',
-      { url: await closedPortUrl(), apiKey: 'k' },
-      headers,
-    );
-    expect(down.statusCode).toBe(422);
-    expect(down.json()).toEqual({ error: 'Radarr injoignable à cette adresse' });
-  });
-
-  it('renvoie profils et dossiers de Radarr', async () => {
-    const app = await newApp();
-    const { headers } = await loginAsOwner(app);
-    const radarr = await fakeRadarr();
-    const res = await call(app, 'POST', '/api/setup/radarr/test', { url: radarr.url, apiKey: RADARR_KEY }, headers);
-    expect(res.json()).toEqual({
-      version: '5.14.0',
-      qualityProfiles: [{ id: 4, name: 'HD-1080p' }],
-      rootFolders: [{ id: 1, path: '/films', freeSpace: 1.2e12 }],
-    });
   });
 
   it('une clé vide réutilise la clé enregistrée, à la même adresse seulement', async () => {
@@ -184,36 +154,14 @@ describe('POST /api/setup/:service/test', () => {
 });
 
 describe('réglages', () => {
-  it('PUT teste puis enregistre ; GET ne renvoie jamais le secret', async () => {
+  it('Radarr et Sonarr ne sont plus des réglages : ce sont des serveurs (`/api/arr-servers`)', async () => {
     const app = await newApp();
     const { headers } = await loginAsOwner(app);
-    const radarr = await fakeRadarr();
-    const body = { url: radarr.url, apiKey: RADARR_KEY, qualityProfileId: 4, rootFolderPath: '/films' };
-
-    const incomplete = await call(app, 'PUT', '/api/settings/radarr', { url: radarr.url, apiKey: RADARR_KEY }, headers);
-    expect(incomplete.statusCode).toBe(400);
-    const refused = await call(app, 'PUT', '/api/settings/radarr', { ...body, apiKey: 'faux' }, headers);
-    expect(refused.statusCode).toBe(422);
-    expect((await call(app, 'GET', '/api/settings/radarr', undefined, headers)).statusCode).toBe(404);
-
-    const saved = await call(app, 'PUT', '/api/settings/radarr', body, headers);
-    expect(saved.statusCode).toBe(200);
-    expect(saved.body).not.toContain(RADARR_KEY);
-
-    const read = await call(app, 'GET', '/api/settings/radarr', undefined, headers);
-    expect(read.body).not.toContain(RADARR_KEY);
-    expect(read.json()).toEqual({ ...body, apiKey: { set: true }, minimumAvailability: 'released' });
-
-    // Modifier sans renvoyer la clé : l'ancienne est gardée.
-    const updated = await call(
-      app,
-      'PUT',
-      '/api/settings/radarr',
-      { ...body, apiKey: '', rootFolderPath: '/4k' },
-      headers,
-    );
-    expect(updated.json()).toMatchObject({ rootFolderPath: '/4k', apiKey: { set: true } });
-    expect(radarr.requests.at(-1)?.headers['x-api-key']).toBe(RADARR_KEY);
+    for (const kind of ['radarr', 'sonarr']) {
+      expect((await call(app, 'GET', `/api/settings/${kind}`, undefined, headers)).statusCode).toBe(404);
+      expect((await call(app, 'PUT', `/api/settings/${kind}`, {}, headers)).statusCode).toBe(404);
+      expect((await call(app, 'POST', `/api/setup/${kind}/test`, {}, headers)).statusCode).toBe(404);
+    }
   });
 
   it('règles : valeurs par défaut puis enregistrement', async () => {

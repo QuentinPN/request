@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { Bookmark, BookmarkCheck, Plus } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
-import { imageUrl, type MediaSummary } from '../../../shared/media.ts';
+import { imageUrl, type MediaDetails, type MediaSummary } from '../../../shared/media.ts';
 import { errorMessage } from '../../lib/http.ts';
 import { inWatchlistQuery, useSetInWatchlist } from '../../lib/watchlist.ts';
-import { useRequestAction } from '../requests/request-sheet.tsx';
+import { useRequest4kAction, useRequestAction } from '../requests/request-sheet.tsx';
 import { Button } from '../ui/button.tsx';
 
 // Pièces communes au hero de Découvrir et à la fiche titre (maquettes R-Decouvrir et R-Fiche).
@@ -63,6 +63,18 @@ export function RequestButton({ media, className }: { media: MediaSummary; class
     <Button size="lg" onClick={onRequest} className={className}>
       <Plus data-icon="inline-start" />
       Demander
+    </Button>
+  );
+}
+
+/** « Demander en 4K » de la fiche, à côté de « Demander » (voir `useRequest4kAction`). */
+export function Request4kButton({ media, className }: { media: MediaDetails; className?: string }) {
+  const onRequest = useRequest4kAction(media);
+  if (!onRequest) return null;
+  return (
+    <Button size="lg" variant="secondary" onClick={onRequest} className={className}>
+      <Plus data-icon="inline-start" />
+      Demander en 4K
     </Button>
   );
 }

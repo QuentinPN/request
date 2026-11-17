@@ -1,4 +1,4 @@
-import { WEBHOOK_TOKEN_PATH, type WebhookSettings, webhookServices } from '@shared/webhooks.ts';
+import { WEBHOOK_TOKEN_PATH, type WebhookSettings } from '@shared/webhooks.ts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Notice } from '@/components/notice';
@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiSend } from '@/lib/http';
-import { webhookLabels } from './config';
 import { CopyField } from './copy-field';
 import { webhooksQuery } from './queries';
 import { actionClass, SectionActions, SectionFrame, type SectionFrameProps, sectionStatus } from './section-frame';
@@ -87,14 +86,18 @@ export function WebhooksSection(frame: SectionFrameProps) {
           Dans Radarr et Sonarr : Paramètres › Connexions › + › Webhook. Collez l’adresse dans « URL », choisissez la
           méthode <strong className="font-semibold text-foreground">POST</strong>, puis cochez les évènements de
           récupération (Grab), d’import (Download) et de suppression. Radarr et Sonarr doivent pouvoir joindre cette
-          adresse : sur Docker, « localhost » ne convient pas.
+          adresse : sur Docker, « localhost » ne convient pas. Chaque serveur a son adresse.
         </p>
-        {webhookServices.map((service) => (
+        {query.data.servers.length === 0 && (
+          <Notice tone="info">Ajoutez d’abord un serveur Radarr ou Sonarr : son adresse apparaîtra ici.</Notice>
+        )}
+        {/* Une adresse par serveur : `server=<id>` dit à l'appli lequel l'appelle (statut 4K à part, liste relue seule). */}
+        {query.data.servers.map((server) => (
           <CopyField
-            key={service}
-            label={webhookLabels[service]}
-            copyLabel={`Copier l’adresse ${webhookLabels[service]}`}
-            value={query.data.urls[service]}
+            key={server.id}
+            label={server.name}
+            copyLabel={`Copier l’adresse ${server.name}`}
+            value={server.url}
           />
         ))}
         <div role="status" className="empty:hidden">

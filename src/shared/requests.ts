@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import type { ArrServerSummary } from './arr-servers.ts';
 import { type MediaSummary, type MediaType, mediaTypeSchema, type Paged, type Season } from './media.ts';
-import { profileId, rootFolderPath, type Setting, seriesTypes } from './settings.ts';
+import { profileId, rootFolderPath, type SeriesType, seriesTypes } from './settings.ts';
 import type { ArrTestResult } from './setup.ts';
 import { type RequestEventType, type RequestStatus, requestStatusSchema } from './status.ts';
 
@@ -22,13 +23,17 @@ const tmdbId = z.number().int().positive();
 const seasonNumber = z.number().int().min(0);
 const requestId = z.number().int().positive();
 
+/** Demande en 4K : envoyée à un serveur 4K, statut 4K à part (`media.status_4k`). */
+const is4k = z.boolean().default(false);
+
 /** Film, ou saisons d'une série (`'all'`, par défaut : toutes les saisons diffusées encore manquantes). */
 export const createRequestSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('movie'), tmdbId }),
+  z.strictObject({ type: z.literal('movie'), tmdbId, is4k }),
   z.strictObject({
     type: z.literal('tv'),
     tmdbId,
     seasons: z.union([z.literal('all'), z.array(seasonNumber).min(1).max(100)]).default('all'),
+    is4k,
   }),
 ]);
 export type CreateRequestInput = z.input<typeof createRequestSchema>;
@@ -43,8 +48,12 @@ const declineReason = z
 export const declineRequestSchema = z.object({ reason: declineReason });
 export type DeclineRequestInput = z.input<typeof declineRequestSchema>;
 
-/** Choix de l'approbateur avant envoi ; chaque champ absent prend la valeur des réglages Radarr/Sonarr. */
+/**
+ * Choix de l'approbateur avant envoi ; chaque champ absent prend la valeur du serveur. `serverId` : serveur du bon type
+ * et de la bonne qualité (4K ou non), par défaut celui de la demande, sinon le serveur par défaut.
+ */
 export const approveRequestSchema = z.object({
+  serverId: z.number().int().positive().optional(),
   qualityProfileId: profileId.optional(),
   rootFolderPath: rootFolderPath.optional(),
   seriesType: z.enum(seriesTypes).optional(),
@@ -121,7 +130,10 @@ export interface RequestView {
   declineReason: string | null;
   qualityProfileId: number | null;
   rootFolder: string | null;
-  seriesType: Setting<'sonarr'>['seriesType'] | null;
+  seriesType: SeriesType | null;
+  is4k: boolean;
+  /** Serveur Radarr/Sonarr choisi à l'approbation ; `null` = serveur par défaut au moment de l'envoi. */
+  server: { id: number; name: string } | null;
   /** ISO 8601. */
   createdAt: string;
   updatedAt: string;
@@ -153,10 +165,13 @@ export interface RequestPage extends Paged<RequestView> {
 }
 
 /**
- * Profils de qualité et dossiers racines de Radarr ou Sonarr, avec les valeurs par défaut des réglages : ce qu'un
- * approbateur peut choisir avant l'envoi (ni adresse, ni clé).
+ * Serveurs du type et de la qualité de la demande, puis profils de qualité et dossiers racines de l'un d'eux (`serverId`,
+ * le serveur par défaut sauf choix), avec ses valeurs par défaut : ce qu'un approbateur peut choisir avant l'envoi (ni
+ * adresse, ni clé).
  */
 export interface SendOptions {
+  servers: ArrServerSummary[];
+  serverId: number;
   qualityProfiles: ArrTestResult['qualityProfiles'];
   rootFolders: ArrTestResult['rootFolders'];
   defaultProfileId: number;
@@ -164,6 +179,11 @@ export interface SendOptions {
 }
 
 export const sendOptionsParamsSchema = z.object({ type: mediaTypeSchema });
+/** `?is4k=true&serverId=` : serveurs 4K, et profils/dossiers d'un serveur choisi plutôt que du serveur par défaut. */
+export const sendOptionsQuerySchema = z.object({
+  is4k: z.stringbool().default(false),
+  serverId: z.coerce.number().int().positive().optional(),
+});
 
 export interface QuotaUsage {
   limit: number;

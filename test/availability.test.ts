@@ -13,7 +13,7 @@ import { createTmdbProvider } from '../src/server/services/tmdb.ts';
 import { upsertFromEmby } from '../src/server/services/users.ts';
 import type { MediaKey } from '../src/shared/media.ts';
 import { type FakeRequest, type FakeRoutes, startFakeServer, status } from './fake-server.ts';
-import { loginAs, loginAsOwner, queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { addArrServer, loginAs, loginAsOwner, queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const cleanups: Array<() => unknown> = [];
@@ -146,9 +146,8 @@ async function setupData({ emby, radarr, sonarr, tmdb = {}, libraryIds = [], pub
       libraryIds,
       ...(publicUrl && { publicUrl }),
     });
-  const arr = { apiKey: 'k', qualityProfileId: 1, rootFolderPath: '/media' };
-  if (servers.radarr) setSetting(db, cryptoKey, 'radarr', { url: servers.radarr.url, ...arr });
-  if (servers.sonarr) setSetting(db, cryptoKey, 'sonarr', { url: servers.sonarr.url, ...arr });
+  if (servers.radarr) addArrServer(data, { type: 'radarr', url: servers.radarr.url });
+  if (servers.sonarr) addArrServer(data, { type: 'sonarr', url: servers.sonarr.url });
   return { data, servers };
 }
 

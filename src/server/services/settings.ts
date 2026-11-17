@@ -15,12 +15,16 @@ import { HttpError } from '../lib/api-errors.ts';
 
 type Fields = Record<string, unknown>;
 
-/** Copie de `value` où chaque champ secret de `key` passe par `fn`. */
-function mapFields(key: SettingKey, value: Fields, fn: (v: unknown, field: string) => unknown): Fields {
+/** Copie de `value` où chacun de ces champs passe par `fn`. */
+function mapEach(fields: readonly string[], value: Fields, fn: (v: unknown, field: string) => unknown): Fields {
   const out = { ...value };
-  for (const field of secretFields[key] as readonly string[]) out[field] = fn(out[field], field);
+  for (const field of fields) out[field] = fn(out[field], field);
   return out;
 }
+
+/** Copie de `value` où chaque champ secret de `key` passe par `fn`. */
+const mapFields = (key: SettingKey, value: Fields, fn: (v: unknown, field: string) => unknown) =>
+  mapEach(secretFields[key], value, fn);
 
 /** Chiffre ou déchiffre les secrets renseignés (un secret `null` reste `null`). */
 const mapSecrets = (key: SettingKey, value: Fields, fn: (s: string) => string) =>
@@ -70,12 +74,16 @@ export function maskSetting<K extends SettingKey>(key: K, value: Setting<K>): Ma
  * signifie « garder l'actuel ». Seulement vers la même adresse : sinon un appelant pourrait faire envoyer
  * la clé enregistrée à un serveur de son choix (le test d'Emby est public pendant l'amorçage).
  */
-export function withStoredSecrets(key: SettingKey, input: unknown, stored: object | null): unknown {
+export const withStoredSecrets = (key: SettingKey, input: unknown, stored: object | null): unknown =>
+  withStoredFields(secretFields[key], input, stored);
+
+/** Même règle pour d'autres secrets que ceux des réglages (clé d'API d'un serveur Radarr/Sonarr). */
+export function withStoredFields(fields: readonly string[], input: unknown, stored: object | null): unknown {
   if (typeof input !== 'object' || input === null || !stored) return input;
   const { url } = input as Fields;
   const storedUrl = (stored as Fields).url;
   if (typeof storedUrl === 'string' && (typeof url !== 'string' || normalizeUrl(url) !== storedUrl)) return input;
-  return mapFields(key, input as Fields, (v, field) => (v === undefined || v === '' ? (stored as Fields)[field] : v));
+  return mapEach(fields, input as Fields, (v, field) => (v === undefined || v === '' ? (stored as Fields)[field] : v));
 }
 
 /** Réglages d'Emby, indispensables à la connexion des membres. */

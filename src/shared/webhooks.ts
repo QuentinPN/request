@@ -14,6 +14,11 @@ export const webhookPath = (service: WebhookService) => `/api/webhooks/${service
  * cet en-tête (champ « Headers » des versions récentes, qui le garde hors des journaux d'accès).
  */
 export const WEBHOOK_TOKEN_QUERY = 'token';
+/**
+ * Serveur émetteur (`?server=<id>`) : seuls sa liste et sa file sont relues, et un Grab sait s'il est 4K. Absent ou
+ * inconnu (adresse collée avant les serveurs multiples) : le titre est recalculé sur tous les serveurs du type.
+ */
+export const WEBHOOK_SERVER_QUERY = 'server';
 export const WEBHOOK_TOKEN_HEADER = 'x-webhook-token';
 
 /** Réglages des webhooks (propriétaire seulement) : lecture, et régénération du jeton (l'ancien cesse aussitôt). */
@@ -21,10 +26,13 @@ export const WEBHOOK_SETTINGS_PATH = '/api/settings/webhooks';
 export const WEBHOOK_TOKEN_PATH = `${WEBHOOK_SETTINGS_PATH}/token`;
 
 export interface WebhookSettings {
-  /** Jeton commun aux deux services ; secret, réservé au propriétaire. */
+  /** Jeton commun à tous les serveurs ; secret, réservé au propriétaire. */
   token: string;
-  /** Adresse complète à coller dans Radarr/Sonarr, jeton compris (`?token=`), d'après l'adresse de l'appli. */
-  urls: Record<WebhookService, string>;
+  /**
+   * Une adresse par serveur Radarr/Sonarr, à coller dans ce serveur : jeton (`?token=`) et serveur (`&server=`) compris,
+   * d'après l'adresse de l'appli.
+   */
+  servers: Array<{ id: number; name: string; type: WebhookService; is4k: boolean; url: string }>;
 }
 
 /** Réponse d'un webhook (toujours 200 une fois le jeton accepté) : `handled: false` = évènement ignoré. */

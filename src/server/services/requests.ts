@@ -16,7 +16,8 @@ import {
   sql,
 } from 'drizzle-orm';
 import type { z } from 'zod';
-import { keyOf, type MediaDetails, type MediaType } from '../../shared/media.ts';
+import { arrLabel } from '../../shared/arr-servers.ts';
+import { keyOf, type MediaDetails, type MediaType, type Season } from '../../shared/media.ts';
 import {
   type ApproveRequestInput,
   type BatchResult,
@@ -34,7 +35,7 @@ import {
   type requestListQuerySchema,
 } from '../../shared/requests.ts';
 import type { QuotaRule } from '../../shared/roles.ts';
-import { settingSchemas } from '../../shared/settings.ts';
+import { DEFAULT_SERIES_TYPE, settingSchemas } from '../../shared/settings.ts';
 import {
   activeRequestStatuses,
   preSendRequestStatuses,
@@ -44,7 +45,8 @@ import {
 } from '../../shared/status.ts';
 import { inLiterals } from '../db/checks.ts';
 import type { Data, Db } from '../db/index.ts';
-import { media, requestEvents, requestSeasons, requests, seasons as seasonStatuses, users } from '../db/schema.ts';
+import { arrServers, media, requestEvents, requestSeasons, requests, users } from '../db/schema.ts';
+import { seasonsTableOf } from '../db/seasons.ts';
 import { arrKindOf } from '../integrations/arr.ts';
 import { IntegrationError } from '../integrations/http.ts';
 import { addMovie } from '../integrations/radarr.ts';
@@ -54,9 +56,10 @@ import { HttpError, NotConfiguredError, UpstreamContractError } from '../lib/api
 import { one } from '../lib/sql.ts';
 import { DAY_MS } from '../lib/time.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
+import { hasArrServer } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
 import { notifyRequestEvent } from './notifications.ts';
-import { assertSendChoice } from './send-options.ts';
+import { assertSendChoice, sendServer } from './send-options.ts';
 import { getSetting } from './settings.ts';
 import { loadDetails, loadSummaries } from './tmdb.ts';
 import { avatarUrlOf, type User } from './users.ts';
@@ -67,6 +70,7 @@ type BatchInput = z.output<typeof batchRequestSchema>;
 type Writer = Pick<Db, 'select' | 'insert' | 'update'>;
 
 const ALREADY_AVAILABLE = 'Ce titre est déjà disponible dans Emby';
+const alreadyAvailable = (is4k: boolean) => (is4k ? 'Ce titre est déjà disponible en 4K' : ALREADY_AVAILABLE);
 const NOT_FOUND = 'Demande introuvable';
 
 // --- Quotas ---
@@ -121,8 +125,9 @@ const selectRows = (db: Pick<Db, 'select'>) =>
 
 const inStatuses = (statuses: readonly RequestStatus[]) => inArray(requests.status, [...statuses]);
 const isActive = inStatuses(activeRequestStatuses);
-/** Demandes en cours d'un titre, version ordinaire : une demande 4K (importée de Seerr) ne la couvre pas. */
-const activeOrdinaryOn = (mediaId: number) => and(eq(requests.mediaId, mediaId), eq(requests.is4k, false), isActive);
+/** Demandes en cours d'un titre dans une qualité : une demande 4K ne couvre pas la version normale, ni l'inverse. */
+const activeOn = (mediaId: number, is4k: boolean) =>
+  and(eq(requests.mediaId, mediaId), eq(requests.is4k, is4k), isActive);
 
 /** Périmètre d'une liste : les demandes d'un membre (`userId`) ou toutes, éventuellement d'un seul titre. */
 export interface ListScope {
@@ -222,38 +227,43 @@ export function upsertMedia(tx: Writer, title: { type: MediaType; tmdbId: number
 }
 
 /**
- * Demande de ce membre sur ce titre (au plus une avant envoi, index `requests_active`) : par défaut avant envoi,
- * `statuses` élargit la recherche (un film déjà envoyé reste « sa » demande).
+ * Demande de ce membre sur ce titre dans cette qualité (au plus une avant envoi, index `requests_active`) : par défaut
+ * avant envoi, `statuses` élargit la recherche (un film déjà envoyé reste « sa » demande).
  */
 const ownActive = (
   tx: Pick<Db, 'select'>,
   mediaId: number,
   userId: string,
+  is4k: boolean,
   statuses: readonly RequestStatus[] = preSendRequestStatuses,
 ) =>
   tx
     .select()
     .from(requests)
     .where(
-      and(eq(requests.mediaId, mediaId), eq(requests.userId, userId), eq(requests.is4k, false), inStatuses(statuses)),
+      and(eq(requests.mediaId, mediaId), eq(requests.userId, userId), eq(requests.is4k, is4k), inStatuses(statuses)),
     )
     .get();
 
+/** Statut d'un titre ou d'une saison dans la qualité demandée (4K : serveurs 4K seuls). */
+const statusIn = (item: Pick<MediaDetails | Season, 'status' | 'fourK'>, is4k: boolean) =>
+  is4k ? item.fourK?.status : item.status;
+
 /**
  * Saisons à demander : celles choisies (`'all'` : toutes les saisons régulières déjà diffusées), moins celles déjà
- * disponibles dans Emby. Une saison inconnue de TMDB, les spéciaux ou une saison pas encore diffusée → 400 ; rien à
- * demander → 409.
+ * disponibles dans cette qualité. Une saison inconnue de TMDB, les spéciaux ou une saison pas encore diffusée → 400 ;
+ * rien à demander → 409.
  */
-function wantedSeasons(details: MediaDetails, choice: number[] | 'all', today: string): number[] {
+function wantedSeasons(details: MediaDetails, choice: number[] | 'all', today: string, is4k: boolean): number[] {
   const known = new Set(details.seasons.map((s) => s.seasonNumber));
   if (choice !== 'all' && choice.some((n) => !known.has(n))) throw new HttpError(400, 'Saison inconnue');
   const requestable = details.seasons.filter((s) => s.seasonNumber > 0 && isAiredSeason(s, today));
   const chosen = choice === 'all' ? requestable : details.seasons.filter((s) => choice.includes(s.seasonNumber));
   if (chosen.some((s) => !requestable.includes(s)))
     throw new HttpError(400, 'Les saisons spéciales et pas encore diffusées ne peuvent pas être demandées');
-  const missing = chosen.filter((s) => s.status !== 'available').map((s) => s.seasonNumber);
+  const missing = chosen.filter((s) => statusIn(s, is4k) !== 'available').map((s) => s.seasonNumber);
   if (missing.length === 0)
-    throw new HttpError(409, chosen.length === 0 ? 'Aucune saison diffusée à demander' : ALREADY_AVAILABLE);
+    throw new HttpError(409, chosen.length === 0 ? 'Aucune saison diffusée à demander' : alreadyAvailable(is4k));
   return missing.sort((a, b) => a - b);
 }
 
@@ -274,47 +284,58 @@ export function failInterruptedSends(db: Db, now = new Date()) {
 }
 
 /**
+ * Sources du statut de chaque qualité : `media.status` et `seasons` (bibliothèque normale), `media.status_4k` et
+ * `seasons_4k` (serveurs 4K). Mêmes colonnes : la table 4K se lit comme la normale.
+ */
+const QUALITIES = [
+  { is4k: false, status: media.status, seasons: seasonsTableOf(false) },
+  { is4k: true, status: media.status4k, seasons: seasonsTableOf(true) },
+] as const;
+
+/**
  * Transition `sent → available`, la seule que la synchronisation pose : pour les titres `mediaIds` qui viennent d'être
- * recalculés, chaque demande envoyée dont le titre est arrivé (film disponible ; série disponible, ou chaque saison
- * demandée disponible) passe `available`, avec l'évènement `available`. Une saison encore manquante laisse la demande
- * `sent`. Rejouée sur le même état (webhook en double, balayage), elle ne trouve plus rien : aucun évènement en double.
+ * recalculés, chaque demande envoyée dont le titre est arrivé dans sa qualité (film disponible ; série disponible, ou
+ * chaque saison demandée disponible ; en 4K, d'après les serveurs 4K) passe `available`, avec l'évènement `available`.
+ * Une saison encore manquante laisse la demande `sent`. Rejouée sur le même état (webhook en double, balayage), elle ne
+ * trouve plus rien : aucun évènement en double.
  */
 export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date): number[] {
   if (mediaIds.length === 0) return [];
   const ofRequest = eq(requestSeasons.requestId, requests.id);
-  const seasonArrived = tx
-    .select({ one })
-    .from(seasonStatuses)
-    .where(
-      and(
-        eq(seasonStatuses.mediaId, requests.mediaId),
-        eq(seasonStatuses.seasonNumber, requestSeasons.seasonNumber),
-        eq(seasonStatuses.status, 'available'),
+  const arrived = QUALITIES.flatMap(({ is4k, status, seasons }) => {
+    const seasonArrived = tx
+      .select({ one })
+      .from(seasons)
+      .where(
+        and(
+          eq(seasons.mediaId, requests.mediaId),
+          eq(seasons.seasonNumber, requestSeasons.seasonNumber),
+          eq(seasons.status, 'available'),
+        ),
+      );
+    const everySeasonArrived = and(
+      exists(tx.select({ one }).from(requestSeasons).where(ofRequest)),
+      notExists(
+        tx
+          .select({ one })
+          .from(requestSeasons)
+          .where(and(ofRequest, notExists(seasonArrived))),
       ),
     );
-  const everySeasonArrived = and(
-    exists(tx.select({ one }).from(requestSeasons).where(ofRequest)),
-    notExists(
-      tx
-        .select({ one })
-        .from(requestSeasons)
-        .where(and(ofRequest, notExists(seasonArrived))),
-    ),
-  );
-  const arrived = tx
-    .select({ id: requests.id })
-    .from(requests)
-    .innerJoin(media, eq(media.id, requests.mediaId))
-    .where(
-      and(
-        eq(requests.status, 'sent'),
-        // Le cache ne connaît que la bibliothèque ordinaire : une demande 4K (importée de Seerr) n'arrive pas avec elle.
-        eq(requests.is4k, false),
-        inArray(requests.mediaId, [...mediaIds]),
-        or(eq(media.status, 'available'), and(eq(media.type, 'tv'), everySeasonArrived)),
-      ),
-    )
-    .all();
+    return tx
+      .select({ id: requests.id })
+      .from(requests)
+      .innerJoin(media, eq(media.id, requests.mediaId))
+      .where(
+        and(
+          eq(requests.status, 'sent'),
+          eq(requests.is4k, is4k),
+          inArray(requests.mediaId, [...mediaIds]),
+          or(eq(status, 'available'), and(eq(media.type, 'tv'), everySeasonArrived)),
+        ),
+      )
+      .all();
+  });
   if (arrived.length === 0) return [];
   const updated = tx
     .update(requests)
@@ -337,7 +358,9 @@ export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date)
   return updated.map((r) => r.id);
 }
 
-type SendOutcome = { ok: true; detail: string; arrId: number; tvdbId?: number } | { ok: false; detail: string };
+type SendOutcome =
+  | { ok: true; detail: string; is4k: boolean; arrId: number; tvdbId?: number }
+  | { ok: false; detail: string };
 
 /** Erreurs au message lisible (service injoignable, non configuré, réponse inattendue) : affichées telles quelles. */
 const readable = (error: unknown) =>
@@ -436,6 +459,17 @@ export function createRequests(
     const failures = new Map<number, string | null>();
     if (failedIds.length > 0)
       for (const f of lastFailureQuery(db, failedIds).all()) failures.set(f.requestId, f.detail);
+    const serverIds = [...new Set(rows.flatMap((r) => (r.serverId === null ? [] : [r.serverId])))];
+    const serverNames = new Map(
+      serverIds.length === 0
+        ? []
+        : db
+            .select({ id: arrServers.id, name: arrServers.name })
+            .from(arrServers)
+            .where(inArray(arrServers.id, serverIds))
+            .all()
+            .map((s) => [s.id, s.name]),
+    );
     const titles = await loadSummaries(deps.tmdb, rows);
     const unknown = (id: string): RequestPerson => ({ id, name: id, avatarUrl: null });
     return rows.map((r) => ({
@@ -450,6 +484,8 @@ export function createRequests(
       qualityProfileId: r.qualityProfileId,
       rootFolder: r.rootFolder,
       seriesType: r.seriesType,
+      is4k: r.is4k,
+      server: r.serverId === null ? null : { id: r.serverId, name: serverNames.get(r.serverId) ?? '' },
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
       media: titles.get(keyOf(r)) ?? null,
@@ -507,36 +543,47 @@ export function createRequests(
     throw new HttpError(exists ? 409 : 404, exists ? conflict : NOT_FOUND);
   }
 
-  /** Ajoute le titre à Radarr ou Sonarr (avec recherche) ; un échec est rendu lisible, jamais levé. */
+  /** Serveur d'envoi : `chosen`, sinon le serveur par défaut du type et de la qualité ; `null` s'il n'y en a aucun. */
+  function serverFor(row: RequestRow, chosen: number | null | undefined) {
+    try {
+      return sendServer(data, row.type, row.is4k, chosen);
+    } catch (error) {
+      if (error instanceof NotConfiguredError) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * Ajoute le titre au serveur de la demande (à défaut, celui par défaut du type et de la qualité), avec recherche ;
+   * un échec est rendu lisible, jamais levé.
+   */
   async function deliver(row: RequestRow, seasons: number[]): Promise<SendOutcome> {
     try {
+      const server = sendServer(data, row.type, row.is4k, row.serverId);
+      const target = {
+        qualityProfileId: row.qualityProfileId ?? server.qualityProfileId,
+        rootFolderPath: row.rootFolder ?? server.rootFolderPath,
+        search: true,
+      };
       if (row.type === 'movie') {
-        const radarr = getSetting(db, cryptoKey, 'radarr');
-        if (!radarr) throw new NotConfiguredError('Radarr');
-        const { radarrId } = await addMovie(radarr, {
+        const { radarrId } = await addMovie(server, {
+          ...target,
           tmdbId: row.tmdbId,
-          qualityProfileId: row.qualityProfileId ?? radarr.qualityProfileId,
-          rootFolderPath: row.rootFolder ?? radarr.rootFolderPath,
-          minimumAvailability: radarr.minimumAvailability,
-          search: true,
+          ...(server.minimumAvailability && { minimumAvailability: server.minimumAvailability }),
         });
-        return { ok: true, arrId: radarrId, detail: `Radarr #${radarrId}` };
+        return { ok: true, is4k: server.is4k, arrId: radarrId, detail: `${server.name} #${radarrId}` };
       }
-      const sonarr = getSetting(db, cryptoKey, 'sonarr');
-      if (!sonarr) throw new NotConfiguredError('Sonarr');
       const tvdbId = row.tvdbId ?? (await deps.tmdb().tvdbIdFor(row.tmdbId));
       if (tvdbId === null)
         return { ok: false, detail: 'Identifiant TVDB inconnu : Sonarr ne peut pas ajouter cette série' };
-      const { sonarrId } = await addSeries(sonarr, {
+      const { sonarrId } = await addSeries(server, {
+        ...target,
         tvdbId,
-        qualityProfileId: row.qualityProfileId ?? sonarr.qualityProfileId,
-        rootFolderPath: row.rootFolder ?? sonarr.rootFolderPath,
-        seriesType: row.seriesType ?? sonarr.seriesType,
+        seriesType: row.seriesType ?? server.seriesType ?? DEFAULT_SERIES_TYPE,
         seasons,
-        search: true,
-        ...(sonarr.languageProfileId !== undefined && { languageProfileId: sonarr.languageProfileId }),
+        ...(server.languageProfileId !== null && { languageProfileId: server.languageProfileId }),
       });
-      return { ok: true, arrId: sonarrId, tvdbId, detail: `Sonarr #${sonarrId}` };
+      return { ok: true, is4k: server.is4k, arrId: sonarrId, tvdbId, detail: `${server.name} #${sonarrId}` };
     } catch (error) {
       if (readable(error)) return { ok: false, detail: (error as Error).message };
       console.error('Envoi de la demande', row.id, error);
@@ -544,7 +591,10 @@ export function createRequests(
     }
   }
 
-  /** Envoie une demande approuvée, puis la passe en `sent` (ids Radarr/Sonarr gardés) ou `failed` (détail lisible). */
+  /**
+   * Envoie une demande approuvée, puis la passe en `sent` (id sur le serveur gardé, comme indice : voir
+   * `docs/DATA_MODEL.md`) ou `failed` (détail lisible).
+   */
   async function send(id: number, actor: User) {
     const row = requireRow(id);
     const outcome = await deliver(row, seasonsByRequest([id]).get(id) ?? []);
@@ -558,37 +608,38 @@ export function createRequests(
         .get();
       if (!updated) return; // changée entre-temps : rien à écrire
       addEvent(tx, id, outcome.ok ? 'sent' : 'failed', actor.id, at, outcome.detail);
-      if (outcome.ok)
-        tx.update(media)
-          .set(
-            row.type === 'movie'
-              ? { radarrId: outcome.arrId }
-              : { sonarrId: outcome.arrId, ...(outcome.tvdbId !== undefined && { tvdbId: outcome.tvdbId }) },
-          )
-          .where(eq(media.id, row.mediaId))
-          .run();
+      if (!outcome.ok) return;
+      const tvdbId = outcome.tvdbId !== undefined && { tvdbId: outcome.tvdbId };
+      tx.update(media)
+        .set(
+          row.type === 'movie'
+            ? outcome.is4k
+              ? { radarr4kId: outcome.arrId }
+              : { radarrId: outcome.arrId }
+            : outcome.is4k
+              ? { sonarr4kId: outcome.arrId, ...tvdbId }
+              : { sonarrId: outcome.arrId, ...tvdbId },
+        )
+        .where(eq(media.id, row.mediaId))
+        .run();
     });
-  }
-
-  /** Pas de Radarr/Sonarr 4K : une demande 4K (importée de Seerr) ne part jamais vers l'instance ordinaire. */
-  function assertNot4k(row: RequestRow) {
-    if (row.is4k) throw new HttpError(409, 'Les demandes 4K ne sont pas prises en charge');
   }
 
   async function approve(id: number, actor: User, choice: ApproveRequestInput = {}): Promise<RequestDetail> {
     const row = requireRow(id);
-    assertNot4k(row);
-    await assertSendChoice(data, row.type, choice);
-    // Valeurs envoyées gardées sur la demande (une relance les reprend) ; à défaut, celles des réglages.
-    const sonarr = row.type === 'tv' ? getSetting(db, cryptoKey, 'sonarr') : null;
-    const defaults = getSetting(db, cryptoKey, arrKindOf(row.type));
+    // Serveur choisi par l'approbateur (du bon type et de la bonne qualité, sinon 400), sinon celui de la demande
+    // (import Seerr), sinon le serveur par défaut. Aucun serveur : l'envoi échouera avec un message clair.
+    const server = serverFor(row, choice.serverId ?? row.serverId);
+    if (server) await assertSendChoice(server, choice);
+    // Valeurs envoyées gardées sur la demande (une relance les reprend) ; à défaut, celles du serveur.
     db.transaction((tx) => {
       transition(tx, id, ['pending'], {
         status: 'approved',
         decidedBy: actor.id,
-        qualityProfileId: choice.qualityProfileId ?? defaults?.qualityProfileId ?? null,
-        rootFolder: choice.rootFolderPath ?? defaults?.rootFolderPath ?? null,
-        seriesType: row.type === 'tv' ? (choice.seriesType ?? sonarr?.seriesType ?? null) : null,
+        serverId: server?.id ?? null,
+        qualityProfileId: choice.qualityProfileId ?? server?.qualityProfileId ?? null,
+        rootFolder: choice.rootFolderPath ?? server?.rootFolderPath ?? null,
+        seriesType: row.type === 'tv' ? (choice.seriesType ?? server?.seriesType ?? null) : null,
       });
       addEvent(tx, id, 'approved', actor.id, new Date(now()));
     });
@@ -597,7 +648,6 @@ export function createRequests(
   }
 
   async function retry(id: number, actor: User): Promise<RequestDetail> {
-    assertNot4k(requireRow(id));
     db.transaction((tx) => {
       transition(tx, id, ['failed'], { status: 'approved' }, 'Seule une demande en échec peut être relancée');
       addEvent(tx, id, 'retried', actor.id, new Date(now()));
@@ -628,20 +678,27 @@ export function createRequests(
 
   /**
    * Crée la demande (`created: true`), ou renvoie celle déjà en cours du membre (double clic, `created: false`).
-   * Vérification du quota et insertion dans la même transaction. Rôle à approbation automatique → approuvée et
-   * envoyée aussitôt.
+   * Vérification du quota et insertion dans la même transaction. Rôle à approbation automatique (4K : approbation
+   * automatique 4K) → approuvée et envoyée aussitôt. Une demande 4K suppose le droit et un serveur 4K du type ; elle
+   * compte dans le quota comme une autre.
    */
   async function create(
     viewer: SessionViewer,
     input: CreateInput,
   ): Promise<{ request: RequestDetail; created: boolean }> {
-    const { user } = viewer;
+    const { user, capabilities } = viewer;
+    const { is4k } = input;
+    if (is4k) {
+      if (!capabilities.canRequest4k) throw new HttpError(403, 'Vous ne pouvez pas demander en 4K');
+      if (!hasArrServer(db, arrKindOf(input.type), true))
+        throw new HttpError(409, `Aucun serveur ${arrLabel(arrKindOf(input.type), true)} n’est configuré`);
+    }
     const details = await deps.availability.withDetailsStatus(await loadDetails(deps.tmdb(), input.type, input.tmdbId));
     let wanted: number[] = [];
     if (input.type === 'movie') {
-      if (details.status === 'available') throw new HttpError(409, ALREADY_AVAILABLE);
+      if (statusIn(details, is4k) === 'available') throw new HttpError(409, alreadyAvailable(is4k));
     } else {
-      wanted = wantedSeasons(details, input.seasons, isoDay(now()));
+      wanted = wantedSeasons(details, input.seasons, isoDay(now()), is4k);
     }
 
     const outcome = db.transaction(
@@ -652,18 +709,18 @@ export function createRequests(
           tmdbId: details.tmdbId,
           tvdbId: details.externalIds.tvdb,
         });
-        const own = ownActive(tx, mediaId, user.id, input.type === 'movie' ? activeRequestStatuses : undefined);
+        const own = ownActive(tx, mediaId, user.id, is4k, input.type === 'movie' ? activeRequestStatuses : undefined);
 
         const insert = (seasons: number[]) => {
           const row = tx
             .insert(requests)
-            .values({ mediaId, userId: user.id, status: 'pending', createdAt: at, updatedAt: at })
+            .values({ mediaId, userId: user.id, status: 'pending', is4k, createdAt: at, updatedAt: at })
             .onConflictDoUpdate(ACTIVE_CONFLICT)
             .returning({ id: requests.id })
             .get();
           if (!row) {
             // Conflit sur `requests_active` : une demande en cours existe déjà (double clic), renvoyée telle quelle.
-            const existing = ownActive(tx, mediaId, user.id);
+            const existing = ownActive(tx, mediaId, user.id, is4k);
             if (!existing) throw new HttpError(409, 'Une demande est déjà en cours pour ce titre');
             return { id: existing.id, created: false };
           }
@@ -677,7 +734,7 @@ export function createRequests(
 
         if (input.type === 'movie') {
           if (own) return { id: own.id, created: false };
-          if (tx.select({ id: requests.id }).from(requests).where(activeOrdinaryOn(mediaId)).get())
+          if (tx.select({ id: requests.id }).from(requests).where(activeOn(mediaId, is4k)).get())
             throw new HttpError(409, 'Ce titre est déjà demandé');
           assertQuota(tx, viewer, 'movies', 1);
           return insert([]);
@@ -688,7 +745,7 @@ export function createRequests(
           .select({ requestId: requestSeasons.requestId, n: requestSeasons.seasonNumber })
           .from(requestSeasons)
           .innerJoin(requests, eq(requests.id, requestSeasons.requestId))
-          .where(activeOrdinaryOn(mediaId))
+          .where(activeOn(mediaId, is4k))
           .all();
         const covered = new Set(active.map((s) => s.n));
         const missing = wanted.filter((n) => !covered.has(n));
@@ -712,7 +769,8 @@ export function createRequests(
       { behavior: 'immediate' },
     );
 
-    if (viewer.capabilities.autoApprove && rowOf(outcome.id)?.status === 'pending') {
+    const autoApprove = is4k ? capabilities.autoApprove4k : capabilities.autoApprove;
+    if (autoApprove && rowOf(outcome.id)?.status === 'pending') {
       try {
         return { request: await approve(outcome.id, user), created: outcome.created };
       } catch (error) {

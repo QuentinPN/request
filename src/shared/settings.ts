@@ -24,14 +24,21 @@ const isDiscordWebhook = (value: string) => {
 
 /** Disponibilité minimale d'un film avant que Radarr ne le cherche. */
 export const minimumAvailabilities = ['announced', 'inCinemas', 'released'] as const;
+export type MinimumAvailability = (typeof minimumAvailabilities)[number];
+/** Disponibilité minimale d'un serveur Radarr qui n'en précise pas. */
+export const DEFAULT_MINIMUM_AVAILABILITY: MinimumAvailability = 'released';
 /** Type de série par défaut envoyé à Sonarr. */
 export const seriesTypes = ['standard', 'anime', 'daily'] as const;
+export type SeriesType = (typeof seriesTypes)[number];
+/** Type de série d'un serveur Sonarr (ou d'une demande) qui n'en précise pas. */
+export const DEFAULT_SERIES_TYPE: SeriesType = 'standard';
 
-/** Connexion seule (adresse et clé) : ce que le test de connexion de l'assistant vérifie. */
+/**
+ * Connexion seule (adresse et clé) : ce que le test de connexion de l'assistant vérifie. Radarr et Sonarr n'en font
+ * pas partie : ce sont des serveurs (`shared/arr-servers.ts`), testés par leur propre route.
+ */
 export const connectionSchemas = {
   emby: service,
-  radarr: service,
-  sonarr: service,
   tmdb: z.object({ apiKey }),
 } as const;
 
@@ -68,18 +75,6 @@ export const settingSchemas = {
   /** Ancien réglage d'Emby, relu comme `mediaServer` de type `emby` tant que celui-ci n'existe pas (`getMediaServer`). */
   emby: mediaServer,
   mediaServer: mediaServer.extend({ kind: z.enum(mediaServerKinds) }),
-  radarr: service.extend({
-    qualityProfileId: profileId,
-    rootFolderPath,
-    minimumAvailability: z.enum(minimumAvailabilities).default('released'),
-  }),
-  sonarr: service.extend({
-    qualityProfileId: profileId,
-    rootFolderPath,
-    seriesType: z.enum(seriesTypes).default('standard'),
-    /** Sonarr v3 seulement (supprimé en v4). */
-    languageProfileId: profileId.optional(),
-  }),
   tmdb: connectionSchemas.tmdb,
   /** Notifications Discord, facultatives : rien n'est envoyé tant que `enabled` est faux ou l'adresse absente. */
   discord: z
@@ -141,8 +136,6 @@ export type SettingInput<K extends SettingKey> = z.input<(typeof settingSchemas)
 export const secretFields = {
   emby: ['apiKey'],
   mediaServer: ['apiKey'],
-  radarr: ['apiKey'],
-  sonarr: ['apiKey'],
   tmdb: ['apiKey'],
   discord: ['webhookUrl'],
   rules: [],

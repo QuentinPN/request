@@ -9,6 +9,7 @@ import { parseRadarrWebhook } from '../integrations/radarr.ts';
 import { parseSonarrWebhook } from '../integrations/sonarr.ts';
 import { one } from '../lib/sql.ts';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '../lib/time.ts';
+import { listArrServers } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
 import { lastFailureAt, lastSuccessAt, runJob } from './jobs.ts';
 import { NOTIFICATION_RETENTION_MS, purgeReadNotifications } from './notifications.ts';
@@ -87,17 +88,23 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
   }
 
   /**
-   * Webhook Radarr/Sonarr (jeton déjà vérifié). Grab → « en téléchargement » ; Download et suppressions → recalcul de
-   * ce seul titre, liste et file du service relues ; Test → accusé de réception ; le reste est ignoré.
+   * Webhook Radarr/Sonarr (jeton déjà vérifié), d'un serveur identifié par `serverId` (`?server=` de l'adresse).
+   * Grab → « en téléchargement » dans la qualité du serveur ; Download et suppressions → recalcul de ce seul titre,
+   * liste et file du serveur relues ; Test → accusé de réception ; le reste est ignoré. Serveur absent, inconnu ou d'un
+   * autre type (adresse collée avant les serveurs multiples) : le seul serveur du type s'il n'y en a qu'un, sinon le
+   * titre est recalculé avec les listes de tous les serveurs du type relues, un Grab compris (sa qualité est alors
+   * inconnue, la file la donne).
    */
-  async function handleWebhook(service: WebhookService, body: unknown): Promise<WebhookResult> {
+  async function handleWebhook(service: WebhookService, body: unknown, serverId?: number): Promise<WebhookResult> {
     const event = service === 'radarr' ? parseRadarrWebhook(body) : parseSonarrWebhook(body);
     if (event.event === 'test') return { handled: true };
     if (event.event === 'other') return { handled: false };
     const row = mediaOf(service, event);
     if (!row) return { handled: false };
-    if (event.event === 'grab') availability.markDownloading(service, row.id, event.seasons);
-    else await availability.refresh([row], { forget: service });
+    const ofType = listArrServers(data).filter((s) => s.type === service);
+    const server = ofType.find((s) => s.id === serverId) ?? (ofType.length === 1 ? ofType[0] : undefined);
+    if (event.event === 'grab' && server) availability.markDownloading(server, row.id, event.seasons);
+    else await availability.refresh([row], { forget: service, ...(server && { serverId: server.id }) });
     return { handled: true };
   }
 
@@ -113,7 +120,13 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
     runJob(db, SCAN_JOBS.light, async () => {
       const emby = getSetting(db, cryptoKey, 'emby');
       const recent = emby ? await latestEmbyItems(emby, { libraryIds: emby.libraryIds, limit: RECENT_LIMIT }) : [];
-      const watched = keysWhere(or(eq(media.status, 'downloading'), hasRequest(db, eq(requests.status, 'sent'))));
+      const watched = keysWhere(
+        or(
+          eq(media.status, 'downloading'),
+          eq(media.status4k, 'downloading'),
+          hasRequest(db, eq(requests.status, 'sent')),
+        ),
+      );
       const keys = [...recent.map(({ type, tmdbId }) => ({ type, tmdbId })), ...watched];
       await refreshAll(keys);
       return `${keys.length} titres recalculés`;
@@ -127,7 +140,7 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
     runJob(db, SCAN_JOBS.full, async () => {
       const purged = purgeMedia(db, new Date(now() - PURGE_AFTER_MS));
       purgeReadNotifications(db, new Date(now() - NOTIFICATION_RETENTION_MS));
-      const keys = keysWhere(or(isNotNull(media.status), hasRequest(db)));
+      const keys = keysWhere(or(isNotNull(media.status), isNotNull(media.status4k), hasRequest(db)));
       await refreshAll(keys);
       return `${keys.length} titres recalculés, ${purged} supprimés`;
     });

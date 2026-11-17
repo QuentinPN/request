@@ -8,6 +8,7 @@ import type { TmdbClient } from './integrations/tmdb.ts';
 import { apiErrorHandler, HttpError } from './lib/api-errors.ts';
 import { registerAuth } from './plugins/auth.ts';
 import { apiKeysRoutes } from './routes/api-keys.ts';
+import { arrServersRoutes } from './routes/arr-servers.ts';
 import { authRoutes } from './routes/auth.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
 import { discordRoutes } from './routes/discord.ts';
@@ -22,6 +23,7 @@ import { statsRoutes } from './routes/stats.ts';
 import { usersRoutes } from './routes/users.ts';
 import { watchlistRoutes } from './routes/watchlist.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
+import { adoptLegacyArrSettings } from './services/arr-servers.ts';
 import { type AvailabilityService, createAvailability } from './services/availability.ts';
 import { parseBackupKeep, startBackups } from './services/backup.ts';
 import { createDiscord, type DiscordService } from './services/discord.ts';
@@ -94,6 +96,7 @@ export async function buildApp({
   // Démarrage : une tâche restée « en cours », ou un envoi de demande, a été interrompu par l'arrêt précédent.
   failOrphanJobs(data.db);
   failInterruptedSends(data.db);
+  adoptLegacyArrSettings(data.db);
   const sync = createSync(data, { availability: app.availability });
   const scheduler = schedule ? startScheduler(sync, data.db) : null;
   const backups = schedule ? startBackups(data.db.$client, data.dir, parseBackupKeep(process.env.BACKUP_KEEP)) : null;
@@ -126,6 +129,7 @@ export async function buildApp({
   });
   authRoutes(app);
   setupRoutes(app);
+  arrServersRoutes(app);
   usersRoutes(app);
   requestsRoutes(app);
   issuesRoutes(app);

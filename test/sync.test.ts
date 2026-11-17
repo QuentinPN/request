@@ -2,7 +2,15 @@ import { asc, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { type Db, openDataDir } from '../src/server/db/index.ts';
-import { jobRuns, media, requestEvents, requestSeasons, requests, seasons } from '../src/server/db/schema.ts';
+import {
+  jobRuns,
+  media,
+  requestEvents,
+  requestSeasons,
+  requests,
+  seasons,
+  seasons4k,
+} from '../src/server/db/schema.ts';
 import { startJob } from '../src/server/services/jobs.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import {
@@ -19,8 +27,8 @@ import { webhookToken } from '../src/server/services/webhooks.ts';
 import type { MediaType } from '../src/shared/media.ts';
 import type { MediaStatus, RequestStatus } from '../src/shared/status.ts';
 import { WEBHOOK_TOKEN_HEADER, type WebhookSettings } from '../src/shared/webhooks.ts';
-import type { FakeRequest } from './fake-server.ts';
-import { loginAs, loginAsOwner, queryPlan, trackFakeServers, trackTempDirs } from './helpers.ts';
+import { type FakeHandler, type FakeRequest, status } from './fake-server.ts';
+import { addArrServer, loginAs, loginAsOwner, queryPlan, trackFakeServers, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const startServer = trackFakeServers();
@@ -42,40 +50,42 @@ interface Library {
 
 const queue = { totalRecords: 0, records: [] };
 const calls = (requests: FakeRequest[], path: string) => requests.filter((r) => r.path === path).length;
+const json =
+  (body: () => unknown): FakeHandler =>
+  (_req, res) =>
+    status(200, body())(_req, res);
+
+/** Faux Radarr et faux Sonarr lisant `library` à chaque appel ; `records` : sa file de téléchargement. */
+const fakeRadarr = (library: Library, records: object[] = []) =>
+  startServer({
+    'GET /api/v3/movie': json(() => library.movies.map((m) => ({ ...m, monitored: true }))),
+    'GET /api/v3/queue': json(() => ({ totalRecords: records.length, records })),
+  });
+const fakeSonarr = (library: Library) =>
+  startServer({
+    'GET /api/v3/series': json(() =>
+      library.series.map(({ seasons: list, ...s }) => ({
+        ...s,
+        monitored: true,
+        seasons: list.map(([seasonNumber, episodeFileCount, episodeCount]) => ({
+          seasonNumber,
+          monitored: true,
+          statistics: { episodeFileCount, episodeCount, totalEpisodeCount: episodeCount },
+        })),
+      })),
+    ),
+    'GET /api/v3/queue': queue,
+  });
 
 async function setup() {
   const library: Library = { movies: [], series: [] };
-  const radarr = await startServer({
-    'GET /api/v3/movie': (_req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(library.movies.map((m) => ({ ...m, monitored: true }))));
-    },
-    'GET /api/v3/queue': queue,
-  });
-  const sonarr = await startServer({
-    'GET /api/v3/series': (_req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(
-        JSON.stringify(
-          library.series.map(({ seasons: list, ...s }) => ({
-            ...s,
-            monitored: true,
-            seasons: list.map(([seasonNumber, episodeFileCount, episodeCount]) => ({
-              seasonNumber,
-              monitored: true,
-              statistics: { episodeFileCount, episodeCount, totalEpisodeCount: episodeCount },
-            })),
-          })),
-        ),
-      );
-    },
-    'GET /api/v3/queue': queue,
-  });
+  const radarr = await fakeRadarr(library);
+  const sonarr = await fakeSonarr(library);
   const data = openDataDir(tempDir());
   const { db, cryptoKey } = data;
   const arr = { apiKey: 'k', qualityProfileId: 1, rootFolderPath: '/data' };
-  setSetting(db, cryptoKey, 'radarr', { url: radarr.url, ...arr });
-  setSetting(db, cryptoKey, 'sonarr', { url: sonarr.url, ...arr });
+  addArrServer({ db, cryptoKey }, { type: 'radarr', url: radarr.url, ...arr });
+  addArrServer({ db, cryptoKey }, { type: 'sonarr', url: sonarr.url, ...arr });
   const app = await buildApp({ data });
   cleanups.push(() => app.close());
   const sync = createSync(data, { availability: app.availability });
@@ -199,10 +209,22 @@ describe('réglages des webhooks', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       token,
-      urls: {
-        radarr: `http://localhost/api/webhooks/radarr?token=${token}`,
-        sonarr: `http://localhost/api/webhooks/sonarr?token=${token}`,
-      },
+      servers: [
+        {
+          id: 1,
+          name: 'Radarr',
+          type: 'radarr',
+          is4k: false,
+          url: `http://localhost/api/webhooks/radarr?token=${token}&server=1`,
+        },
+        {
+          id: 2,
+          name: 'Sonarr',
+          type: 'sonarr',
+          is4k: false,
+          url: `http://localhost/api/webhooks/sonarr?token=${token}&server=2`,
+        },
+      ],
     } satisfies WebhookSettings);
     // Pas confondu avec le réglage générique `/api/settings/:service`.
     expect((await app.inject({ method: 'PUT', url: '/api/settings/webhooks', headers, payload: {} })).statusCode).toBe(
@@ -505,5 +527,130 @@ describe('planification', () => {
     const quiet = await buildApp({ data: openDataDir(tempDir()) });
     cleanups.push(() => quiet.close());
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// --- Plusieurs serveurs, 4K ---
+
+describe('plusieurs serveurs Radarr/Sonarr et 4K', () => {
+  /** Deux Radarr normaux (A par défaut, B), un Radarr 4K, un Sonarr normal et un Sonarr 4K. */
+  async function setupMany() {
+    const libraries = {
+      a: { movies: [], series: [] } as Library,
+      b: { movies: [], series: [] } as Library,
+      uhd: { movies: [], series: [] } as Library,
+    };
+    const queueB: object[] = [];
+    const radarrA = await fakeRadarr(libraries.a);
+    const radarrB = await fakeRadarr(libraries.b, queueB);
+    const radarr4k = await fakeRadarr(libraries.uhd);
+    const sonarr = await fakeSonarr(libraries.a);
+    const sonarr4k = await fakeSonarr(libraries.uhd);
+    const data = openDataDir(tempDir());
+    const ids = {
+      a: addArrServer(data, { type: 'radarr', url: radarrA.url }).id,
+      b: addArrServer(data, { type: 'radarr', url: radarrB.url, name: 'Radarr B' }).id,
+      uhd: addArrServer(data, { type: 'radarr', url: radarr4k.url, is4k: true }).id,
+      sonarr: addArrServer(data, { type: 'sonarr', url: sonarr.url }).id,
+      sonarr4k: addArrServer(data, { type: 'sonarr', url: sonarr4k.url, is4k: true }).id,
+    };
+    const app = await buildApp({ data });
+    cleanups.push(() => app.close());
+    const token = webhookToken(data);
+    const hook = (service: 'radarr' | 'sonarr', payload: object, server?: number) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/webhooks/${service}?token=${token}${server === undefined ? '' : `&server=${server}`}`,
+        payload,
+      });
+    return { app, db: data.db, libraries, queueB, radarrA, radarrB, radarr4k, ids, hook };
+  }
+
+  it('statut normal : serveurs non 4K (le titre est trouvé sur B) ; statut 4K : serveurs 4K seuls', async () => {
+    const { app, db, libraries } = await setupMany();
+    libraries.b.movies.push({ id: 5, tmdbId: 603, hasFile: true });
+    libraries.uhd.movies.push({ id: 9, tmdbId: 604, hasFile: true });
+    await app.availability.refresh([
+      { type: 'movie', tmdbId: 603 },
+      { type: 'movie', tmdbId: 604 },
+    ]);
+    const [matrix, reloaded] = db.select().from(media).orderBy(asc(media.tmdbId)).all();
+    expect(matrix).toMatchObject({ status: 'available', radarrId: 5, status4k: null, radarr4kId: null });
+    expect(reloaded).toMatchObject({ status: null, radarrId: null, status4k: 'available', radarr4kId: 9 });
+  });
+
+  it('série 4K : saisons à part (`seasons_4k`), d’après le seul Sonarr 4K', async () => {
+    const { app, db, libraries } = await setupMany();
+    libraries.uhd.series.push({
+      id: 3,
+      tvdbId: 81189,
+      tmdbId: 1396,
+      seasons: [
+        [1, 7, 7],
+        [2, 3, 13],
+      ],
+    });
+    await app.availability.refresh([{ type: 'tv', tmdbId: 1396 }]);
+    const row = db.select().from(media).get();
+    expect(row).toMatchObject({ status: null, status4k: 'partial', sonarr4kId: 3, sonarrId: null });
+    expect(seasonStatuses(db, row?.id ?? 0)).toEqual({});
+    expect(
+      Object.fromEntries(
+        db
+          .select()
+          .from(seasons4k)
+          .all()
+          .map((s) => [s.seasonNumber, [s.status, s.episodesPresent, s.episodesExpected]]),
+      ),
+    ).toEqual({ 1: ['available', 7, 7], 2: ['partial', 3, 13] });
+  });
+
+  it('progression lue dans la file du serveur qui a le titre', async () => {
+    const { app, libraries, queueB } = await setupMany();
+    libraries.b.movies.push({ id: 5, tmdbId: 603, hasFile: false });
+    queueB.push({ movieId: 5, size: 100, sizeleft: 25, status: 'downloading' });
+    const statuses = await app.availability.statusesFor([{ type: 'movie', tmdbId: 603 }]);
+    expect(statuses.get('movie:603')).toEqual({ status: 'downloading', progress: 0.75 });
+  });
+
+  it('webhook avec `server` : Grab d’un serveur 4K → 4K en téléchargement, statut normal intact', async () => {
+    const { db, hook, ids } = await setupMany();
+    const { mediaId } = seed(db, { tmdbId: 603, status: 'available' });
+    expect((await hook('radarr', { eventType: 'Grab', movie: { tmdbId: 603 } }, ids.uhd)).json()).toEqual({
+      handled: true,
+    });
+    expect(mediaRow(db, mediaId)).toMatchObject({ status: 'available', status4k: 'downloading' });
+
+    const { mediaId: show } = seed(db, { type: 'tv', tmdbId: 1396, tvdbId: 81189 });
+    await hook(
+      'sonarr',
+      { eventType: 'Grab', series: { tvdbId: 81189 }, episodes: [{ seasonNumber: 2 }] },
+      ids.sonarr4k,
+    );
+    expect(mediaRow(db, show)).toMatchObject({ status: null, status4k: 'downloading' });
+    expect(db.select().from(seasons4k).all()).toMatchObject([
+      { mediaId: show, seasonNumber: 2, status: 'downloading' },
+    ]);
+    expect(seasonStatuses(db, show)).toEqual({});
+  });
+
+  it('Download avec `server` : seule la liste de ce serveur est relue ; sans `server` : toutes celles du type', async () => {
+    const { app, hook, ids, radarrA, radarrB, radarr4k } = await setupMany();
+    await app.availability.refresh([{ type: 'movie', tmdbId: 603 }]);
+    const count = () => [radarrA, radarrB, radarr4k].map((s) => calls(s.requests, '/api/v3/movie'));
+    const before = count();
+    await hook('radarr', { eventType: 'Download', movie: { tmdbId: 603 } }, ids.b);
+    expect(count()).toEqual([before[0], (before[1] ?? 0) + 1, before[2]]);
+    await hook('radarr', { eventType: 'Download', movie: { tmdbId: 603 } });
+    expect(count()).toEqual(before.map((n, i) => n + (i === 1 ? 2 : 1)));
+  });
+
+  it('Grab sans `server` avec plusieurs serveurs du type : recalcul (qualité inconnue), pas de supposition', async () => {
+    const { db, hook } = await setupMany();
+    const { mediaId } = seed(db, { tmdbId: 603, statusUpdatedAt: new Date(0) });
+    // Un identifiant d'un autre type vaut absence de paramètre.
+    expect((await hook('radarr', { eventType: 'Grab', movie: { tmdbId: 603 } }, 4)).json()).toEqual({ handled: true });
+    expect(mediaRow(db, mediaId)).toMatchObject({ status: null, status4k: null });
+    expect(mediaRow(db, mediaId)?.statusUpdatedAt.getTime()).toBeGreaterThan(0);
   });
 });

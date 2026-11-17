@@ -13,6 +13,7 @@ import {
   requestListQuerySchema,
   type SendOptions,
   sendOptionsParamsSchema,
+  sendOptionsQuerySchema,
 } from '../../shared/requests.ts';
 import { parseRequest } from '../lib/api-errors.ts';
 import { requireCapability, viewerOf } from '../plugins/auth.ts';
@@ -48,11 +49,16 @@ export function requestsRoutes(app: FastifyInstance) {
 
   app.get('/api/requests/counts', canRequest, async (req): Promise<RequestCounts> => service.counts(viewerOf(req)));
 
-  // Listes de l'approbation (profils, dossiers) : ni adresse ni clé ; service non configuré → 503.
+  // Listes de l'approbation (serveurs, profils, dossiers) : ni adresse ni clé ; aucun serveur → 503.
   app.get(
     '/api/requests/send-options/:type',
     canManage,
-    async (req): Promise<SendOptions> => sendOptions(app.data, parseRequest(sendOptionsParamsSchema, req.params).type),
+    async (req): Promise<SendOptions> =>
+      sendOptions(
+        app.data,
+        parseRequest(sendOptionsParamsSchema, req.params).type,
+        parseRequest(sendOptionsQuerySchema, req.query),
+      ),
   );
 
   app.get(

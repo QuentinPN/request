@@ -32,6 +32,6 @@ export interface SeerrImportResult {
   unmatchedUsers: SeerrUnmatchedUser[];
   /** Demandes écartées faute de titre reconnaissable (id TMDB absent, type ou statut inconnu, aucune saison). */
   unmatchedMedia: number;
-  /** Demandes 4K en attente ou en échec, écartées : l'appli n'a pas de Radarr/Sonarr 4K pour les envoyer. */
+  /** Demandes 4K en attente ou en échec, écartées faute de serveur Radarr/Sonarr 4K du type pour les envoyer. */
   skipped4k: number;
 }

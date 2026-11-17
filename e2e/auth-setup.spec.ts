@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import {
   type ApiMock,
+  arrServer,
   completeSetup,
   embyTest,
   expect,
@@ -177,24 +178,22 @@ test('une session perdue en cours de route ramène à la connexion', async ({ pa
   await expect(page).toHaveURL(/\/connexion\?retour=%2Freglages$/);
 });
 
-test('Réglages : une section enregistrée se teste à l’ouverture et remplit les listes', async ({ page, api }) => {
-  api.state.settings.sonarr = {
-    url: 'http://192.0.2.20:8989',
-    apiKey: { set: true },
-    qualityProfileId: 5,
-    rootFolderPath: '/anime',
-    seriesType: 'anime',
-  };
+test('Réglages : un serveur enregistré se teste à l’ouverture et remplit les listes', async ({ page, api }) => {
+  api.state.arrServers = [
+    arrServer(1, 'radarr'),
+    arrServer(2, 'sonarr', { qualityProfileId: 5, rootFolderPath: '/anime', seriesType: 'anime' }),
+  ];
   let tested: unknown;
-  await page.route('**/api/setup/sonarr/test', (route) => {
+  await page.route('**/api/arr-servers/test', (route) => {
     tested = route.request().postDataJSON();
     return route.fulfill({ json: sonarrTest });
   });
   await page.goto('/reglages');
   await expect(page.getByRole('heading', { level: 1, name: 'Réglages' })).toBeVisible();
   await section(page, 'Sonarr').click();
+  await page.getByRole('button', { name: 'Modifier Sonarr' }).click();
   await expect(status(page)).toHaveText('Connexion réussie · Sonarr v4.0.11 · 3 profils, 2 dossiers');
-  expect(tested).toEqual({ url: 'http://192.0.2.20:8989', apiKey: '' });
+  expect(tested).toEqual({ url: 'http://192.0.2.20:8989', apiKey: '', type: 'sonarr', id: 2 });
   await expect(field(page, 'Clé d’API')).toHaveAttribute('placeholder', 'Clé enregistrée');
   await expect(field(page, 'Profil de qualité')).toHaveValue('5');
   await expect(field(page, 'Dossier racine')).toHaveValue('/anime');

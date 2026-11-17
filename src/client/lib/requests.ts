@@ -5,6 +5,7 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query';
+import { arrKindOf, arrLabel } from '../../shared/arr-servers.ts';
 import type { MediaKey, MediaType } from '../../shared/media.ts';
 import {
   type CreateRequestInput,
@@ -111,8 +112,12 @@ export function useCancelRequest() {
   });
 }
 
-/** Service qui reçoit la demande : Radarr pour un film, Sonarr pour une série. */
-export const arrName = (type: MediaType) => (type === 'movie' ? 'Radarr' : 'Sonarr');
+/** Service qui reçoit la demande : Radarr pour un film, Sonarr pour une série (« Radarr 4K » en 4K). */
+export const arrName = (type: MediaType, is4k = false) => arrLabel(arrKindOf(type), is4k);
+
+/** Service d'une demande : son serveur s'il est connu (« Radarr 4K », « Films bis »), sinon le type. */
+export const requestArrName = (request: Pick<RequestView, 'type' | 'is4k' | 'server'>) =>
+  request.server?.name || arrName(request.type, request.is4k);
 
 export const requestStatusLabel: Record<RequestStatus, string> = {
   pending: 'En attente',
@@ -155,8 +160,10 @@ const F = 'failed';
  * Seule traduction d'une demande (statut + statut du titre) en étapes : l'étape `current` est la dernière atteinte,
  * encore en cours. Refus et échec marquent l'approbation en rouge ; une demande annulée s'arrête à « Demandé ».
  */
-export function requestProgress(request: Pick<RequestView, 'status' | 'media' | 'type'>): RequestProgress {
-  const arr = arrName(request.type);
+export function requestProgress(
+  request: Pick<RequestView, 'status' | 'media' | 'type' | 'is4k' | 'server'>,
+): RequestProgress {
+  const arr = requestArrName(request);
   const media = request.media;
   switch (request.status) {
     case 'pending':
@@ -242,9 +249,13 @@ export function seasonsLabel(seasons: number[]): string {
 export const requestTitle = (request: Pick<RequestView, 'id' | 'media'>) =>
   request.media?.title ?? `Demande n° ${request.id}`;
 
-/** « Film · 2024 » ou « Série · saisons 1 et 2 ». */
-export const requestMeta = ({ type, media, seasons }: Pick<RequestView, 'type' | 'media' | 'seasons'>) =>
-  [mediaTypeLabel[type], type === 'tv' && seasons.length > 0 ? seasonsLabel(seasons) : media?.year].filter(Boolean);
+/** « Film · 2024 » ou « Série · saisons 1 et 2 », suivi de « 4K » pour une demande en 4K. */
+export const requestMeta = ({ type, media, seasons, is4k }: Pick<RequestView, 'type' | 'media' | 'seasons' | 'is4k'>) =>
+  [
+    mediaTypeLabel[type],
+    type === 'tv' && seasons.length > 0 ? seasonsLabel(seasons) : media?.year,
+    is4k && '4K',
+  ].filter(Boolean);
 
 /** Titre court d'une demande : « Shōgun · S1 », « Arcane · S1-2 » (cartes de Découvrir). */
 export function requestShortTitle(request: Pick<RequestView, 'id' | 'seasons' | 'media' | 'type'>): string {

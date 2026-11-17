@@ -1,16 +1,18 @@
-import { type IntegrationKey, type MaskedSetting, settingSchemas } from '@shared/settings.ts';
-import type { SetupSection, SetupState } from '@shared/setup.ts';
-import { useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type ArrKind, isArrKind } from '@shared/arr-servers.ts';
+import { type MaskedSetting, settingSchemas } from '@shared/settings.ts';
+import type { SettingSection, SetupSection, SetupState } from '@shared/setup.ts';
+import { type UseQueryResult, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import { type ReactNode, useState } from 'react';
 import { ErrorState } from '@/components/states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
 import { setupStateQuery } from '@/lib/session';
 import { ApiKeysSection } from './api-keys-section';
+import { ArrServersSection } from './arr-servers-section';
 import { type SectionId, sectionOrder } from './config';
 import { DiscordSection } from './discord-section';
 import { IntegrationSection } from './integration-section';
-import { settingQuery } from './queries';
+import { arrServersQuery, settingQuery } from './queries';
 import { RulesSection } from './rules-section';
 import { SectionFrame, type SectionFrameProps } from './section-frame';
 import { SeerrImportSection } from './seerr-import-section';
@@ -71,17 +73,74 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
   );
 }
 
-type ItemProps = SectionFrameProps<SetupSection> & { saved: boolean; wizard: boolean; onSaved: () => void };
+type ItemProps<S extends SetupSection = SetupSection> = SectionFrameProps<S> & {
+  saved: boolean;
+  wizard: boolean;
+  onSaved: () => void;
+};
 
-/** Charge le réglage enregistré (propriétaire seulement) puis affiche le formulaire de la section. */
-function SetupSectionItem({ saved, wizard, onSaved, ...frame }: ItemProps) {
+/** Radarr et Sonarr sont des serveurs (`/api/arr-servers`) ; les autres sections, des réglages. */
+function SetupSectionItem(props: ItemProps) {
+  const { section } = props;
+  return isArrKind(section) ? (
+    <ArrSectionItem {...props} section={section} />
+  ) : (
+    <SettingSectionItem {...props} section={section} />
+  );
+}
+
+/** Propriétaire seulement : pendant l'amorçage, personne n'est connecté, rien d'enregistré à relire. */
+const useCanRead = () => useViewer()?.capabilities.isOwner === true;
+
+function SettingSectionItem({ saved, wizard, onSaved, ...frame }: ItemProps<SettingSection>) {
   const { section } = frame;
-  const viewer = useViewer();
-  // Pendant l'amorçage, personne n'est connecté : rien d'enregistré à relire, le formulaire part vide.
-  const canRead = viewer?.capabilities.isOwner === true;
+  const canRead = useCanRead();
   const query = useQuery({ ...settingQuery(section), enabled: canRead });
+  return (
+    <Loaded query={query} enabled={canRead} frame={frame} saved={saved}>
+      {(data) => {
+        const stored = data ?? null;
+        const common = { ...frame, saved, wizard, onSaved };
+        if (section === 'rules')
+          return (
+            <RulesSection
+              {...common}
+              stored={(stored as MaskedSetting<'rules'> | null) ?? settingSchemas.rules.parse({})}
+            />
+          );
+        return (
+          <IntegrationSection {...common} service={section} stored={stored as MaskedSetting<typeof section> | null} />
+        );
+      }}
+    </Loaded>
+  );
+}
 
-  if (canRead && query.isPending)
+function ArrSectionItem({ section, ...props }: ItemProps<ArrKind>) {
+  const canRead = useCanRead();
+  const query = useQuery({ ...arrServersQuery, enabled: canRead });
+  return (
+    <Loaded query={query} enabled={canRead} frame={{ ...props, section }} saved={props.saved}>
+      {(servers) => <ArrServersSection {...props} section={section} kind={section} servers={servers ?? []} />}
+    </Loaded>
+  );
+}
+
+/** Chargement puis erreur d'une section, avant son formulaire (rien à charger quand `enabled` est faux). */
+function Loaded<T>({
+  query,
+  enabled,
+  frame,
+  saved,
+  children,
+}: {
+  query: UseQueryResult<T>;
+  enabled: boolean;
+  frame: SectionFrameProps;
+  saved: boolean;
+  children: (data: T | undefined) => ReactNode;
+}) {
+  if (enabled && query.isPending)
     return (
       <SectionFrame {...frame} status={saved ? 'done' : 'todo'}>
         <div role="status" className="space-y-4">
@@ -97,12 +156,5 @@ function SetupSectionItem({ saved, wizard, onSaved, ...frame }: ItemProps) {
         <ErrorState message="Ce réglage n’a pas pu se charger." onRetry={() => void query.refetch()} />
       </SectionFrame>
     );
-
-  const stored = canRead ? (query.data ?? null) : null;
-  const common = { ...frame, saved, wizard, onSaved };
-  if (section === 'rules')
-    return (
-      <RulesSection {...common} stored={(stored as MaskedSetting<'rules'> | null) ?? settingSchemas.rules.parse({})} />
-    );
-  return <IntegrationSection {...common} service={section} stored={stored as MaskedSetting<IntegrationKey> | null} />;
+  return children(enabled ? query.data : undefined);
 }

@@ -4,12 +4,11 @@ import type { Db } from '../src/server/db/index.ts';
 import { media, notifications, requestEvents, requestSeasons, requests, settings } from '../src/server/db/schema.ts';
 import { markAvailable } from '../src/server/services/requests.ts';
 import { IMPORTED_DETAIL } from '../src/server/services/seerr-import.ts';
-import { setSetting } from '../src/server/services/settings.ts';
 import { upsertFromEmby } from '../src/server/services/users.ts';
 import { SEERR_IMPORT_PATH, type SeerrImportResult } from '../src/shared/import.ts';
 import { closedPortUrl, type FakeHandler, status } from './fake-server.ts';
 import seerrFixture from './fixtures/seerr/request-emby-tv.json';
-import { loginAs, loginAsOwner, trackApps, trackFakeServers } from './helpers.ts';
+import { addArrServer, loginAs, loginAsOwner, trackApps, trackFakeServers } from './helpers.ts';
 
 const newApp = trackApps();
 const serve = trackFakeServers();
@@ -78,8 +77,8 @@ async function setup(items: Seerr[]) {
   const seerr = await serve({ 'GET /api/v1/request': seerrRoute(items) });
   // Radarr et Sonarr configurés : l'import ne doit jamais les appeler.
   const arr = await serve({});
-  setSetting(db, cryptoKey, 'radarr', { url: arr.url, apiKey: 'k', qualityProfileId: 1, rootFolderPath: '/films' });
-  setSetting(db, cryptoKey, 'sonarr', { url: arr.url, apiKey: 'k', qualityProfileId: 2, rootFolderPath: '/series' });
+  addArrServer({ db, cryptoKey }, { type: 'radarr', url: arr.url, rootFolderPath: '/films' });
+  addArrServer({ db, cryptoKey }, { type: 'sonarr', url: arr.url, qualityProfileId: 2, rootFolderPath: '/series' });
   const run = (dryRun = false, body: object = { url: seerr.url, apiKey: SEERR_KEY }, headers = owner.headers) =>
     app.inject({ method: 'POST', url: `${SEERR_IMPORT_PATH}${dryRun ? '?dryRun=1' : ''}`, headers, payload: body });
   return { app, db, owner, seerr, arr, run };
@@ -317,7 +316,7 @@ describe('POST /api/import/seerr', () => {
 });
 
 describe('demande 4K importée', () => {
-  it('en attente ou en échec : écartée et comptée, l’historique reste importé', async () => {
+  it('sans serveur 4K : en attente ou en échec, écartée et comptée ; l’historique reste importé', async () => {
     const { db, run } = await setup([
       seerrRequest({ status: 1, tmdbId: 1, is4k: true }),
       seerrRequest({ status: 4, tmdbId: 2, is4k: true }),
@@ -332,7 +331,26 @@ describe('demande 4K importée', () => {
     ]);
   });
 
-  it('ne passe pas « disponible » avec la version ordinaire du titre', async () => {
+  it('avec un serveur 4K du type : toutes reprises (en attente comprises), vers le serveur 4K par défaut', async () => {
+    const { app, db, arr, run } = await setup([
+      seerrRequest({ status: 1, tmdbId: 1, is4k: true }),
+      seerrRequest({ status: 4, tmdbId: 2, is4k: true }),
+      seerrRequest({ status: 1, tmdbId: 1396, type: 'tv', seasons: [1], is4k: true }),
+    ]);
+    const { id } = addArrServer(app.data, { type: 'radarr', url: arr.url, is4k: true });
+    const res = resultOf(await run());
+    // Pas de Sonarr 4K : la série 4K en attente reste écartée.
+    expect(res).toMatchObject({ imported: 2, skipped4k: 1 });
+    expect(
+      db.select({ status: requests.status, is4k: requests.is4k, serverId: requests.serverId }).from(requests).all(),
+    ).toEqual([
+      { status: 'pending', is4k: true, serverId: id },
+      { status: 'failed', is4k: true, serverId: id },
+    ]);
+    expect(arr.requests).toHaveLength(0);
+  });
+
+  it('ne passe « disponible » qu’avec la version 4K du titre', async () => {
     const { db, run } = await setup([seerrRequest({ status: 2, tmdbId: 2, is4k: true, status4k: 3 })]);
     await run();
     const [row] = rowsOf(db);
@@ -340,5 +358,7 @@ describe('demande 4K importée', () => {
     const mediaId = db.select().from(media).get()?.id ?? 0;
     db.update(media).set({ status: 'available' }).where(eq(media.id, mediaId)).run();
     expect(markAvailable(db, [mediaId], new Date())).toEqual([]);
+    db.update(media).set({ status4k: 'available' }).where(eq(media.id, mediaId)).run();
+    expect(markAvailable(db, [mediaId], new Date())).toEqual([row?.id]);
   });
 });
