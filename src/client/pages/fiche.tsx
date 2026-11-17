@@ -5,7 +5,7 @@ import { ChevronLeft, Film, Play, User, X } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
 import { MediaRail, Rail, SectionHeading } from '@/components/media/rail';
 import { DownloadBar, StatusPill } from '@/components/media/status-pill';
-import { Backdrop, GlassPill, MetaLine, RequestButton } from '@/components/media/title-parts';
+import { Backdrop, GlassPill, MetaLine, RequestButton, WatchlistButton } from '@/components/media/title-parts';
 import { WatchLink } from '@/components/media/watch-link';
 import { Page } from '@/components/page';
 import { QueryState } from '@/components/query-state';
@@ -260,6 +260,7 @@ function Fiche({ media }: { media: MediaDetails }) {
         <div className="flex flex-wrap gap-3 pt-2">
           <RequestButton media={media} className="grow sm:grow-0" />
           <WatchLink media={media} className="grow sm:grow-0" />
+          <WatchlistButton media={media} className="grow sm:grow-0" />
           {isYoutubeKey(media.trailerKey) && <TrailerButton title={media.title} trailerKey={media.trailerKey} />}
         </div>
       </FicheFrame>

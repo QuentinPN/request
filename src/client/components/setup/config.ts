@@ -11,15 +11,16 @@ const _complete: Exclude<SetupSection, (typeof sectionOrder)[number]> extends ne
 void _complete;
 
 /**
- * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord, l'import facultatif des demandes de Seerr
+ * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord, Trakt, l'import facultatif des demandes de Seerr
  * et les clés d'API (propriétaire, hors assistant : rien à tester ou facultatif).
  */
-export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord' | 'api';
+export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord' | 'trakt' | 'api';
 export const settingsSectionOrder = [
   ...sectionOrder,
   'webhooks',
   'seerr',
   'discord',
+  'trakt',
   'api',
 ] as const satisfies readonly SectionId[];
 
@@ -43,6 +44,7 @@ export const sectionText: Record<SectionId, { title: string; description: string
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
   seerr: { title: 'Importer depuis Seerr', description: 'Reprendre une fois les demandes de Jellyseerr ou Overseerr' },
   discord: { title: 'Notifications Discord', description: 'Facultatif : les évènements des demandes dans un salon' },
+  trakt: { title: 'Listes externes', description: 'Facultatif : import des listes de souhaits Trakt des membres' },
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
 };
 

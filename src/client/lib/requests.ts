@@ -26,6 +26,7 @@ import {
 import { mediaTypeLabel } from './catalogue.ts';
 import { apiGet, apiSend } from './http.ts';
 import { downloadPercent } from './status.ts';
+import { watchlistKeys } from './watchlist.ts';
 
 // Seules définitions des requêtes des demandes (clés et adresses), lues par la feuille, Mes demandes, Découvrir, la
 // fiche et la file d'approbation. Toutes les clés commencent par `requests` : `invalidateQueries({ queryKey:
@@ -90,7 +91,7 @@ export const requestDetailQuery = (id: number) =>
 
 /** Une demande change le statut des titres : catalogue, fiches et recherche sont relus avec les demandes. */
 export function invalidateAfterRequest(client: QueryClient) {
-  for (const queryKey of [requestKeys.all, ['discover'], ['media'], ['search']])
+  for (const queryKey of [requestKeys.all, ['discover'], ['media'], ['search'], watchlistKeys.list])
     void client.invalidateQueries({ queryKey });
 }
 

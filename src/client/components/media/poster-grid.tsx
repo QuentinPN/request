@@ -1,5 +1,6 @@
 import type { InfiniteData, UseInfiniteQueryResult } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { MediaSummary, Paged } from '../../../shared/media.ts';
 import { mediaKey, uniqueMedia } from '../../lib/catalogue.ts';
 import { QueryState } from '../query-state.tsx';
@@ -21,13 +22,18 @@ export function PosterGridSkeleton({ count = 18 }: { count?: number }) {
   );
 }
 
-/** Grille d'affiches paginée, avec « Charger plus » tant que TMDB a d'autres pages. */
+/**
+ * Grille d'affiches paginée, avec « Charger plus » tant que TMDB a d'autres pages. `footer` ajoute une action sous
+ * l'affiche (« Retirer » de Ma liste).
+ */
 export function PosterGrid({
   query,
   empty,
+  footer,
 }: {
   query: UseInfiniteQueryResult<InfiniteData<Paged<MediaSummary>>>;
   empty: { title: string; description?: string };
+  footer?: (media: MediaSummary) => ReactNode;
 }) {
   const { hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } = query;
   return (
@@ -44,6 +50,7 @@ export function PosterGrid({
             {uniqueMedia(data.pages.flatMap((page) => page.results)).map((media) => (
               <li key={mediaKey(media)}>
                 <MediaPoster media={media} layout="grid" />
+                {footer?.(media)}
               </li>
             ))}
           </ul>

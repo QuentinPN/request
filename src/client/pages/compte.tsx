@@ -1,7 +1,7 @@
 import { roleLabels } from '@shared/roles.ts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ChartColumn, LogOut, Settings } from 'lucide-react';
+import { Bookmark, ChartColumn, LogOut, Settings } from 'lucide-react';
 import { Notice } from '@/components/notice';
 import { Page } from '@/components/page';
 import { Avatar } from '@/components/shell/avatar';
@@ -35,6 +35,11 @@ export function ComptePage() {
           <p className="text-sm text-muted-foreground">{roleLabels[viewer.role]}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Hors de la barre d'onglets du mobile, déjà pleine : on y accède d'ici. */}
+          <Link to="/ma-liste" className={buttonVariants({ variant: 'secondary' })}>
+            <Bookmark data-icon="inline-start" />
+            Ma liste
+          </Link>
           {viewer.capabilities.canViewStats && (
             <Link to="/statistiques" className={buttonVariants({ variant: 'secondary' })}>
               <ChartColumn data-icon="inline-start" />

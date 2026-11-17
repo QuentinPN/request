@@ -1,6 +1,6 @@
 import type { Capabilities } from '@shared/roles.ts';
 import type { LinkProps } from '@tanstack/react-router';
-import { ChartColumn, Check, Clapperboard, House, List, type LucideIcon, Tv, User } from 'lucide-react';
+import { Bookmark, ChartColumn, Check, Clapperboard, House, List, type LucideIcon, Tv, User } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { useViewer } from '@/hooks/use-viewer';
 
@@ -26,6 +26,7 @@ export const navItems: readonly NavItem[] = [
   { to: '/films', label: 'Films', icon: Clapperboard, in: ['pill'] },
   { to: '/series', label: 'Séries', icon: Tv, in: ['pill'] },
   { to: '/demandes', label: 'Demandes', icon: List, in: ['pill', 'tabs'] },
+  { to: '/ma-liste', label: 'Ma liste', icon: Bookmark, in: ['pill'] },
   {
     to: '/approbations',
     label: 'Approbations',

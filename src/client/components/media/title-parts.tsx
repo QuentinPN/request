@@ -1,7 +1,10 @@
+import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
-import { Plus } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Plus } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 import { imageUrl, type MediaSummary } from '../../../shared/media.ts';
+import { errorMessage } from '../../lib/http.ts';
+import { inWatchlistQuery, useSetInWatchlist } from '../../lib/watchlist.ts';
 import { useRequestAction } from '../requests/request-sheet.tsx';
 import { Button } from '../ui/button.tsx';
 
@@ -61,6 +64,37 @@ export function RequestButton({ media, className }: { media: MediaSummary; class
       <Plus data-icon="inline-start" />
       Demander
     </Button>
+  );
+}
+
+/**
+ * « Ajouter à ma liste » / « Dans ma liste » de la fiche : un clic ajoute ou retire le titre de la liste de souhaits du
+ * membre. Une erreur du serveur s'affiche sous les boutons (la ligne d'actions passe à la ligne).
+ */
+export function WatchlistButton({ media, className }: { media: MediaSummary; className?: string }) {
+  const item = { type: media.type, tmdbId: media.tmdbId };
+  const query = useQuery(inWatchlistQuery(item));
+  const set = useSetInWatchlist(item);
+  const inList = query.data?.inList ?? false;
+  const Icon = inList ? BookmarkCheck : Bookmark;
+  return (
+    <>
+      <Button
+        variant="secondary"
+        size="lg"
+        className={cn('border-input', className)}
+        disabled={query.isPending || set.isPending}
+        onClick={() => set.mutate(!inList)}
+      >
+        <Icon data-icon="inline-start" />
+        {inList ? 'Dans ma liste' : 'Ajouter à ma liste'}
+      </Button>
+      {set.isError && (
+        <p role="alert" className="basis-full text-sm text-(--text-danger)">
+          {errorMessage(set.error, 'La liste n’a pas pu être modifiée.')}
+        </p>
+      )}
+    </>
   );
 }
 

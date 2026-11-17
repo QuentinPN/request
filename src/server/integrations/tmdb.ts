@@ -48,6 +48,7 @@ const optionalString = z.string().nullish();
 const rawMedia = z.object({
   id: z.number().int(),
   title: optionalString,
+  original_title: optionalString,
   name: optionalString,
   release_date: optionalString,
   first_air_date: optionalString,
@@ -307,6 +308,17 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
     /** Résumé d'un titre (affiche, année, synopsis), sans le reste de la fiche. */
     summary: async (type: MediaType, id: number): Promise<MediaSummary> =>
       toSummary(await get(`/${type}/${id}`, rawMedia, {}, DETAILS_TTL_MS), type),
+
+    /**
+     * Films dont le titre correspond à la recherche, dans l'ordre de TMDB, avec leur titre original (les titres
+     * d'autres langues, comme ceux de Letterboxd, y sont rapprochés). Sans filtre d'année : c'est l'appelant qui
+     * juge, une sortie en festival ou à l'étranger décalant souvent l'année d'un an.
+     */
+    searchMovies: async (query: string): Promise<Array<MediaSummary & { originalTitle: string }>> =>
+      (await get('/search/movie', mediaPage, { query }, LIST_TTL_MS)).results.map((raw) => ({
+        ...toSummary(raw, 'movie'),
+        originalTitle: raw.original_title ?? '',
+      })),
 
     /** Identifiant TVDB d'une série (Sonarr), `null` si TMDB ne le connaît pas. */
     tvdbIdFor: async (tvId: number): Promise<number | null> => {

@@ -19,6 +19,7 @@ import { requestsRoutes } from './routes/requests.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { statsRoutes } from './routes/stats.ts';
 import { usersRoutes } from './routes/users.ts';
+import { watchlistRoutes } from './routes/watchlist.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
 import { type AvailabilityService, createAvailability } from './services/availability.ts';
 import { parseBackupKeep, startBackups } from './services/backup.ts';
@@ -48,6 +49,8 @@ export interface Upstreams {
   imagesUrl?: string;
   /** Remplace l'hôte des webhooks Discord ; l'adresse enregistrée reste, elle, celle de discord.com. */
   discordUrl?: string;
+  /** Remplace l'API publique de Trakt (import des listes de souhaits). */
+  traktUrl?: string;
 }
 
 const root = resolve(import.meta.dirname, '../..');
@@ -129,6 +132,7 @@ export async function buildApp({
   webhookRoutes(app, sync);
   apiKeysRoutes(app);
   importRoutes(app);
+  watchlistRoutes(app, upstreams);
   statsRoutes(app);
   await app.register(catalogueRoutes);
   await app.register(embyRoutes);

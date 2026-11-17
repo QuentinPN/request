@@ -14,6 +14,7 @@ import { settingQuery } from './queries';
 import { RulesSection } from './rules-section';
 import { SectionFrame, type SectionFrameProps } from './section-frame';
 import { SeerrImportSection } from './seerr-import-section';
+import { TraktSection } from './trakt-section';
 import { WebhooksSection } from './webhooks-section';
 
 /** Amorçage : sans propriétaire, seule la section Emby est accessible. */
@@ -62,6 +63,7 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
           <SeerrImportSection section="seerr" open={open === 'seerr'} onToggle={() => toggle('seerr')} />
           <DiscordSection section="discord" open={open === 'discord'} onToggle={() => toggle('discord')} />
+          <TraktSection section="trakt" open={open === 'trakt'} onToggle={() => toggle('trakt')} />
           <ApiKeysSection section="api" open={open === 'api'} onToggle={() => toggle('api')} />
         </>
       )}

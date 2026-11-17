@@ -2,6 +2,7 @@ import { API_KEYS_PATH, type ApiKey } from '@shared/api-keys.ts';
 import { DISCORD_SETTINGS_PATH } from '@shared/discord.ts';
 import type { MaskedSetting, SettingInput } from '@shared/settings.ts';
 import type { SetupSection } from '@shared/setup.ts';
+import { TRAKT_SETTINGS_PATH } from '@shared/watchlist.ts';
 import { WEBHOOK_SETTINGS_PATH, type WebhookSettings } from '@shared/webhooks.ts';
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 import { embyLinkQuery } from '@/lib/emby';
@@ -32,6 +33,12 @@ export const webhooksQuery = queryOptions({
 export const discordQuery = queryOptions({
   queryKey: ['settings', 'discord'],
   queryFn: ({ signal }) => apiGet<MaskedSetting<'discord'>>(DISCORD_SETTINGS_PATH, undefined, signal),
+});
+
+/** Client ID Trakt : masqué (`{ set }`), jamais renvoyé (propriétaire seulement). */
+export const traktQuery = queryOptions({
+  queryKey: ['settings', 'trakt'],
+  queryFn: ({ signal }) => apiGet<MaskedSetting<'trakt'>>(TRAKT_SETTINGS_PATH, undefined, signal),
 });
 
 /** Clés d'API publiques, révoquées comprises, sans leur secret (propriétaire seulement). */
