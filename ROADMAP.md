@@ -36,7 +36,7 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 - [x] **3.1** (P0) Client TMDB avec cache, rangées Découvrir, recherche, fiche film et série → fixtures TMDB, captures
 - [x] **3.2** (P0) Statut de disponibilité calculé côté serveur (Emby + Radarr/Sonarr) et affiché sur chaque affiche → tests par cas (absent, partiel, disponible, en téléchargement)
 - [x] **3.3** (P1) Lien « Regarder dans Emby » (adresse publique d'Emby dans les réglages) et nombre d'épisodes présents par saison dans le contrat → affiches et fiche
-- [ ] **3.4** (P1) Logo et favicon : choix du propriétaire entre les finalistes de `docs/logo/round2/final`, puis intégration (en-tête, favicon, icônes)
+- [x] **3.4** (P1) Logo et favicon : choix du propriétaire entre les finalistes de `docs/logo/round2/final`, puis intégration (en-tête, favicon, icônes) — R-loupe, voir DESIGN.md « Logo »
 
 ## Phase 4 — Demandes
 
