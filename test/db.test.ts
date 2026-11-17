@@ -1,21 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { decrypt, encrypt, loadOrCreateKey } from '../src/server/crypto.ts';
 import { openDataDir, openDb } from '../src/server/db/index.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
+import { trackTempDirs } from './helpers.ts';
 
-const dirs: string[] = [];
-const tempDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'request-'));
-  dirs.push(dir);
-  return dir;
-};
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+const tempDir = trackTempDirs();
 
 describe('migrations', () => {
   it('créent la table settings et ne se rejouent pas à la réouverture', () => {

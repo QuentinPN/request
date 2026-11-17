@@ -14,23 +14,23 @@ declare module 'fastify' {
 const root = resolve(import.meta.dirname, '../..');
 const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { version: string };
 
+/** `/api`, `/api/...` et `/api?...` appartiennent à l'API, jamais à la SPA. */
+export const isApiPath = (url: string) => /^\/api(?:[/?]|$)/.test(url);
+
 /** Construit l'application sans écouter de port : réutilisée par le serveur, le dev Vite et les tests. */
-export async function buildApp({ clientDir, data }: { clientDir?: string; data?: Data } = {}) {
+export async function buildApp({ clientDir, data }: { clientDir?: string; data: Data }) {
   const app = Fastify({ logger: false });
-  if (data) {
-    app.decorate('data', data);
-    app.addHook('onClose', () => data.db.$client.close());
-  }
+  app.decorate('data', data);
+  app.addHook('onClose', () => data.db.$client.close());
 
   app.get('/api/health', async (): Promise<Health> => ({ status: 'ok', version }));
 
-  if (clientDir && existsSync(clientDir)) {
-    await app.register(fastifyStatic, { root: clientDir, wildcard: false });
-    // SPA : toute route hors /api renvoie index.html.
-    app.setNotFoundHandler((req, reply) =>
-      req.url.startsWith('/api/') ? reply.code(404).send({ error: 'Introuvable' }) : reply.sendFile('index.html'),
-    );
-  }
+  const hasClient = clientDir !== undefined && existsSync(clientDir);
+  if (hasClient) await app.register(fastifyStatic, { root: clientDir, wildcard: false });
+  // /api inconnu : 404 JSON. Hors /api : index.html (SPA) si le client est construit, sinon 404 JSON.
+  app.setNotFoundHandler((req, reply) =>
+    hasClient && !isApiPath(req.url) ? reply.sendFile('index.html') : reply.code(404).send({ error: 'Introuvable' }),
+  );
   return app;
 }
 
