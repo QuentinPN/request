@@ -8,6 +8,7 @@ import { setSetting } from '../src/server/services/settings.ts';
 import { upsertFromEmby } from '../src/server/services/users.ts';
 import { SEERR_IMPORT_PATH, type SeerrImportResult } from '../src/shared/import.ts';
 import { closedPortUrl, type FakeHandler, status } from './fake-server.ts';
+import seerrFixture from './fixtures/seerr/request-emby-tv.json';
 import { loginAs, loginAsOwner, trackApps, trackFakeServers } from './helpers.ts';
 
 const newApp = trackApps();
@@ -172,6 +173,31 @@ describe('POST /api/import/seerr', () => {
       ['200', '100', 'all'],
     ]);
     expect(countOf(db, requests)).toBe(230);
+  });
+
+  it('lit une demande au format réel de Seerr 3.5.2 (compte Emby : `userType` 4, id Emby dans `jellyfinUserId`)', async () => {
+    const { db, run } = await setup([seerrFixture]);
+    // Même id que celui renvoyé par Emby (`User.Id`), nom différent : la correspondance se fait par l'id.
+    upsertFromEmby(db, {
+      id: 'f1e2d3c4b5a697887766554433221100',
+      name: 'Alice (salon)',
+      avatar: null,
+      isEmbyAdmin: false,
+    });
+    expect(resultOf(await run())).toMatchObject({ imported: 1, unmatchedUsers: [], unmatchedMedia: 0 });
+    expect(rowsOf(db)).toEqual([
+      {
+        id: expect.any(Number),
+        status: 'sent',
+        userId: 'f1e2d3c4b5a697887766554433221100',
+        tmdbId: 1396,
+        is4k: false,
+        externalRef: 'seerr:42',
+        createdAt: new Date('2026-10-01T18:30:12.000Z'),
+      },
+    ]);
+    const seasons = db.select().from(requestSeasons).all();
+    expect(seasons.map((s) => s.seasonNumber).sort()).toEqual([1, 2]);
   });
 
   it('retrouve les membres par id Emby puis par nom, et signale les autres sans rien créer', async () => {

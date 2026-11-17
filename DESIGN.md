@@ -53,6 +53,21 @@ shadcn lit ses propres variables. On les dérive des tokens, sans dupliquer de v
 
 Piège : chez shadcn, `--accent` est le fond de survol. L'accent de marque `#E8C9A6` va dans `--brand`, sinon chaque menu se teinte en beige.
 
+## Logo
+
+**R-loupe** (choix du propriétaire, 3.4) : dans « Request », le « R » est une loupe, sa panse est le verre (accent de marque) et sa jambe le manche. Sources : `docs/logo/round2/final/r-loupe/`, planche de contrôle `docs/logo/round2/final/planche-v2.png`.
+
+| Fichier                                                                                    | Usage                                                                                                                                  |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/client/components/logo.tsx` (`<Logo />`)                                              | mot-symbole de l'appli (en-tête, connexion, assistant) : lettres en `currentColor`, verre en `--brand`, nom accessible « Request » |
+| `lockup-dark.svg`, `lockup-light.svg`                                                      | mot-symbole hors appli, sur fond sombre ou clair                                                                                       |
+| `icon.svg`, `icon-light.svg`                                                               | icône (R complet : fût, verre, manche) sur tuile sombre ou claire, dès 48 px                                                           |
+| `favicon.svg`                                                                              | petit format (16 et 32 px) : traits épaissis, verre plein sans liseré, tuile selon `prefers-color-scheme`                              |
+| `mark.svg`, `mark-light.svg`, `mark-mono.svg`                                              | R seul sans tuile ; `mark-mono` en une couleur (`currentColor`), verre vide                                                            |
+| `public/` : `favicon*.png`, `apple-touch-icon.png`, `icon-192/512.png`, `site.webmanifest` | exports servis par l'appli ; l'icône Apple est carrée et opaque (iOS arrondit lui-même)                                                |
+
+Tailles minimales : mot-symbole 16 px de haut (`h-[1.3em]` sur un texte de 13 px au moins) ; icône grand format 48 px, en dessous le petit format `favicon.svg`. Zone de protection : la largeur du fût du R tout autour. Ne pas recolorer le verre hors `--brand`, ne pas déformer, ne pas remettre la loupe seule sans le fût.
+
 ## Écrans
 
 - **Navigation** : pilule en verre centrée en haut (Découvrir, Films, Séries, Demandes, recherche `Ctrl+K`, compte) ; sur mobile, barre d'onglets flottante en verre en bas. Entrée « Approbations » avec compteur pour les admins.

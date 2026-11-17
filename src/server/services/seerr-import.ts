@@ -17,7 +17,10 @@ export const IMPORTED_DETAIL = 'Importée depuis Seerr';
 /** Origine gardée sur la demande (`requests.external_ref`) : un nouvel import la reconnaît. */
 const externalRefOf = (seerrId: number) => `seerr:${seerrId}`;
 
-/** Ids Emby comparés sans casse ni tirets : Jellyseerr peut les écrire au format GUID. [?] */
+/**
+ * Ids Emby comparés sans casse ni tirets. Seerr 3.5.2 range tel quel le `User.Id` renvoyé par Emby (même valeur que
+ * l'id du membre) ; la normalisation ne protège que d'un ancien Jellyseerr qui l'aurait écrit au format GUID.
+ */
 const normalizeId = (id: string) => id.toLowerCase().replaceAll('-', '');
 const normalizeName = (name: string) => name.trim().toLowerCase();
 

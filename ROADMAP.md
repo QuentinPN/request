@@ -10,7 +10,7 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 - [x] **0.2** (P0) Validation d'une direction : page « Recommandation » du canevas (détail dans DESIGN.md, « Direction validée »)
 - [x] **0.3** (P1) Variante Base UI de shadcn confirmée (`@base-ui/react` installé, composants de base en place)
 - [x] **0.4** (P0, avant la phase 2) Lire le README de Seerr ; confirmer ou ajuster la liste MVP / plus tard de PRODUCT.md
-- [~] **0.5** (P0, avant la phase 2) API réelles : Emby (authentification, recherche par id TMDB, webhooks), Radarr et Sonarr v3 (ajout, file, webhooks), TMDB ; versions installées sur le mini-PC à fournir par le propriétaire, sans rien modifier. Référence documentaire faite : [docs/integrations.md](docs/integrations.md) ; restent les points [?] à confirmer sur les vraies instances
+- [x] **0.5** (P0, avant la phase 2) API réelles : Emby (authentification, recherche par id TMDB, webhooks), Radarr et Sonarr v3 (ajout, file, webhooks), TMDB ; versions installées sur le mini-PC à fournir par le propriétaire, sans rien modifier. Versions vérifiées (Emby 4.10.2.0, Radarr 7.0.3, Sonarr 4.0.20, Seerr 3.5.2) ; 4 points restants à confirmer sur l'instance réelle, listés dans [docs/integrations.md](docs/integrations.md)
 
 ## Phase 1 — Socle
 
@@ -36,7 +36,7 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 - [x] **3.1** (P0) Client TMDB avec cache, rangées Découvrir, recherche, fiche film et série → fixtures TMDB, captures
 - [x] **3.2** (P0) Statut de disponibilité calculé côté serveur (Emby + Radarr/Sonarr) et affiché sur chaque affiche → tests par cas (absent, partiel, disponible, en téléchargement)
 - [x] **3.3** (P1) Lien « Regarder dans Emby » (adresse publique d'Emby dans les réglages) et nombre d'épisodes présents par saison dans le contrat → affiches et fiche
-- [ ] **3.4** (P1) Logo et favicon : choix du propriétaire entre les finalistes de `docs/logo/round2/final`, puis intégration (en-tête, favicon, icônes)
+- [x] **3.4** (P1) Logo et favicon : choix du propriétaire entre les finalistes de `docs/logo/round2/final`, puis intégration (en-tête, favicon, icônes) — R-loupe, voir DESIGN.md « Logo »
 
 ## Phase 4 — Demandes
 

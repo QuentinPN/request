@@ -10,7 +10,8 @@ export type EmbyConfig = Connection<'emby'>;
 const SERVICE = 'Emby';
 /** Nombre maximal d'identifiants par requête `AnyProviderIdEquals` (liste séparée par des virgules). */
 const PROVIDER_ID_CHUNK = 50;
-const AUTHORIZATION = 'MediaBrowser Client="Request", Device="Server", DeviceId="request", Version="1.0"';
+/** Forme documentée par l'API REST d'Emby 4.10 (`Emby Client=…, Device=…, DeviceId=…, Version=…`). */
+const AUTHORIZATION = 'Emby Client="Request", Device="Server", DeviceId="request", Version="1.0"';
 
 const embyClient = (config: EmbyConfig) =>
   createClient({ service: SERVICE, baseUrl: config.url, headers: { 'X-Emby-Token': config.apiKey } });
@@ -34,9 +35,32 @@ type EmbyUserDto = z.infer<typeof userSchema>;
 // `AccessToken` volontairement absent du schéma : Zod l'écarte, il ne sort jamais de ce module.
 const authenticationSchema = z.object({ User: userSchema });
 
-const librariesSchema = z.array(
-  z.object({ ItemId: id.nullish(), Name: z.string(), CollectionType: z.string().nullish() }),
-);
+/**
+ * Réponse des listes documentées d'Emby 4.10 (`/Users/Query`, `/Library/VirtualFolders/Query`) : `{ Items,
+ * TotalRecordCount }`. `GET /Users` et `GET /Library/VirtualFolders` n'apparaissent plus dans sa référence.
+ */
+const queryResult = <T extends z.ZodType>(item: T) =>
+  z.object({ Items: z.array(item), TotalRecordCount: z.number().int().nonnegative().nullish() });
+
+const librarySchema = z.object({ ItemId: id.nullish(), Name: z.string(), CollectionType: z.string().nullish() });
+
+/** Taille de page des listes `…/Query` : Emby peut plafonner une réponse, on lit page après page. */
+const QUERY_PAGE_SIZE = 200;
+
+/** Lit toutes les pages d'une liste `…/Query` (`StartIndex`/`Limit`) jusqu'à `TotalRecordCount`. */
+async function queryAll<T extends z.ZodType>(config: EmbyConfig, path: string, item: T): Promise<z.output<T>[]> {
+  const client = embyClient(config);
+  const schema = queryResult(item);
+  const all: z.output<T>[] = [];
+  for (;;) {
+    const { Items, TotalRecordCount } = await client.get(path, schema, {
+      query: { StartIndex: all.length, Limit: QUERY_PAGE_SIZE },
+    });
+    all.push(...Items);
+    const total = TotalRecordCount ?? all.length;
+    if (Items.length === 0 || all.length >= total) return all;
+  }
+}
 
 const providerIdsSchema = z.record(z.string(), z.union([z.string(), z.number()]).nullable()).nullish();
 
@@ -138,12 +162,13 @@ export async function authenticateEmbyUser(config: EmbyConfig, username: string,
 }
 
 export async function listEmbyUsers(config: EmbyConfig): Promise<EmbyListedUser[]> {
-  const users = await embyClient(config).get('/Users', z.array(userSchema));
+  // Sans filtre `IsDisabled` : les comptes désactivés sont listés aussi (champ `isDisabled`).
+  const users = await queryAll(config, '/Users/Query', userSchema);
   return users.map((user) => ({ ...toEmbyUser(user), isDisabled: user.Policy?.IsDisabled ?? false }));
 }
 
 export async function listEmbyLibraries(config: EmbyConfig): Promise<EmbyLibrary[]> {
-  const folders = await embyClient(config).get('/Library/VirtualFolders', librariesSchema);
+  const folders = await queryAll(config, '/Library/VirtualFolders/Query', librarySchema);
   return folders.flatMap((folder): EmbyLibrary[] => {
     if (!folder.ItemId) return [];
     const type =

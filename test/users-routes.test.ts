@@ -39,7 +39,7 @@ describe('POST /api/users/import', () => {
   it('importe les comptes Emby actifs sans jamais promouvoir', async () => {
     const app = await newApp();
     const owner = await loginAsOwner(app);
-    await withEmby(app, { 'GET /Users': usersFixture });
+    await withEmby(app, { 'GET /Users/Query': usersFixture });
     const res = await app.inject({ method: 'POST', url: '/api/users/import', headers: owner.headers });
     expect(res.statusCode).toBe(200);
     const byId = new Map((res.json() as Array<{ id: string; role: string }>).map((m) => [m.id, m]));

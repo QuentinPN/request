@@ -24,17 +24,18 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 
 ## Risques et points de vigilance
 
-| Risque                                                                                                                 | Impact                                         | Traitement                                                    |
-| ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
-| Points [?] des API (Emby `AnyProviderIdEquals`, lien profond et `serverId`, noms d'événements Sonarr, champs de Seerr) | Statuts, liens ou import faux en production    | 0.5 : essai sur le mini-PC avant 6.3                          |
-| Radarr/Sonarr doivent joindre l'adresse des webhooks depuis leur conteneur                                             | Statuts mis à jour seulement par les balayages | Vérifier au déploiement ; le balayage de 10 min sert de filet |
-| Rebinding DNS pendant l'amorçage (avant propriétaire)                                                                  | Prise de contrôle pendant l'installation       | Accepté, documenté ; installation courte en réseau local      |
-| Clé de chiffrement `/data/secret.key`                                                                                  | Sauvegarde inutilisable sans elle              | Documenté dans DEPLOIEMENT.md ; la sauvegarder à part         |
-| Restauration de sauvegarde jamais exercée                                                                              | Perte de données en cas d'incident             | À tester lors du déploiement (6.3)                            |
+| Risque                                                                                                                                                                  | Impact                                         | Traitement                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 4 points des API restants à confirmer (docs/integrations.md ; versions vérifiées : Emby 4.10.2.0, Radarr 7.0.3, Sonarr 4.0.20, Seerr 3.5.2)                             | Statuts, liens ou import faux en production    | Essai sur l'instance réelle avant 6.3                                                                |
+| Routes Emby passées à `/Users/Query` et `/Library/VirtualFolders/Query` avec l'en-tête d'authentification `Emby`, d'après la référence 4.10, pas encore testées en réel | Connexion ou liste des bibliothèques en échec  | Le bouton « Tester » de l'assistant le révèle aussitôt ; retour possible aux routes qu'utilise Seerr |
+| Radarr/Sonarr doivent joindre l'adresse des webhooks depuis leur conteneur                                                                                              | Statuts mis à jour seulement par les balayages | Vérifier au déploiement ; le balayage de 10 min sert de filet                                        |
+| Rebinding DNS pendant l'amorçage (avant propriétaire)                                                                                                                   | Prise de contrôle pendant l'installation       | Accepté, documenté ; installation courte en réseau local                                             |
+| Clé de chiffrement `/data/secret.key`                                                                                                                                   | Sauvegarde inutilisable sans elle              | Documenté dans DEPLOIEMENT.md ; la sauvegarder à part                                                |
+| Restauration de sauvegarde jamais exercée                                                                                                                               | Perte de données en cas d'incident             | À tester lors du déploiement (6.3)                                                                   |
 
 ## Prochaines actions (côté propriétaire)
 
-1. **Logo (3.4)** : choisir entre les finalistes de `docs/logo/round2/final` (R-loupe ou U négatif), puis intégration.
-2. **Versions réelles (0.5)** : fournir les versions d'Emby, Radarr, Sonarr et Seerr du mini-PC pour lever les points [?].
-3. **Fusion `dev` → `main`** : à faire avec votre accord.
+1. ~~**Logo (3.4)**~~ : fait (R-loupe intégré).
+2. **Points restants (0.5)** : confirmer sur l'instance réelle les 4 points de `docs/integrations.md`.
+3. ~~**Fusion `dev` → `main`**~~ : faite (#31).
 4. **Déploiement (6.3)** : sur le mini-PC à côté de Seerr, avec votre accord ; parcourir l'assistant, tester la restauration, essai avec de vrais membres, puis arrêt de Seerr.

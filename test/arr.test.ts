@@ -395,12 +395,35 @@ describe('webhooks', () => {
     expect(parseRadarrWebhook({ eventType: 'Rename', movie: { tmdbId: 1 } }).event).toBe('other');
   });
 
-  it('suppressions (titre ou fichier) et fin d’import', () => {
+  it('suppressions (titre ou fichier)', () => {
     for (const eventType of ['MovieDelete', 'MovieFileDelete'])
       expect(parseRadarrWebhook({ eventType, movie: { tmdbId: 1 } }).event).toBe('deleted');
     for (const eventType of ['SeriesDelete', 'EpisodeFileDelete'])
       expect(parseSonarrWebhook({ eventType, series: { tvdbId: 5 } }).event).toBe('deleted');
-    expect(parseSonarrWebhook({ eventType: 'ImportComplete', series: { tvdbId: 5 } }).event).toBe('download');
+  });
+
+  it('Radarr : MovieFileDelete réel (motif `upgrade`), un simple recalcul', () => {
+    expect(parseRadarrWebhook(fixture('radarr-webhook-movie-file-delete'))).toEqual({
+      event: 'deleted',
+      tmdbId: 603,
+      isUpgrade: false,
+    });
+  });
+
+  it('Sonarr : fin d’import d’un lot (« On Import Complete ») envoyée en `Download`, sans `isUpgrade`', () => {
+    expect(parseSonarrWebhook(fixture('sonarr-webhook-import-complete'))).toEqual({
+      event: 'download',
+      tmdbId: 1396,
+      tvdbId: 81189,
+      seasons: [4],
+      isUpgrade: false,
+    });
+    // `ImportComplete` n'est pas une valeur de `WebhookEventType` (Sonarr 4.0.20) : ignoré s'il arrivait.
+    expect(parseSonarrWebhook({ eventType: 'ImportComplete', series: { tvdbId: 5 } }).event).toBe('other');
+  });
+
+  it('Sonarr : charge de « Test » réelle', () => {
+    expect(parseSonarrWebhook(fixture('sonarr-webhook-test')).event).toBe('test');
   });
 
   it("charge malformée : 'other', sans lever d'erreur", () => {

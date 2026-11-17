@@ -10,7 +10,7 @@ import {
 } from '../src/server/integrations/emby.ts';
 import type { IntegrationError } from '../src/server/integrations/http.ts';
 import { embyWebLink } from '../src/shared/emby.ts';
-import { closedPortUrl, startFakeServer, status } from './fake-server.ts';
+import { closedPortUrl, sequence, startFakeServer, status } from './fake-server.ts';
 import authenticateFixture from './fixtures/emby/authenticate.json';
 import episodesFixture from './fixtures/emby/episodes.json';
 import librariesFixture from './fixtures/emby/libraries.json';
@@ -84,7 +84,8 @@ describe('authenticateEmbyUser', () => {
 
     const request = server.requests[0];
     expect(request?.body).toEqual({ Username: 'alice', Pw: PASSWORD });
-    expect(request?.headers['x-emby-authorization']).toContain('Client="Request"');
+    // Forme de la référence Emby 4.10 : `Emby Client="…", Device="…", DeviceId="…", Version="…"`.
+    expect(request?.headers['x-emby-authorization']).toMatch(/^Emby Client="Request", Device="[^"]+", DeviceId=/);
     expect(request?.headers['x-emby-token']).toBeUndefined();
   });
 
@@ -120,19 +121,32 @@ describe('authenticateEmbyUser', () => {
 });
 
 describe('listEmbyUsers', () => {
-  it('liste les utilisateurs avec droits, état et photo', async () => {
-    const server = await serve({ 'GET /Users': usersFixture });
+  it('liste les utilisateurs (`/Users/Query`, désactivés compris) avec droits, état et photo', async () => {
+    const server = await serve({ 'GET /Users/Query': usersFixture });
     expect(await listEmbyUsers(server.config)).toEqual([
       { id: 'u-1', name: 'alice', isAdmin: true, isDisabled: false, avatarUrl: '/Users/u-1/Images/Primary?tag=tag42' },
       { id: 'u-2', name: 'bob', isAdmin: false, isDisabled: true, avatarUrl: null },
       { id: 'u-3', name: 'carol', isAdmin: false, isDisabled: false, avatarUrl: null },
     ]);
+    expect(server.requests[0]?.query.IsDisabled).toBeUndefined();
+  });
+
+  it('lit toutes les pages quand Emby plafonne la réponse (`TotalRecordCount`)', async () => {
+    const [first, ...rest] = usersFixture.Items;
+    const server = await serve({
+      'GET /Users/Query': sequence(
+        status(200, { Items: [first], TotalRecordCount: usersFixture.Items.length }),
+        status(200, { Items: rest, TotalRecordCount: usersFixture.Items.length }),
+      ),
+    });
+    expect((await listEmbyUsers(server.config)).map((user) => user.id)).toEqual(['u-1', 'u-2', 'u-3']);
+    expect(server.requests.map((req) => req.query.StartIndex)).toEqual(['0', '1']);
   });
 });
 
 describe('listEmbyLibraries', () => {
   it('classe les bibliothèques en films, séries ou autre', async () => {
-    const server = await serve({ 'GET /Library/VirtualFolders': librariesFixture });
+    const server = await serve({ 'GET /Library/VirtualFolders/Query': librariesFixture });
     expect(await listEmbyLibraries(server.config)).toEqual([
       { id: '10', name: 'Films', type: 'movies' },
       { id: '11', name: 'Séries', type: 'tvshows' },

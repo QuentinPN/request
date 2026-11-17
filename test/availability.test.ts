@@ -44,10 +44,13 @@ const providerIds = (e: EmbyEntry) => ({
 /** Faux Emby : recherche par ids de fournisseur, derniers ajouts et épisodes d'une série. */
 function embyRoutes({ movies = [], series = [] }: EmbyLibrary): FakeRoutes {
   return {
-    'GET /Library/VirtualFolders': [
-      { Name: 'Films', ItemId: 'films', CollectionType: 'movies' },
-      { Name: 'Séries', ItemId: 'series', CollectionType: 'tvshows' },
-    ],
+    'GET /Library/VirtualFolders/Query': {
+      Items: [
+        { Name: 'Films', ItemId: 'films', CollectionType: 'movies' },
+        { Name: 'Séries', ItemId: 'series', CollectionType: 'tvshows' },
+      ],
+      TotalRecordCount: 2,
+    },
     'GET /Items': (req, res) => {
       const q = req.query;
       const typed = [...movies.map((e) => ({ ...e, Type: 'Movie' })), ...series.map((e) => ({ ...e, Type: 'Series' }))];

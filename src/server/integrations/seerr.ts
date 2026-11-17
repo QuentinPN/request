@@ -14,7 +14,7 @@ const name = z.string().nullish();
 
 const userSchema = z.object({
   id: z.number(),
-  /** Id Emby ou Jellyfin du compte (Jellyseerr range les comptes Emby ici aussi) ; absent chez Overseerr. */
+  /** Id Emby ou Jellyfin du compte : Seerr range l'id d'un compte Emby (`userType` 4) ici, il n'a pas d'`embyUserId`. */
   jellyfinUserId: name,
   jellyfinUsername: name,
   username: name,
