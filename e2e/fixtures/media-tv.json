@@ -1,0 +1,206 @@
+{
+  "tmdbId": 126308,
+  "type": "tv",
+  "status": "partial",
+  "title": "Shōgun",
+  "year": 2024,
+  "posterPath": "/poster-tv-126308.jpg",
+  "backdropPath": "/backdrop-tv-126308.jpg",
+  "overview": "Au Japon, en 1600, le seigneur Toranaga lutte pour sa survie alors que ses ennemis au Conseil des régents s’unissent contre lui.",
+  "genres": [
+    {
+      "id": 18,
+      "name": "Drame"
+    },
+    {
+      "id": 36,
+      "name": "Histoire"
+    },
+    {
+      "id": 10768,
+      "name": "Guerre"
+    }
+  ],
+  "runtime": null,
+  "seasons": [
+    {
+      "seasonNumber": 1,
+      "episodeCount": 10,
+      "airDate": "2024-02-27",
+      "status": "available",
+      "episodes": {
+        "present": 10,
+        "expected": 10
+      }
+    },
+    {
+      "seasonNumber": 2,
+      "episodeCount": 10,
+      "airDate": "2026-02-01",
+      "status": "downloading",
+      "progress": 0.42,
+      "episodes": {
+        "present": 4,
+        "expected": 10
+      }
+    }
+  ],
+  "cast": [
+    {
+      "id": 500,
+      "name": "Hiroyuki Sanada",
+      "character": "Yoshii Toranaga",
+      "profilePath": "/profile-500.jpg"
+    },
+    {
+      "id": 501,
+      "name": "Cosmo Jarvis",
+      "character": "John Blackthorne",
+      "profilePath": "/profile-501.jpg"
+    },
+    {
+      "id": 502,
+      "name": "Anna Sawai",
+      "character": "Toda Mariko",
+      "profilePath": "/profile-502.jpg"
+    },
+    {
+      "id": 503,
+      "name": "Tadanobu Asano",
+      "character": "Kashigi Yabushige",
+      "profilePath": "/profile-503.jpg"
+    },
+    {
+      "id": 504,
+      "name": "Takehiro Hira",
+      "character": "Ishido Kazunari",
+      "profilePath": "/profile-504.jpg"
+    },
+    {
+      "id": 505,
+      "name": "Moeka Hoshi",
+      "character": "Usami Fuji",
+      "profilePath": "/profile-505.jpg"
+    },
+    {
+      "id": 506,
+      "name": "Hiroto Kanai",
+      "character": "Kashigi Omi",
+      "profilePath": "/profile-506.jpg"
+    },
+    {
+      "id": 507,
+      "name": "Fumi Nikaido",
+      "character": "Ochiba no Kata",
+      "profilePath": null
+    }
+  ],
+  "trailerKey": "yAfXzqmvAgY",
+  "watchProviders": {
+    "flatrate": [
+      {
+        "id": 337,
+        "name": "Disney Plus",
+        "logoPath": "/logo-337.jpg"
+      }
+    ],
+    "rent": [],
+    "buy": [
+      {
+        "id": 2,
+        "name": "Apple TV",
+        "logoPath": "/logo-2.jpg"
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "tmdbId": 2017,
+      "type": "tv",
+      "title": "Slow Horses",
+      "year": 2022,
+      "posterPath": "/poster-tv-2017.jpg",
+      "backdropPath": "/backdrop-tv-2017.jpg",
+      "overview": ""
+    },
+    {
+      "tmdbId": 2018,
+      "type": "tv",
+      "title": "Andor",
+      "year": 2022,
+      "posterPath": "/poster-tv-2018.jpg",
+      "backdropPath": "/backdrop-tv-2018.jpg",
+      "overview": ""
+    },
+    {
+      "tmdbId": 2019,
+      "type": "tv",
+      "title": "Le Problème à 3 corps",
+      "year": 2024,
+      "posterPath": "/poster-tv-2019.jpg",
+      "backdropPath": "/backdrop-tv-2019.jpg",
+      "overview": ""
+    },
+    {
+      "tmdbId": 2020,
+      "type": "tv",
+      "title": "Fallout",
+      "year": 2024,
+      "posterPath": "/poster-tv-2020.jpg",
+      "backdropPath": "/backdrop-tv-2020.jpg",
+      "overview": ""
+    },
+    {
+      "tmdbId": 2021,
+      "type": "tv",
+      "title": "La Maison du dragon",
+      "year": 2022,
+      "posterPath": "/poster-tv-2021.jpg",
+      "backdropPath": "/backdrop-tv-2021.jpg",
+      "overview": ""
+    },
+    {
+      "tmdbId": 2022,
+      "type": "tv",
+      "title": "Le Bureau des légendes",
+      "year": 2015,
+      "posterPath": "/poster-tv-2022.jpg",
+      "backdropPath": "/backdrop-tv-2022.jpg",
+      "overview": ""
+    }
+  ],
+  "similar": [
+    {
+      "tmdbId": 2004,
+      "type": "tv",
+      "title": "Severance",
+      "year": 2022,
+      "posterPath": "/poster-tv-2004.jpg",
+      "backdropPath": "/backdrop-tv-2004.jpg",
+      "overview": "Des employés ont subi une opération qui sépare leurs souvenirs de travail et personnels."
+    },
+    {
+      "tmdbId": 2006,
+      "type": "tv",
+      "title": "Arcane",
+      "year": 2021,
+      "posterPath": "/poster-tv-2006.jpg",
+      "backdropPath": "/backdrop-tv-2006.jpg",
+      "overview": ""
+    },
+    {
+      "tmdbId": 2008,
+      "type": "tv",
+      "title": "The Bear",
+      "year": 2022,
+      "posterPath": "/poster-tv-2008.jpg",
+      "backdropPath": "/backdrop-tv-2008.jpg",
+      "overview": ""
+    }
+  ],
+  "externalIds": {
+    "imdb": "tt2788316",
+    "tvdb": 391483
+  },
+  "embyItemId": "emby-126308"
+}

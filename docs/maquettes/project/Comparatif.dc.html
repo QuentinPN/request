@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Comparatif des directions</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}.tbl{width:100%;border-collapse:collapse}.tbl th{text-align:left;font-size:13px;color:var(--text-2);font-weight:600;padding:14px 16px;border-bottom:1px solid var(--border-2)}.tbl td{padding:16px;border-bottom:1px solid var(--border-1);font-size:14px;vertical-align:top;line-height:1.45}.tbl td:first-child{font-weight:600;width:200px}.dots{letter-spacing:2px;color:var(--text-ok);font-weight:700}.dots .off{color:var(--track)}.pick{border:1px solid var(--border-focus);border-radius:16px;padding:28px;background:var(--surface-1)}</style>
+</helmet>
+<div class="scr col g32" style="width: 1440px; height: 1500px; padding: 56px 72px; box-sizing: border-box;">
+  <div class="col g8"><h1 style="font-size: 36px; font-weight: 800; letter-spacing: -0.02em;">Trois directions, une recommandation</h1><span class="muted" style="max-width: 820px;">Tu choisis élément par élément : on peut garder la navigation de l'une, la fiche d'une autre et les approbations d'une troisième.</span></div>
+  <div class="row g16">
+    <sc-for list="{{dirs}}" as="d" hint-placeholder-count="3">
+      <article class="card col g8 grow" style="padding: 20px; flex: 1;"><span class="tiny muted b">DIRECTION {{d.k}}</span><span class="b" style="font-size: 20px;">{{d.n}}</span><span class="small muted">{{d.s}}</span></article>
+    </sc-for>
+  </div>
+  <table class="tbl">
+    <thead><tr><th>Critère</th><th>A · Salle obscure</th><th>B · Vidéoclub</th><th>C · Programme</th></tr></thead>
+    <tbody>
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="7">
+        <tr><td>{{r.c}}</td><td><div class="col g4"><span class="dots">{{r.a}}</span><span class="small muted">{{r.ta}}</span></div></td><td><div class="col g4"><span class="dots">{{r.b}}</span><span class="small muted">{{r.tb}}</span></div></td><td><div class="col g4"><span class="dots">{{r.cc}}</span><span class="small muted">{{r.tc}}</span></div></td></tr>
+      </sc-for>
+    </tbody>
+  </table>
+  <section class="pick col g12">
+    <span class="tiny muted b">RECOMMANDATION</span>
+    <span class="b" style="font-size: 22px;">A « Salle obscure », avec deux emprunts à C</span>
+    <span class="small" style="max-width: 1000px;">A est la plus proche d'Emby et la plus simple pour tes membres : on regarde une affiche, on demande en deux clics. On lui ajoute la bande « Vos demandes en cours » de l'accueil C et la frise de suivi sur la fiche titre, qui répondent à la question « où en est ma demande ? » sans ouvrir une autre page. Pour l'admin, le tri carte par carte de B reste la solution la plus rapide au téléphone ; le tableau de C est meilleur sur ordinateur quand plusieurs demandes s'accumulent.</span>
+    <div class="row g8 wrap"><span class="st flat ok">Navigation et fiche : A</span><span class="st flat ok">Suivi sur l'accueil et la fiche : C</span><span class="st flat part">Approbations : B sur mobile, C sur ordinateur</span><span class="st flat part">Assistant : C (une page, sections testées)</span></div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      dirs: [
+        { k: 'A', n: 'Salle obscure', s: 'Grandes affiches, fonds flous, fiche plein écran. Au plus près d\'Emby et d\'Apple TV.' },
+        { k: 'B', n: 'Vidéoclub', s: 'Le catalogue d\'abord : grille dense, filtres, fiche en panneau latéral.' },
+        { k: 'C', n: 'Programme', s: 'Le suivi d\'abord : barre latérale, demandes en cours en tête, frise de statut.' }
+      ],
+      rows: [
+        { c: 'Simplicité', a: '●●●●●', ta: 'Une rangée d\'affiches, un bouton.', b: '●●●●○', tb: 'Les filtres ajoutent des choix.', cc: '●●●○○', tc: 'Plus de rubriques à comprendre.' },
+        { c: 'Rapidité pour demander', a: '●●●●●', ta: 'Deux clics depuis l\'affiche.', b: '●●●●●', tb: 'Le panneau garde la grille visible.', cc: '●●●●○', tc: 'Une carte de demande à part.' },
+        { c: 'Lisibilité du statut', a: '●●●○○', ta: 'Une pastille par affiche.', b: '●●●○○', tb: 'Barres de progression dans Mes demandes.', cc: '●●●●●', tc: 'Frise et quatre étapes partout.' },
+        { c: 'Travail admin', a: '●●●○○', ta: 'Liste simple.', b: '●●●●○', tb: 'Tri carte par carte, raccourcis clavier.', cc: '●●●●●', tc: 'Tableau, sélection multiple, panneau de détail.' },
+        { c: 'Mobile', a: '●●●●●', ta: 'Pensée pour le pouce.', b: '●●●●○', tb: 'Feuilles du bas, grille à 2 colonnes.', cc: '●●●○○', tc: 'La barre latérale devient des onglets.' },
+        { c: 'Effort de réalisation', a: '●●●●○', ta: 'Peu d\'écrans, effets de flou à soigner.', b: '●●●○○', tb: 'Filtres et pagination côté serveur.', cc: '●●●○○', tc: 'Suivi en direct des files Radarr et Sonarr.' },
+        { c: 'Conformité DESIGN.md', a: '●●●●●', ta: 'Verre, fonds TMDB, contraste fort.', b: '●●●●○', tb: 'Plus de surfaces pleines.', cc: '●●●●○', tc: 'Plus proche d\'un outil que d\'Emby.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

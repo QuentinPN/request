@@ -1,0 +1,17 @@
+{
+  "eventType": "Download",
+  "isUpgrade": false,
+  "series": {
+    "id": 7,
+    "title": "Breaking Bad",
+    "tvdbId": 81189,
+    "tmdbId": 1396,
+    "imdbId": "tt0903747",
+    "type": "standard"
+  },
+  "episodes": [
+    { "id": 1, "episodeNumber": 2, "seasonNumber": 2, "title": "Grilled" },
+    { "id": 2, "episodeNumber": 1, "seasonNumber": 2, "title": "Seven Thirty-Seven" },
+    { "id": 3, "episodeNumber": 1, "seasonNumber": 3, "title": "No Más" }
+  ]
+}

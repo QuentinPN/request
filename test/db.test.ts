@@ -1,21 +1,14 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { decrypt, encrypt, loadOrCreateKey } from '../src/server/crypto.ts';
 import { openDataDir, openDb } from '../src/server/db/index.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
+import { notificationKinds } from '../src/shared/notifications.ts';
+import { trackTempDirs } from './helpers.ts';
 
-const dirs: string[] = [];
-const tempDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'request-'));
-  dirs.push(dir);
-  return dir;
-};
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+const tempDir = trackTempDirs();
 
 describe('migrations', () => {
   it('créent la table settings et ne se rejouent pas à la réouverture', () => {
@@ -29,7 +22,7 @@ describe('migrations', () => {
 
     const again = openDataDir(dir);
     const applied = again.db.$client.prepare('select count(*) as n from __drizzle_migrations').get() as { n: number };
-    expect(applied.n).toBe(1);
+    expect(applied.n).toBe(10);
     expect(again.db.$client.pragma('journal_mode', { simple: true })).toBe('wal');
     again.db.$client.close();
   });
@@ -71,8 +64,19 @@ describe('réglages', () => {
 
   it('chiffrent les secrets en base et les relisent en clair', () => {
     const db = openDb(':memory:');
-    const saved = setSetting(db, cryptoKey, 'radarr', { url: 'http://radarr:7878/', apiKey: ' abc123 ' });
-    expect(saved).toEqual({ url: 'http://radarr:7878', apiKey: 'abc123' });
+    const saved = setSetting(db, cryptoKey, 'radarr', {
+      url: 'http://radarr:7878/',
+      apiKey: ' abc123 ',
+      qualityProfileId: 4,
+      rootFolderPath: '/films',
+    });
+    expect(saved).toEqual({
+      url: 'http://radarr:7878',
+      apiKey: 'abc123',
+      qualityProfileId: 4,
+      rootFolderPath: '/films',
+      minimumAvailability: 'released',
+    });
 
     const stored = raw(db, 'radarr');
     expect(stored).not.toContain('abc123');
@@ -90,14 +94,17 @@ describe('réglages', () => {
   it('renvoient null si absents et appliquent les valeurs par défaut', () => {
     const db = openDb(':memory:');
     expect(getSetting(db, cryptoKey, 'emby')).toBeNull();
-    expect(setSetting(db, cryptoKey, 'discord', {})).toEqual({ webhookUrl: null });
-    expect(getSetting(db, cryptoKey, 'discord')).toEqual({ webhookUrl: null });
+    const discord = { webhookUrl: null, enabled: false, events: notificationKinds };
+    expect(setSetting(db, cryptoKey, 'discord', {})).toEqual(discord);
+    expect(getSetting(db, cryptoKey, 'discord')).toEqual(discord);
   });
 
   it('refusent une valeur invalide sans rien écrire', () => {
     const db = openDb(':memory:');
-    expect(() => setSetting(db, cryptoKey, 'sonarr', { url: 'ftp://sonarr', apiKey: 'x' })).toThrow();
-    expect(() => setSetting(db, cryptoKey, 'sonarr', { url: 'http://sonarr:8989', apiKey: '  ' })).toThrow();
+    const target = { qualityProfileId: 1, rootFolderPath: '/series' };
+    expect(() => setSetting(db, cryptoKey, 'sonarr', { url: 'ftp://sonarr', apiKey: 'x', ...target })).toThrow();
+    expect(() => setSetting(db, cryptoKey, 'sonarr', { url: 'http://sonarr:8989', apiKey: '  ', ...target })).toThrow();
+    expect(() => setSetting(db, cryptoKey, 'sonarr', { url: 'http://sonarr:8989', apiKey: 'x' } as never)).toThrow();
     expect(getSetting(db, cryptoKey, 'sonarr')).toBeNull();
   });
 

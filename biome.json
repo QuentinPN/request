@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "includes": ["**", "!src/client/styles/tokens.css", "!.claude"] },
+  "files": { "includes": ["**", "!src/client/styles/tokens.css", "!.claude", "!docs/maquettes"] },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 120 },
   "javascript": { "formatter": { "quoteStyle": "single", "jsxQuoteStyle": "double" } },
   "css": { "parser": { "tailwindDirectives": true } },

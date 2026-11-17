@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Recommandation · Mobile</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}.wall{width:2580px;height:844px;display:flex;gap:48px;background:transparent}.tb svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.pad{padding:0 20px}.tl{position:relative;padding-left:28px}.tl:before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--track)}.hs{display:flex;gap:12px;overflow:hidden}.hs>*{flex:none;width:270px}</style>
+</helmet>
+<div class="wall">
+
+  <div class="scr phone"><span class="boardlbl">Découvrir + demandes en cours</span>
+    <div style="position: relative; height: 400px;">
+      <div class="backdrop" style="--t: #4a3420;"></div><div class="veil-b" style="top: 30%;"></div>
+      <div class="col g12" style="position: absolute; left: 20px; right: 20px; bottom: 20px;">
+        <span class="tiny b accent">N° 1 des tendances</span>
+        <h1 style="font-size: 32px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;">Dune : Deuxième partie</h1>
+        <div class="meta small"><span>2024</span><i></i><span>Film</span><i></i><span>2 h 46</span></div>
+        <div class="row g8"><button class="btn btn-w grow" type="button">Demander</button><button class="btn btn-g" type="button">Infos</button></div>
+      </div>
+    </div>
+    <div class="col g12 pad" style="margin-top: 20px;">
+      <div class="rowh"><h2 style="font-size: 18px;">Vos demandes en cours</h2><a href="#">Tout</a></div>
+      <div class="hs"><sc-for list="{{track}}" as="r" hint-placeholder-count="3"><div class="glass col g8" style="padding: 12px; border-radius: 14px;"><div class="row sb"><span class="b small">{{r.t}}</span><span class="st flat {{r.c}}">{{r.st}}</span></div><div class="row g4"><sc-for list="{{r.steps}}" as="s" hint-placeholder-count="4"><span style="flex: 1; height: 4px; border-radius: 2px; background: {{s}};"></span></sc-for></div><span class="tiny muted">{{r.step}}</span></div></sc-for></div>
+    </div>
+    <div class="col g12 pad" style="margin-top: 20px;">
+      <div class="rowh"><h2 style="font-size: 18px;">Tendances</h2><a href="#">Tout voir</a></div>
+      <div class="row g12" style="overflow: hidden;"><div class="poster p-sm" style="--p: #2d3e4f;"><span class="st ok">Disponible</span></div><div class="poster p-sm" style="--p: #4b2f2f;"><span class="st part">Partiel</span></div><div class="poster p-sm" style="--p: #3d3d45;"><span class="st req">Demandé</span></div></div>
+    </div>
+    <nav class="tabbar glass tb" aria-label="Navigation">
+      <a class="tab on" href="#"><svg viewBox="0 0 24 24"><path d="M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Découvrir</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Rechercher</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Demandes</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Approuver<span class="count">3</span></a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Compte</a>
+    </nav>
+  </div>
+
+  <div class="scr phone"><span class="boardlbl">Fiche titre + suivi</span>
+    <div style="position: relative; height: 300px;">
+      <div class="backdrop" style="--t: #4b2f2f;"></div><div class="veil-b" style="top: 20%;"></div>
+      <button class="iconbtn" type="button" aria-label="Retour" style="position: absolute; top: 52px; left: 16px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+    </div>
+    <div class="col g12 pad" style="margin-top: -110px; position: relative;">
+      <span class="st flat part" style="align-self: flex-start;">Partiellement disponible · 7 / 10</span>
+      <h1 style="font-size: 32px; font-weight: 800; letter-spacing: -0.03em;">Shōgun</h1>
+      <div class="meta small"><span>2024</span><i></i><span>Série</span><i></i><span>TMDB 8,6</span></div>
+      <button class="btn btn-g" type="button">Regarder dans Emby</button>
+      <span class="b" style="margin-top: 4px;">Suivi de la demande</span>
+      <div class="glass col g12 tl" style="padding: 16px 16px 16px 40px; border-radius: 14px;"><sc-for list="{{tl}}" as="e" hint-placeholder-count="5"><div class="col g2" style="position: relative;"><span style="position: absolute; left: -29px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: {{e.bg}}; border: 2px solid {{e.bd}};"></span><span class="small b">{{e.t}}</span><span class="tiny muted">{{e.d}}</span></div></sc-for></div>
+    </div>
+    <nav class="tabbar glass tb" aria-label="Navigation">
+      <a class="tab on" href="#"><svg viewBox="0 0 24 24"><path d="M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Découvrir</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Rechercher</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Demandes</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Approuver<span class="count">3</span></a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Compte</a>
+    </nav>
+  </div>
+
+  <!-- 3 Feuille de demande -->
+  <div class="scr phone">
+    <span class="boardlbl">Feuille de demande</span>
+    <div class="backdrop" style="--t: #4b2f2f; height: 360px;"></div>
+    <div class="scrim" style="position: absolute; inset: 0;"></div>
+    <div role="dialog" aria-modal="true" class="col g16" style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 32px; border-radius: 28px 28px 0 0; background: var(--glass-dialog); backdrop-filter: var(--blur-strong); box-shadow: inset 0 1px 0 var(--border-2);">
+      <span style="width: 40px; height: 5px; border-radius: 3px; background: var(--track); align-self: center;"></span>
+      <div class="row g12"><div class="poster p-xs" style="--p: #4b2f2f; width: 48px; height: 72px;"></div><div class="col g4"><span class="tiny muted">Demander une série</span><span class="b" style="font-size: 18px;">Shōgun</span></div></div>
+      <span class="lbl">Saisons</span>
+      <div class="card row sb" style="padding: 14px;"><span class="row g12"><span class="chk on"></span><span class="b">Saison 1</span></span><span class="small muted">3 épisodes manquants</span></div>
+      <div class="card row sb" style="padding: 14px; opacity: .55;"><span class="row g12"><span class="chk dis"></span><span class="b">Saison 2</span></span><span class="small muted">2026</span></div>
+      <div class="msg tint-acc small">Quota séries : 2 sur 5 cette semaine. Un admin valide avant l'envoi.</div>
+      <button class="btn btn-w" type="button">Demander 3 épisodes</button>
+      <button class="btn btn-q" type="button">Annuler</button>
+    </div>
+  </div>
+
+  <div class="scr phone"><span class="boardlbl">Mes demandes</span>
+    <div class="col g16 pad" style="padding-top: 64px;">
+      <h1 style="font-size: 28px; font-weight: 800; letter-spacing: -0.03em;">Mes demandes</h1>
+      <div class="row g8"><button class="fp on" type="button">En cours <span class="n">3</span></button><button class="fp" type="button">Disponibles</button><button class="fp" type="button">Refusées</button></div>
+      <sc-for list="{{groups}}" as="g" hint-placeholder-count="3"><div class="card row g12" style="padding: 12px;"><div class="poster p-xs" style="--p: {{g.p}}; flex: none;"></div><div class="col g6 grow"><div class="row sb"><span class="b small">{{g.n}}</span><span class="st flat {{g.c}}">{{g.st}}</span></div><div class="row g4"><sc-for list="{{g.steps}}" as="s" hint-placeholder-count="4"><span style="flex: 1; height: 4px; border-radius: 2px; background: {{s}};"></span></sc-for></div><span class="tiny muted">{{g.s}}</span></div></div></sc-for>
+    </div>
+    <nav class="tabbar glass tb" aria-label="Navigation">
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><path d="M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Découvrir</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Rechercher</a>
+      <a class="tab on" href="#"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Demandes</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Approuver<span class="count">3</span></a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Compte</a>
+    </nav>
+  </div>
+
+  <div class="scr phone"><span class="boardlbl">Approbations, une à la fois (B)</span>
+    <div class="col g16 pad" style="padding-top: 64px;">
+      <div class="row sb"><h1 style="font-size: 28px; font-weight: 800; letter-spacing: -0.03em;">À trier</h1><span class="small muted">1 sur 3</span></div>
+      <article class="gcard col g12" style="padding: 20px;">
+        <div class="row g16"><div class="poster p-sm" style="--p: #3d3d45; flex: none;"></div><div class="col g6"><span class="small"><span class="b">Marion</span> <span class="muted">· il y a 12 min</span></span><span class="b" style="font-size: 24px;">Conclave</span><span class="tiny muted">Film · 2024 · HD-1080p</span><span class="tiny muted">Quota de Marion : 4 / 10</span><span class="st flat wait" style="align-self: flex-start;">Pas dans Emby</span></div></div>
+        <div class="card small" style="padding: 12px;">« Vu la bande-annonce, ça a l'air top. VF si possible. »</div>
+      </article>
+      <div class="row g12"><button class="btn btn-d grow" type="button" style="height: 64px;">Refuser</button><button class="btn btn-ok grow" type="button" style="height: 64px;">Approuver</button></div>
+      <button class="btn btn-q" type="button">Plus tard</button>
+      <span class="tiny muted" style="text-align: center;">Glisser à droite pour approuver, à gauche pour refuser.</span>
+    </div>
+    <nav class="tabbar glass tb" aria-label="Navigation">
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><path d="M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Découvrir</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Rechercher</a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Demandes</a>
+      <a class="tab on" href="#"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Approuver<span class="count">3</span></a>
+      <a class="tab" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Compte</a>
+    </nav>
+  </div>
+
+  <div class="scr phone col g12" style="padding-top: 56px;"><span class="boardlbl">Assistant (C)</span>
+    <div class="pad col g4"><h1 style="font-size: 26px; font-weight: 800;">Configuration</h1><span class="tiny muted">Chaque section est testée en direct.</span></div>
+    <div class="pad col g8"><sc-for list="{{secs}}" as="s" hint-placeholder-count="5"><div class="card row g12" style="padding: 14px;"><span class="b small grow">{{s.n}} · {{s.t}}</span><span class="st flat {{s.c}}">{{s.st}}</span></div></sc-for></div>
+    <div class="pad col g8"><span class="lbl">Sonarr · adresse</span><div class="inp focus">http://192.0.2.20:8989</div><div class="msg tint-ok tiny">Connexion réussie · v4.0.11</div><button class="btn btn-w" type="button">Enregistrer et continuer</button></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":2580,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const d = 'var(--text-ok)', on = 'var(--accent-play)', off = 'var(--track)';
+    const ok = { bg: 'var(--text-ok)', bd: 'var(--text-ok)' }, now = { bg: 'var(--bg)', bd: 'var(--accent-play)' }, nx = { bg: 'var(--bg)', bd: 'var(--track)' };
+    return {
+      track: [
+        { t: 'Le Robot sauvage', st: '42 %', c: 'dl', steps: [d, d, on, off], step: 'Fin dans 18 min' },
+        { t: 'Shōgun · S1', st: 'Approuvé', c: 'part', steps: [d, on, off, off], step: 'Sonarr cherche une source' },
+        { t: 'Conclave', st: 'En attente', c: 'req', steps: [on, off, off, off], step: 'Quentin doit valider' }
+      ],
+      tl: [
+        { t: 'Demandée par Marion', d: '13 nov., 20 h 02 · épisodes 8 à 10', ...ok },
+        { t: 'Approuvée par Quentin', d: '13 nov., 20 h 31', ...ok },
+        { t: 'Envoyée à Sonarr', d: 'HD-1080p · /series', ...ok },
+        { t: 'Recherche d\'une source', d: 'Nouvel essai toutes les 6 h', ...now },
+        { t: 'Dans Emby', d: 'Marion sera prévenue', ...nx }
+      ],
+      groups: [
+        { n: 'Le Robot sauvage', p: '#2f4a52', st: '42 %', c: 'dl', steps: [d, d, on, off], s: 'Téléchargement · 18 min' },
+        { n: 'Shōgun · S1', p: '#4b2f2f', st: 'Approuvé', c: 'part', steps: [d, on, off, off], s: 'Sonarr cherche une source' },
+        { n: 'Conclave', p: '#3d3d45', st: 'En attente', c: 'req', steps: [on, off, off, off], s: 'Quentin doit valider · Annuler' }
+      ],
+      secs: [
+        { n: '1', t: 'Emby', c: 'ok', st: 'Testé' }, { n: '2', t: 'TMDB', c: 'ok', st: 'Testé' }, { n: '3', t: 'Radarr', c: 'ok', st: 'Testé' },
+        { n: '4', t: 'Sonarr', c: 'req', st: 'En cours' }, { n: '5', t: 'Règles et quotas', c: 'wait', st: 'À faire' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

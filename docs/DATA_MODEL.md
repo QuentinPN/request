@@ -1,0 +1,119 @@
+# Modèle de données
+
+SQLite (better-sqlite3 + Drizzle, `casing: 'snake_case'`), un seul processus, WAL, quelques dizaines de membres, quelques milliers de médias. Pas de réglage serveur ni de partitionnement : des tables simples, des index justifiés par un écran ou un job.
+
+## 1. Revue de l'existant (`settings`, `users`, `sessions`)
+
+| Sévérité | Constat                                                                                                                                                                                                                             | Correctif                                                                                                                                                          |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Moyenne  | `sessions.user_id` sans index : `deleteAllForUser` et la cascade `ON DELETE` de `users` parcourent toute la table.                                                                                                                  | `CREATE INDEX sessions_user_id_idx ON sessions(user_id)`.                                                                                                          |
+| Basse    | `purgeExpired` filtre `expires_at <= ?` sans index.                                                                                                                                                                                 | `sessions_expires_at_idx` (coût nul, purge en O(log n)).                                                                                                           |
+| Moyenne  | `users.role` : l'enum Drizzle n'existe qu'en TypeScript, aucune contrainte en base.                                                                                                                                                 | `CHECK (role IN ('member','auto_approve','manager','owner'))` (règle à suivre pour tout enum : colonne `text` + `CHECK` généré depuis le tableau de `src/shared`). |
+| Basse    | `users.quota_override` (JSON) validé par Zod à l'écriture seulement ; la lecture fait confiance à `$type<>`.                                                                                                                        | Repasser `quotaOverrideSchema.parse` à la lecture (comme `settings`), ou `CHECK (quota_override IS NULL OR json_valid(quota_override))`.                           |
+| Basse    | PRAGMA `synchronous` absent (FULL par défaut en WAL : fsync à chaque commit).                                                                                                                                                       | `synchronous = NORMAL`, `journal_size_limit = 67108864` dans `openDb`.                                                                                             |
+| Info     | Horodatages : `integer` en **secondes** (`mode: 'timestamp'`, `unixepoch()`). Bon choix, à garder partout ; ne pas mélanger avec `timestamp_ms`. Toute date de règle métier (quotas, purges) est calculée en secondes côté serveur. | Convention à respecter.                                                                                                                                            |
+| Info     | `settings` : correct (clé/valeur, JSON validé par Zod à la lecture et à l'écriture, secrets chiffrés).                                                                                                                              | —                                                                                                                                                                  |
+
+## 2. Tables restantes du MVP
+
+Conventions : clés primaires `integer` auto-incrémentées pour les tables internes, `text` pour les ids externes (Emby). Clés étrangères toujours indexées. `created_at`/`updated_at` en secondes.
+
+**`media`** — un titre connu de l'appli (vu sur une affiche, dans Emby, Radarr ou Sonarr, ou demandé).
+`id` PK · `type` text `CHECK IN ('movie','tv')` · `tmdb_id` int NOT NULL · `tvdb_id` int · `radarr_id` int · `sonarr_id` int · `emby_item_id` text · `status` text `CHECK IN mediaStatuses`, **nullable** : `NULL` = absent (le cache retient aussi l'absence, sinon chaque affiche inconnue relancerait les appels) · `status_updated_at` · `seasons_computed_at` (dernier calcul des saisons d'une série, nullable) · `created_at`.
+Index : `UNIQUE(tmdb_id, type)` (badge de chaque affiche : lecture par lot `WHERE (tmdb_id,type) IN …`), `tvdb_id` (webhooks Sonarr), `radarr_id`, `sonarr_id` (webhooks). Pas de titre ni d'affiche : TMDB reste la source (cache mémoire). `media_type` partagé dans `src/shared/media.ts`.
+
+**`seasons`** — `id` PK · `media_id` FK → media `ON DELETE CASCADE` · `season_number` int · `status` text NOT NULL `CHECK IN mediaStatuses` (seules les saisons ayant un statut ont une ligne) · `episodes_present`, `episodes_expected` int nullables (épisodes présents et attendus, c'est-à-dire déjà diffusés, issus du même calcul que le statut ; `NULL` = inconnus, cas d'une saison passée « en téléchargement » par un webhook) · `UNIQUE(media_id, season_number)` (couvre aussi l'accès par média).
+
+**`requests`** — `id` PK · `media_id` FK → media `ON DELETE RESTRICT` · `user_id` FK → users `ON DELETE CASCADE` · `status` text `CHECK IN requestStatuses` · `decided_by` FK → users `ON DELETE SET NULL` · `decline_reason` text · `quality_profile_id` int · `root_folder` text · `series_type` text `CHECK IN seriesTypes` (choix de l'approbation, repris par une relance ; ajouté en 4.1) · `is_4k` int NOT NULL DEFAULT 0 (réservé ; 1 seulement pour une demande 4K importée de Seerr) · `external_ref` text nullable (origine d'une demande importée, `seerr:<id>` ; ajouté en 6.2) · `created_at` · `updated_at`.
+Index : `(user_id, created_at)` (« Mes demandes » + quota), `(status, created_at)` (file d'approbation), `(media_id, status)` (statut affiché d'un titre, sert aussi la clé étrangère), `(decided_by)` partiel, `UNIQUE(external_ref)` (6.2, migration `0009_import_seerr` : simple `ALTER TABLE … ADD`, sans recréation de table ; SQLite tient les `NULL` pour distincts, un index unique ordinaire suffit).
+Liste `GET /api/requests` (filtres `status=a,b`, `type`+`tmdbId`) : une page, les totaux par statut du périmètre en un `GROUP BY` (couvert par `(status, created_at)` pour un approbateur, `(user_id, created_at)` pour un membre ; un titre passe par `media(type, tmdb_id)` en sous-requête) et la raison du dernier échec des lignes `failed` en une requête (`request_events(request_id, created_at)`). Vérifié par `EXPLAIN QUERY PLAN` (`test/requests.test.ts`) : aucun index ajouté.
+
+**`request_seasons`** — **table séparée**, pas de JSON : le quota compte des saisons, Sonarr reçoit une liste, la frise affiche l'état par saison. `request_id` FK `ON DELETE CASCADE` · `season_number` · PK `(request_id, season_number)`.
+
+**`request_events`** — **table séparée** pour la frise (Demandée → Approuvée → Envoyée → Recherche → Dans Emby) : chaque étape a sa date, un acteur, éventuellement un message d'erreur (échec rejouable), et l'historique reste vrai après une relance. `id` PK · `request_id` FK `ON DELETE CASCADE` · `type` text `CHECK IN requestEventTypes` · `actor_id` FK users `SET NULL` · `detail` text · `created_at`. Index `(request_id, created_at)`. Ajout uniquement, jamais modifiée.
+
+**`notifications`** — une ligne par destinataire. `id` PK · `user_id` FK `CASCADE` · `kind` text `CHECK IN notificationKinds` (`requested`, `approved`, `declined`, `available`, `failed` : noms des `request_events` qui notifient, `src/shared/notifications.ts`) · `request_id` FK `SET NULL` · `detail` text (donnée brute de l'évènement : motif du refus, raison de l'échec) · `created_at` · `read_at` (`NULL` = non lue). Index `(user_id, created_at)` (liste, `ORDER BY created_at DESC, id DESC` sans tri temporaire : le rowid termine l'index), partiel `(user_id) WHERE read_at IS NULL` (pastille non lus) et partiel `(request_id) WHERE request_id IS NOT NULL` (clé étrangère). Le texte est rendu à la lecture depuis `kind` (`notificationMessage`, `services/notifications.ts`), avec le titre TMDB (cache) et le nom du demandeur : pas de chaîne figée en base, repli lisible si la demande n'existe plus. Fait en 5.2 (migration `0007_notifications`) : `notifyRequestEvent`, appelée par `addEvent` (`services/requests.ts`) et, pour `sent → available`, par `writeUpdates` (`services/availability.ts`) sur les ids renvoyés par `markAvailable`, dans la même transaction que l'évènement. Destinataires : le demandeur pour `approved`, `declined`, `available` ; les rôles ayant `canManageRequests` pour `requested` (sauf rôle à approbation automatique et saisons ajoutées à une demande en attente) et `failed` ; jamais l'auteur de l'action. Liée à la transition, déjà idempotente : un webhook rejoué ne crée rien.
+
+**`job_runs`** — `id` PK · `job` text · `status` `CHECK IN ('running','success','failed')` · `started_at` · `finished_at` · `detail`. Verrou : `CREATE UNIQUE INDEX job_runs_running ON job_runs(job) WHERE status = 'running'`. Démarrer un balayage = `INSERT` ; la violation d'unicité signifie « déjà en cours ». Au démarrage du serveur, passer en `failed` les lignes `running` orphelines (crash). Index `(job, started_at)` pour « dernier balayage » (SQLite le parcourt à rebours pour `ORDER BY started_at DESC`). Fait en 3.2 : `services/jobs.ts` (`startJob` → `null` si déjà en cours, `finishJob`, `failOrphanJobs` appelé par `buildApp`).
+
+**Webhooks** : pas de table. Les webhooks Radarr/Sonarr ne font que déclencher un recalcul idempotent du statut (`media.status` dérivé de l'état courant) ; un doublon recalcule la même valeur. Les `request_events` ne sont ajoutés que si le statut change. Fait en 5.1 (`services/sync.ts`) : le titre est retrouvé par `(type, tmdb_id)`, ou `tvdb_id` pour Sonarr v3 ; un titre inconnu de l'appli est ignoré (rien de créé). Grab → `media.status = 'downloading'` (et les saisons concernées), sauf ce qui est déjà `available` : seule écriture directe du cache, remplacée par le calcul complet à sa fin de vie (1 min). Download, suppressions → liste et file du service oubliées du cache mémoire, puis recalcul de ce seul titre. Jeton : réglage `webhooks` (`{ token }`, chiffré), voir ARCHITECTURE › Sécurité.
+
+**`sent → available`** : `markAvailable` (`services/requests.ts`), appelée à la fin de chaque écriture du cache (`writeUpdates`, même transaction) pour les titres recalculés : fiche, webhook ou balayage, tout recalcul fait avancer les demandes. Film disponible, ou série disponible ou dont chaque saison demandée a une ligne `seasons` `available` → la demande `sent` passe `available` avec l'évènement `available` (acteur `NULL`). Une saison manquante la laisse `sent`. `WHERE status = 'sent'` : rejouée, elle ne trouve plus rien, aucun évènement en double.
+
+**Balayages** (`job_runs.job`) : `scan:light` toutes les 10 minutes (50 derniers ajouts d'Emby, titres `downloading`, titres ayant une demande `sent`) ; `scan:full` au tour suivant dès que le dernier réussi date de plus d'un jour (lu dans `job_runs`, un redémarrage ne le repousse pas) : purge, puis recalcul par lots de 200 de tout titre ayant un statut ou une demande. Purge : `media` avec `status IS NULL`, sans aucune demande, et `status_updated_at` de plus de 30 jours (« sans accès récent » : une affiche vue recalcule le titre, la purge passe avant le recalcul pour ne pas rajeunir les titres oubliés) ; saisons en cascade. Pas d'index dédié : un parcours quotidien de quelques milliers de lignes ; le `NOT EXISTS` sur `requests` passe par `requests(media_id, status)`.
+
+### Quota
+
+```sql
+-- films
+SELECT count(*) FROM requests r JOIN media m ON m.id = r.media_id
+WHERE r.user_id = ? AND m.type = 'movie' AND r.status NOT IN ('declined','cancelled') AND r.created_at >= ?;
+-- saisons
+SELECT count(*) FROM request_seasons s JOIN requests r ON r.id = s.request_id
+WHERE r.user_id = ? AND r.status NOT IN ('declined','cancelled') AND r.created_at >= ?;
+```
+
+Servies par `requests(user_id, created_at)`. Vérification et insertion dans **la même transaction** (`db.transaction`, synchrone avec better-sqlite3 : aucune course possible dans un seul processus).
+
+### Double clic
+
+`CREATE UNIQUE INDEX requests_active ON requests(media_id, user_id, is_4k) WHERE status IN ('pending','approved','sent','failed')` (`activeRequestStatuses` ; `failed` inclus en 4.1 : une demande en échec attend sa relance, elle ne doit pas être dupliquée) : un second POST identique ne crée rien, la demande active existante est renvoyée en 200 (pas 409). Drizzle 0.45 écrit le `where` de `onConflictDoNothing` après `DO NOTHING` (SQL invalide) : l'insertion passe par `onConflictDoUpdate({ target, targetWhere, setWhere: 0 })`, équivalent exact (`ACTIVE_CONFLICT`, `services/requests.ts`). Pour les séries, le service écarte en plus les saisons déjà couvertes par une demande active ; une nouvelle saison s'ajoute à la demande du membre tant qu'elle est en attente, sinon 409.
+
+### 4K plus tard
+
+Seule la colonne `requests.is_4k` (et sa présence dans l'index ci-dessus) est posée. Le jour venu : `media.status_4k`, `radarr_4k_id`/`sonarr_4k_id`, réglages d'un second serveur. Rien d'autre maintenant.
+
+## 3. Statuts : une seule source
+
+- `src/shared/status.ts` est l'unique définition : `mediaStatuses` (existant), à compléter de `requestStatuses` (`pending`, `approved`, `declined`, `cancelled`, `sent`, `failed`, `available`) — l'annulation par le membre passe la demande en `cancelled` (historique conservé, hors quota, hors `requests_active`) et `requestEventTypes` (fixés en 4.1 : `requested`, `approved`, `declined`, `cancelled`, `sent`, `failed`, `retried`, `available` ; `requestStatuses` posé en 3.2). Les `CHECK` SQL et les schémas Zod en dérivent.
+- **Stockés** : `requests.status` (cycle de vie piloté par l'appli), `request_events` (faits), `media.status` et `seasons.status` (**cache** calculé par le serveur à partir d'Emby + Radarr/Sonarr + demandes).
+- **Dérivés, jamais stockés** : étape courante de la frise (dernier évènement), compteurs de quota, nombre de non lus, progression d'un téléchargement (lue dans la file Radarr/Sonarr, en cache mémoire 30 s). `partial` est calculé depuis les saisons mais **gardé dans `media.status`** (cache) : une page d'affiches se lit en une requête, sans agrégat.
+- **3.2** : `media.status` ne garde que la part bibliothèque (`available`, `partial`, `downloading`, `NULL`). Le statut affiché = `displayStatus(bibliothèque, demande)` (`services/availability.ts`), seule fusion ; la part demande (4.1) y sera branchée sans toucher au calcul. Durée de vie du cache : 5 min (1 min en téléchargement) ; balayages et webhooks en 5.1 (voir **Webhooks** et **Balayages** ci-dessus).
+- Une seule fonction serveur calcule le statut d'un média ; webhooks, balayages et création de demande l'appellent.
+
+## 4. Migrations et exploitation
+
+- Migrations : `drizzle-kit generate` uniquement, une par tâche, nom parlant (`0002_media_demandes.sql`), jamais modifiée une fois fusionnée ; appliquées au démarrage par `migrate()`. Vérifier le SQL généré (les `CHECK` et index partiels s'écrivent dans le schéma via `check()` / `.where()`).
+- Attention, recréation de table : ajouter un `CHECK` à une table existante (ex. `users.role`) fait recréer la table par drizzle-kit. `migrate()` s'exécute en transaction, où `PRAGMA foreign_keys=OFF` est sans effet : le `DROP TABLE users` supprime en cascade toutes les `sessions`. Accepté pour la tâche 1.7 (avant toute mise en production : simple déconnexion) ; après la mise en production, éditer la migration à la main pour préserver les données.
+- PRAGMA dans `openDb` : `journal_mode = WAL`, `foreign_keys = ON`, `busy_timeout = 5000` (déjà là), plus `synchronous = NORMAL` et `journal_size_limit`. `PRAGMA optimize` à la fermeture.
+- Sauvegarde : ne **pas** copier `request.db` seul pendant que le serveur tourne (le `-wal` contient les dernières écritures). Utiliser `sqlite.backup(path)` (API de sauvegarde de better-sqlite3, à chaud) ou `VACUUM INTO '/data/backups/…'` dans un job quotidien, en gardant 7 copies. Sauvegarder aussi `secret.key`, sans quoi les secrets sont illisibles.
+- Purges (job quotidien, enregistré dans `job_runs`) : sessions expirées ; notifications lues de plus de 90 jours (fait en 5.2 : `purgeReadNotifications`, au début du balayage complet `scan:full`, sur `created_at`, sans index dédié) ; `job_runs` de plus de 30 jours. Les demandes et leurs évènements sont conservés.
+
+```mermaid
+erDiagram
+  users ||--o{ sessions : ""
+  users ||--o{ requests : "demande"
+  users ||--o{ notifications : ""
+  media ||--o{ seasons : ""
+  media ||--o{ requests : ""
+  requests ||--o{ request_seasons : ""
+  requests ||--o{ request_events : "frise"
+  requests ||--o{ notifications : ""
+  media { int id PK
+    text type
+    int tmdb_id
+    int tvdb_id
+    text status }
+  requests { int id PK
+    int media_id FK
+    text user_id FK
+    text status
+    int is_4k }
+  request_events { int id PK
+    int request_id FK
+    text type
+    int created_at }
+  job_runs { int id PK
+    text job
+    text status }
+```
+
+## 5. Tâches, par priorité
+
+1. **Fait (tâche 1.7, correctif socle)** — index `sessions(user_id)` et `sessions(expires_at)`, `CHECK` sur `users.role` et `json_valid` sur `quota_override` (relu avec `quotaOverrideSchema`), `users.last_login_at` nullable, PRAGMA `synchronous`/`journal_size_limit`. _Critères_ : migration générée ; `EXPLAIN QUERY PLAN` des deux requêtes de `sessions.ts` utilise l'index ; un `INSERT` avec un rôle inconnu échoue.
+2. **Fait (3.2)** — `media`, `seasons`, `job_runs`, `requestStatuses` dans `status.ts`, fonction unique de calcul du statut. _Critères_ : tests absent / partiel / disponible / en téléchargement ; lecture par lot des statuts d'une page d'affiches en une requête.
+3. **4.1** — `requests`, `request_seasons`, `request_events`, index `requests_active`. _Critères_ : quota testé en bord de fenêtre ; deux POST identiques → une seule ligne ; quota dépassé → rien d'inséré (transaction).
+4. **4.2** — évènements `approved`/`declined`/`sent`/`failed`, relance d'un échec. _Critères_ : la frise se reconstruit depuis `request_events` ; une relance ajoute un évènement sans en effacer.
+5. **5.1** — Fait : recalcul idempotent sur webhook, balayages léger et complet sous verrou `job_runs`, `sent → available`, purge des `media` oubliés (aucune migration : tables et index existaient). Reste : sauvegarde planifiée, purges des sessions expirées (`purgeExpired`, sans appelant) et des `job_runs` de plus de 30 jours (celle des notifications est faite en 5.2). _Critères_ : deux balayages simultanés → un seul démarre ; webhook rejoué → aucun évènement en double ; sauvegarde restaurable testée. Le balayage complet purge aussi les lignes `media` sans statut, sans demande et sans accès récent (par exemple plus de 30 jours) : les titres vus sur une affiche s'accumulent sinon.
+6. **5.2** — Fait : `notifications` (migration `0007_notifications`). _Critères_ : compteur non lus via l'index partiel ; texte du message testé par `kind` (`test/notifications.test.ts`, plans vérifiés par `EXPLAIN QUERY PLAN`).
+7. **6.2** — Fait : import des demandes de Seerr (`services/seerr-import.ts`). `requests_active` ne couvre ni `sent`, ni `declined`, ni `available` : sans `external_ref`, un second import dupliquerait ces demandes. Une demande déjà importée (même `external_ref`), ou en cours pour le même membre, titre et `is_4k`, n'est pas recréée (saisons ajoutées à une demande en attente). Écritures directes : un seul évènement `requested` (détail « Importée depuis Seerr », date d'origine), ni notification, ni quota, ni Radarr/Sonarr. Lots de 200 demandes par transaction ; l'aperçu (`?dryRun=1`) fait le même traitement dans une transaction annulée. _Critères_ : `test/seerr-import.test.ts`.

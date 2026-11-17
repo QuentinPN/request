@@ -1,0 +1,7 @@
+# Exemple de Caddyfile pour compose.yml. DOMAIN vient du .env : Caddy obtient et renouvelle le certificat HTTPS tout
+# seul (les ports 80 et 443 de l'hôte doivent être joignables depuis Internet, et DOMAIN pointer vers lui).
+# Caddy transmet X-Forwarded-For/Proto/Host ; l'appli ne les croit que de ce conteneur (TRUST_PROXY).
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy request:3000
+}

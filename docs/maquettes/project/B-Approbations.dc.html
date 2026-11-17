@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>B · Approbations</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<div class="scr" style="width: 1440px; height: 1000px;">
+  <header class="row sb" style="padding: 24px 64px 0;">
+    <div class="row g32"><span class="b" style="font-size: 18px;">Request</span>
+      <nav class="row g4" aria-label="Navigation principale"><a class="navl" href="#">Catalogue</a><a class="navl" href="#">Mes demandes</a><a class="navl on" href="#">Approbations <span class="count">3</span></a></nav>
+    </div>
+    <div class="row g12"><button class="iconbtn" type="button" aria-label="Notifications"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button><span class="avatar">Q</span></div>
+  </header>
+  <div class="col g24" style="position: absolute; left: 50%; top: 120px; transform: translateX(-50%); width: 760px; align-items: center;">
+    <div class="row sb" style="width: 100%;"><h1 style="font-size: 32px; font-weight: 800; letter-spacing: -0.02em;">À trier</h1><span class="muted">1 sur 3 · puis 0 en attente</span></div>
+    <div class="row g8" style="width: 100%;"><span style="flex: 1; height: 4px; border-radius: 2px; background: var(--accent-play);"></span><span style="flex: 1; height: 4px; border-radius: 2px; background: var(--track);"></span><span style="flex: 1; height: 4px; border-radius: 2px; background: var(--track);"></span></div>
+    <article class="gcard row g32" style="width: 100%; padding: 32px; box-sizing: border-box;">
+      <div class="poster p-lg" style="--p: #3d3d45; flex: none;"></div>
+      <div class="col g16 grow">
+        <div class="row g8"><span class="avatar s">M</span><span class="small"><span class="b">Marion</span> <span class="muted">a demandé hier à 21 h 14</span></span></div>
+        <div class="col g6"><h2 style="font-size: 30px; font-weight: 800; letter-spacing: -0.02em;">Conclave</h2><div class="meta small"><span>2024</span><i></i><span>Film</span><i></i><span>2 h</span><i></i><span>TMDB 7,3</span></div></div>
+        <p class="muted small">Le cardinal Lawrence organise l'élection du nouveau pape et découvre un secret qui pourrait ébranler l'Église.</p>
+        <div class="card col g8" style="padding: 16px;">
+          <div class="row sb small"><span class="muted">Qualité</span><span class="b">HD-1080p</span></div>
+          <div class="row sb small"><span class="muted">Dossier</span><span class="b">/films · 1,8 To libres</span></div>
+          <div class="row sb small"><span class="muted">Quota de Marion</span><span class="b">4 / 10 films</span></div>
+          <div class="row sb small"><span class="muted">Envoi</span><span class="b">Radarr · recherche immédiate</span></div>
+        </div>
+      </div>
+    </article>
+    <div class="row g16" style="width: 100%;">
+      <button class="btn btn-d grow" type="button" style="height: 64px; font-size: 17px;">Refuser <span class="kbd">R</span></button>
+      <button class="btn btn-g" type="button" style="height: 64px;">Plus tard <span class="kbd">Espace</span></button>
+      <button class="btn btn-ok grow" type="button" style="height: 64px; font-size: 17px;">Approuver <span class="kbd">A</span></button>
+    </div>
+    <div class="msg tint-err row g12" style="width: 100%; box-sizing: border-box;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span class="small grow">Gladiator II approuvé mais Radarr a refusé l'envoi (chemin introuvable).</span><button class="btn btn-sm btn-g" type="button">Renvoyer</button></div>
+    <span class="tiny muted">Un refus demande un motif court, envoyé au membre. Annulation possible 10 s après chaque choix.</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic { renderVals() { return {}; } }
+</script>
+</body>
+</html>

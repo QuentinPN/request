@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/api.ts';
 
 test('la feuille de demande s’ouvre au clavier et se ferme avec Échap', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/composants');
   const trigger = page.getByRole('button', { name: 'Ouvrir la feuille de demande' });
   await trigger.focus();
   await page.keyboard.press('Enter');
@@ -14,7 +14,7 @@ test('la feuille de demande s’ouvre au clavier et se ferme avec Échap', async
 });
 
 test('les affiches proposent « Demander » au focus', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/composants');
   const request = page.getByRole('button', { name: 'Demander Titre absent' });
   await request.focus();
   await expect(request).toBeVisible();

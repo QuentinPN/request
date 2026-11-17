@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Recommandation · Assistant</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}.acc{border:1px solid var(--border-1);border-radius:16px;background:var(--surface-1)}.acc .hd{display:flex;align-items:center;gap:16px;padding:18px 22px}.acc .num{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;flex:none}.acc.open{border-color:var(--border-focus)}</style>
+</helmet>
+<div class="scr col" style="width: 1440px; height: 900px; align-items: center; padding: 48px 0; box-sizing: border-box;">
+  <div class="col g16" style="width: 760px;">
+    <div class="col g6" style="margin-bottom: 8px;"><span class="b" style="font-size: 18px;">Request</span><h1 style="font-size: 32px; font-weight: 800; letter-spacing: -0.02em;">Configuration</h1><span class="muted">Chaque section est testée en direct. Rien n'est modifié dans tes services.</span></div>
+    <sc-for list="{{secs}}" as="s" hint-placeholder-count="5">
+      <section class="acc {{s.cls}}">
+        <div class="hd"><span class="num" style="background: {{s.bg}}; color: {{s.fg}};">{{s.n}}</span><div class="col g2 grow"><span class="b">{{s.t}}</span><span class="tiny muted">{{s.d}}</span></div><span class="st flat {{s.c}}">{{s.st}}</span></div>
+        <sc-if value="{{s.open}}" hint-placeholder-val="{{false}}">
+          <div class="col g16" style="padding: 0 22px 22px 66px;">
+            <div class="row g16"><div class="col g6 grow"><span class="lbl">Adresse</span><div class="inp focus">http://192.0.2.20:8989</div></div><div class="col g6 grow"><span class="lbl">Clé d'API</span><div class="inp">•••••••••••••••• 4f2a</div><span class="hint">Sonarr › Paramètres › Général</span></div></div>
+            <div class="row g16"><div class="col g6 grow"><span class="lbl">Profil de qualité</span><div class="inp row sb">HD-1080p <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div></div><div class="col g6 grow"><span class="lbl">Dossier racine</span><div class="inp row sb">/series · 1,2 To libres <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div></div></div>
+            <div class="msg tint-ok small">Connexion réussie · Sonarr v4.0.11 · 3 profils, 2 dossiers trouvés</div>
+            <div class="row g8" style="justify-content: flex-end;"><button class="btn btn-g" type="button">Tester à nouveau</button><button class="btn btn-w" type="button">Enregistrer et continuer</button></div>
+          </div>
+        </sc-if>
+      </section>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ok = { bg: 'var(--tint-ok-bg)', fg: 'var(--text-ok)', c: 'ok', st: 'Testé' }, todo = { bg: 'var(--surface-2)', fg: 'var(--text-2)', c: 'wait', st: 'À faire' };
+    return { secs: [
+      { n: '1', t: 'Emby', d: 'Connexion des membres et détection de ce qui est déjà là', ...ok, cls: '', open: false },
+      { n: '2', t: 'TMDB', d: 'Catalogue, affiches et tendances en français', ...ok, cls: '', open: false },
+      { n: '3', t: 'Radarr', d: 'Films · HD-1080p · /films', ...ok, cls: '', open: false },
+      { n: '4', t: 'Sonarr', d: 'Séries · test en cours', bg: 'var(--tint-accent-bg)', fg: 'var(--text)', c: 'req', st: 'En cours', cls: 'open', open: true },
+      { n: '5', t: 'Règles et quotas', d: 'Qui approuve, quotas par semaine, Discord (facultatif)', ...todo, cls: '', open: false }
+    ] };
+  }
+}
+</script>
+</body>
+</html>

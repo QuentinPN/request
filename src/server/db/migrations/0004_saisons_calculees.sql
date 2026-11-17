@@ -1,0 +1,1 @@
+ALTER TABLE `media` ADD `seasons_computed_at` integer;

@@ -1,0 +1,11 @@
+{
+  "User": {
+    "Id": "u-1",
+    "Name": "alice",
+    "ServerId": "abc123serverid",
+    "PrimaryImageTag": "tag42",
+    "Policy": { "IsAdministrator": true, "IsDisabled": false }
+  },
+  "AccessToken": "TOKEN-TO-NEVER-LEAK",
+  "ServerId": "abc123serverid"
+}

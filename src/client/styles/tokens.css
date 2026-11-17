@@ -36,6 +36,7 @@
 	--status-degraded: #ffd60a;
 	--status-down: #ff453a;
 	--status-unknown: #8e8e93;
+	--status-downloading: #b9d3f0;
 	/* Texte écrit dans une couleur d'état, lisible sur le fond (4,5:1). */
 	/* Part de la couleur d'état dans un texte qui la reprend (pastilles), mêlée à --text. */
 	--tone-ink: 100%;
@@ -157,6 +158,7 @@
 	--status-degraded: #ffcc00;
 	--status-down: #ff3b30;
 	--status-unknown: #8e8e93;
+	--status-downloading: #2a6099;
 	--tone-ink: 40%;
 	--text-ok: #1a6e30;
 	--text-warn: #8a5300;

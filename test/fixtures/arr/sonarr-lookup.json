@@ -1,0 +1,16 @@
+[
+  {
+    "id": 0,
+    "title": "Breaking Bad",
+    "tvdbId": 81189,
+    "titleSlug": "breaking-bad",
+    "year": 2008,
+    "images": [],
+    "seasons": [
+      { "seasonNumber": 0, "monitored": false },
+      { "seasonNumber": 1, "monitored": true },
+      { "seasonNumber": 2, "monitored": true },
+      { "seasonNumber": 3, "monitored": true }
+    ]
+  }
+]

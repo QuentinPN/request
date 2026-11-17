@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Recommandation · Fiche titre</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}.tl{position:relative;padding-left:32px}.tl:before{content:"";position:absolute;left:11px;top:6px;bottom:6px;width:2px;background:var(--track)}</style>
+</helmet>
+<div class="scr" style="width: 1440px; height: 1500px;">
+  <header class="row sb" style="position: absolute; top: 24px; left: 64px; right: 64px; z-index: 5;">
+    <button class="iconbtn" type="button" aria-label="Retour"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
+    <nav class="navpill glass" aria-label="Navigation principale">
+      <a class="navl" href="#">Découvrir</a><a class="navl" href="#">Films</a><a class="navl on" href="#">Séries</a><a class="navl" href="#">Demandes</a><a class="navl" href="#">Approbations <span class="count">3</span></a>
+      <button class="navl" type="button" aria-label="Rechercher"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg><span class="kbd">Ctrl K</span></button>
+    </nav>
+    <span class="avatar">Q</span>
+  </header>
+
+  <section style="position: relative; height: 1050px;">
+    <div class="backdrop" style="--t: #4b2f2f; height: 70%;"></div>
+    <div class="veil-l"></div><div class="veil-b" style="top: 30%;"></div>
+    <span class="phl">Fond TMDB</span>
+    <div class="row g32" style="position: absolute; left: 64px; right: 64px; top: 300px; align-items: flex-end;">
+      <div class="poster p-lg" style="--p: #4b2f2f; flex: none;"><span class="st part">Partiellement disponible</span></div>
+      <div class="col g16" style="max-width: 640px;">
+        <div class="row g8"><span class="gpill">Drame</span><span class="gpill">Histoire</span><span class="gpill">Guerre</span></div>
+        <h1 style="font-size: 64px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;">Shōgun</h1>
+        <div class="meta"><span>2024</span><i></i><span>Série · 1 saison, 10 épisodes</span><i></i><span>FX</span><i></i><span class="rating">16</span><i></i><span>TMDB 8,6</span></div>
+        <p class="muted" style="font-size: 17px;">Au Japon, en 1600, le seigneur Toranaga lutte pour sa survie alors que ses ennemis au Conseil des régents s'unissent contre lui.</p>
+        <div class="row g12" style="margin-top: 8px;">
+          <button class="btn btn-w" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"></path></svg>Demander les épisodes manquants</button>
+          <button class="btn btn-g" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 3 14 9-14 9z"></path></svg>Regarder dans Emby</button>
+          <button class="iconbtn" type="button" aria-label="Bande-annonce"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"></rect><path d="m10 9 5 3-5 3z"></path></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g24" style="position: absolute; left: 64px; right: 64px; top: 760px; align-items: flex-start;">
+      <div class="col g16 grow">
+        <div class="rowh"><h2>Saisons</h2><span class="small muted">Emby : 7 épisodes sur 10</span></div>
+        <div class="card col g12" style="padding: 20px;">
+          <div class="row sb"><div class="row g12"><span class="b">Saison 1</span><span class="small muted">10 épisodes · 2024</span></div><span class="st flat part">7 / 10 disponibles</span></div>
+          <div class="bar"><i style="width: 70%; background: var(--status-degraded);"></i></div>
+          <div class="row sb"><span class="small muted">Épisodes 8 à 10 absents d'Emby</span><a class="small accent b" href="#">Demander ces épisodes</a></div>
+        </div>
+        <div class="card row sb" style="padding: 20px;"><div class="row g12"><span class="b">Saison 2</span><span class="small muted">Annoncée · 2026</span></div><span class="st flat wait">Pas encore diffusée</span></div>
+      </div>
+      <div class="col g16" style="width: 420px;">
+        <div class="rowh"><h2>Suivi de la demande</h2><span class="tiny muted">emprunt à C</span></div>
+        <div class="glass col g16" style="padding: 22px; border-radius: 16px;">
+          <div class="col g20 tl">
+            <sc-for list="{{tl}}" as="e" hint-placeholder-count="5">
+              <div class="col g2" style="position: relative;"><span style="position: absolute; top: 2px; left: -28px; width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box; background: {{e.bg}}; border: 2px solid {{e.bd}};"></span><span class="small b">{{e.t}}</span><span class="tiny muted">{{e.d}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding: 0 64px;">
+    <div class="rowh"><h2>Distribution</h2></div>
+    <div class="row g24">
+      <sc-for list="{{cast}}" as="c" hint-placeholder-count="7">
+        <div class="col g8" style="width: 128px; align-items: center; text-align: center;">
+          <div style="width: 112px; height: 112px; border-radius: 50%; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border-1);"></div>
+          <span class="small b">{{c.n}}</span><span class="tiny muted">{{c.r}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ok = { bg: 'var(--text-ok)', bd: 'var(--text-ok)' }, now = { bg: 'var(--bg)', bd: 'var(--accent-play)' }, nx = { bg: 'var(--bg)', bd: 'var(--track)' };
+    return { tl: [
+      { t: 'Demandée par Marion', d: '13 nov. à 20 h 02 · épisodes 8 à 10', ...ok },
+      { t: 'Approuvée par Quentin', d: '13 nov. à 20 h 31', ...ok },
+      { t: 'Envoyée à Sonarr', d: 'HD-1080p · /series', ...ok },
+      { t: 'Recherche d’une source', d: 'En cours · nouvel essai toutes les 6 h', ...now },
+      { t: 'Dans Emby', d: 'Marion sera prévenue', ...nx }
+    ], cast: [
+      { n: 'Hiroyuki Sanada', r: 'Yoshii Toranaga' }, { n: 'Cosmo Jarvis', r: 'John Blackthorne' }, { n: 'Anna Sawai', r: 'Toda Mariko' },
+      { n: 'Tadanobu Asano', r: 'Kashigi Yabushige' }, { n: 'Takehiro Hira', r: 'Ishido Kazunari' }, { n: 'Moeka Hoshi', r: 'Usami Fuji' }, { n: 'Hiroto Kanai', r: 'Kashigi Omi' }
+    ] };
+  }
+}
+</script>
+</body>
+</html>

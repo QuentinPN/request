@@ -1,0 +1,10 @@
+{
+  "id": 0,
+  "title": "The Matrix",
+  "year": 1999,
+  "tmdbId": 603,
+  "titleSlug": "603",
+  "images": [{ "coverType": "poster", "remoteUrl": "https://image.example/poster.jpg" }],
+  "hasFile": false,
+  "monitored": false
+}

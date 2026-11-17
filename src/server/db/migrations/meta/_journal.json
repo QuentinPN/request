@@ -8,6 +8,69 @@
       "when": 1794856766432,
       "tag": "0000_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1794905502085,
+      "tag": "0001_membres_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794908482064,
+      "tag": "0002_durcissement_base",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794909877413,
+      "tag": "0003_statut_disponibilite",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794911179401,
+      "tag": "0004_saisons_calculees",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794911943466,
+      "tag": "0005_demandes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794914118357,
+      "tag": "0006_demandes_envoyees_hors_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794916401740,
+      "tag": "0007_episodes_par_saison",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794917480978,
+      "tag": "0008_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794918326679,
+      "tag": "0009_import_seerr",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,12 @@
+{
+  "Items": [
+    { "Id": "e0", "ParentIndexNumber": 0, "IndexNumber": 1, "LocationType": "FileSystem" },
+    { "Id": "e1", "ParentIndexNumber": 1, "IndexNumber": 1, "LocationType": "FileSystem" },
+    { "Id": "e2", "ParentIndexNumber": 1, "IndexNumber": 2, "LocationType": "FileSystem" },
+    { "Id": "e3", "ParentIndexNumber": 1, "IndexNumber": 3, "LocationType": "Virtual" },
+    { "Id": "e4", "ParentIndexNumber": 2, "IndexNumber": 1, "LocationType": "Virtual" },
+    { "Id": "e5", "ParentIndexNumber": 3, "IndexNumber": 1 },
+    { "Id": "e6", "IndexNumber": 9, "LocationType": "FileSystem" }
+  ],
+  "TotalRecordCount": 7
+}

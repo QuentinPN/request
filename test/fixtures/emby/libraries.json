@@ -1,0 +1,6 @@
+[
+  { "Name": "Films", "ItemId": "10", "CollectionType": "movies", "Locations": ["/media/films"] },
+  { "Name": "Séries", "ItemId": "11", "CollectionType": "tvshows" },
+  { "Name": "Musique", "ItemId": "12", "CollectionType": "music" },
+  { "Name": "Mélangé", "ItemId": "13" }
+]

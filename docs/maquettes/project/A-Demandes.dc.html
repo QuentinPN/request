@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>A · Mes demandes</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="request.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<div class="scr" style="width: 1440px; height: 1000px; background: radial-gradient(1200px 500px at 30% -10%, var(--hero-top), transparent 70%), var(--bg);">
+  <header class="row sb" style="position: absolute; top: 24px; left: 64px; right: 64px;">
+    <div class="b" style="font-size: 18px; width: 220px;">Request</div>
+    <nav class="navpill glass" aria-label="Navigation principale">
+      <a class="navl" href="#">Découvrir</a><a class="navl" href="#">Films</a><a class="navl" href="#">Séries</a><a class="navl on" href="#">Demandes</a><a class="navl" href="#">Approbations <span class="count">3</span></a>
+      <button class="navl" type="button" aria-label="Rechercher"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span class="kbd">Ctrl K</span></button>
+    </nav>
+    <div class="row" style="width: 220px; justify-content: flex-end;"><span class="avatar">Q</span></div>
+  </header>
+
+  <main class="col g24" style="position: absolute; top: 120px; left: 64px; right: 64px;">
+    <div class="row sb" style="align-items: flex-end;">
+      <div class="col g8"><h1 style="font-size: 40px; font-weight: 800; letter-spacing: -0.02em;">Mes demandes</h1><span class="muted">7 demandes · quota films 3 / 10, séries 2 / 5 cette semaine</span></div>
+      <div class="row g8">
+        <button class="fp on" type="button">Toutes <span class="n">7</span></button>
+        <button class="fp" type="button">En attente <span class="n">2</span></button>
+        <button class="fp" type="button">En cours <span class="n">2</span></button>
+        <button class="fp" type="button">Disponibles <span class="n">2</span></button>
+        <button class="fp" type="button">Refusées <span class="n">1</span></button>
+      </div>
+    </div>
+    <div class="card col" style="padding: 8px 0;">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="7">
+        <div class="row g20" style="padding: 12px 20px; border-bottom: 1px solid var(--border-1);">
+          <div class="poster p-xs" style="--p: {{r.p}}; flex: none;"></div>
+          <div class="col g4" style="width: 380px;"><span class="b">{{r.t}}</span><span class="small muted">{{r.s}}</span></div>
+          <div class="col g6" style="width: 300px;"><span class="st flat {{r.c}}">{{r.st}}</span><sc-if value="{{r.pct}}" hint-placeholder-val="{{false}}"><div class="bar" style="width: 220px;"><i style="width: {{r.pct}};"></i></div></sc-if><sc-if value="{{r.why}}" hint-placeholder-val="{{false}}"><span class="tiny muted">{{r.why}}</span></sc-if></div>
+          <span class="small muted grow">{{r.d}}</span>
+          <button class="btn btn-sm btn-g" type="button">{{r.a}}</button>
+        </div>
+      </sc-for>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { rows: [
+      { t: 'Le Robot sauvage', s: 'Film · 2024', p: '#2f4a52', st: 'Téléchargement 42 %', c: 'dl', pct: '42%', d: 'Approuvée hier par Quentin', a: 'Détails' },
+      { t: 'Shōgun', s: 'Série · saison 1, épisodes 8 à 10', p: '#4b2f2f', st: 'En attente d’approbation', c: 'wait', d: 'Demandée il y a 2 h', a: 'Annuler' },
+      { t: 'Conclave', s: 'Film · 2024', p: '#3d3d45', st: 'Approuvée, recherche en cours', c: 'req', d: 'Approuvée automatiquement', a: 'Détails' },
+      { t: 'Andor', s: 'Série · saison 2', p: '#30353f', st: 'En attente d’approbation', c: 'wait', d: 'Demandée hier', a: 'Annuler' },
+      { t: 'Oppenheimer', s: 'Film · 2023', p: '#4f3524', st: 'Disponible', c: 'ok', d: 'Ajouté dans Emby le 12 nov.', a: 'Regarder' },
+      { t: 'The Bear', s: 'Série · saison 3', p: '#4a3a2a', st: 'Disponible', c: 'ok', d: 'Ajoutée dans Emby le 9 nov.', a: 'Regarder' },
+      { t: 'Arcane', s: 'Série · saisons 1 et 2', p: '#2b3550', st: 'Refusée', c: 'no', why: 'Motif : déjà sur le disque partagé', d: 'Refusée le 8 nov.', a: 'Détails' }
+    ] };
+  }
+}
+</script>
+</body>
+</html>
