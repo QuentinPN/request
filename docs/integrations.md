@@ -84,3 +84,16 @@ Sources : https://developer.themoviedb.org/docs/authentication-application, http
 
 - **Langue** : `language=fr-FR`. Si `overview` ou `title` sont vides, refaire la requête en `en-US` pour ces champs. Pour les vidéos : `include_video_language=fr,en,null`.
 - **Mentions** : l'attribution TMDB est obligatoire. Les données de watch/providers viennent de JustWatch.
+
+## Discord (5.3)
+
+Facultatif, désactivé par défaut. Source : https://discord.com/developers/docs/resources/webhook#execute-webhook
+
+- **Réglage** : Réglages › Notifications Discord (propriétaire), hors assistant. Adresse du webhook, interrupteur, évènements envoyés (`requested`, `approved`, `declined`, `available`, `failed`). `GET/PUT /api/settings/discord` et `POST /api/settings/discord/test`. L'adresse est un secret : chiffrée en base, renvoyée seulement sous la forme `{ set: true }`, gardée si le champ est laissé vide à l'enregistrement.
+- **Adresse acceptée** : `https://discord.com/api/webhooks/{id}/{jeton}` ou `discordapp.com`, rien d'autre (aucun appel sortant vers un hôte choisi par l'utilisateur).
+- **Appel** : `POST {adresse}` avec `{ embeds: [{ title, description, color, timestamp, fields, thumbnail }], allowed_mentions: { parse: [] } }`. Réponse 204 sans corps (sans `?wait=true`) [V]. `allowed_mentions` vide : un titre ou un motif ne peut pas mentionner `@everyone`. Limites : 1024 caractères par champ, 4096 pour la description (textes tronqués). Limite de débit (429) : pas de nouvelle tentative, le message est perdu.
+- **Contenu** (en français) : titre court de l'évènement (« Demande approuvée »), `**Titre** (année)`, champ « Demandé par », champ « Motif » (refus) ou « Raison » (échec). Un message par évènement, pas par destinataire : l'acteur n'est pas exclu, un salon n'est pas un destinataire. Mêmes évènements que la cloche : une nouvelle demande d'un rôle à approbation automatique n'envoie pas « à approuver », ni les saisons ajoutées à une demande déjà en attente.
+- **Affiche** : l'adresse TMDB publique (`https://image.tmdb.org/t/p/w342/…`) en vignette ; `/api/images` exige une session, Discord ne peut pas la lire. Sans affiche connue, pas de vignette.
+- **Envoi** : après la validation de la transaction de l'évènement, sans attendre (l'action du membre n'en dépend jamais), délai de 5 s, aucune nouvelle tentative. L'évènement n'est envoyé que s'il est bien en base (une transaction annulée n'envoie rien). Désactivé ou sans adresse : aucun appel, ni vers Discord ni vers TMDB.
+- **Journal** : l'échec est journalisé sans l'adresse (le jeton est dans le chemin, que `redactUrl` ne masque pas) : seulement la nature de l'erreur et son code HTTP.
+- **Tester** : poste un message « Test de Request » avec l'adresse saisie, sinon l'enregistrée. Un refus de Discord (401/403, 404 si le webhook a été supprimé) devient une 422 au message lisible.

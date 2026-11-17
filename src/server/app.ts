@@ -9,6 +9,7 @@ import { apiErrorHandler, HttpError } from './lib/api-errors.ts';
 import { registerAuth } from './plugins/auth.ts';
 import { authRoutes } from './routes/auth.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
+import { discordRoutes } from './routes/discord.ts';
 import { embyRoutes } from './routes/emby.ts';
 import { imageRoutes } from './routes/images.ts';
 import { notificationsRoutes } from './routes/notifications.ts';
@@ -18,8 +19,10 @@ import { usersRoutes } from './routes/users.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
 import { type AvailabilityService, createAvailability } from './services/availability.ts';
 import { parseBackupKeep, startBackups } from './services/backup.ts';
+import { createDiscord, type DiscordService } from './services/discord.ts';
 import { createImageCache, parseImageCacheMaxBytes } from './services/images.ts';
 import { failOrphanJobs } from './services/jobs.ts';
+import { onRequestEvent } from './services/notifications.ts';
 import { failInterruptedSends } from './services/requests.ts';
 import { createSync, startScheduler } from './services/sync.ts';
 import { createTmdbProvider } from './services/tmdb.ts';
@@ -31,6 +34,8 @@ declare module 'fastify' {
     tmdb: () => TmdbClient;
     /** Statut de disponibilité des titres (Emby, Radarr, Sonarr), en cache dans `media`. */
     availability: AvailabilityService;
+    /** Notifications Discord (facultatives) ; les tests attendent ses envois avec `idle()`. */
+    discord: DiscordService;
   }
 }
 
@@ -38,6 +43,8 @@ declare module 'fastify' {
 export interface Upstreams {
   tmdbUrl?: string;
   imagesUrl?: string;
+  /** Remplace l'hôte des webhooks Discord ; l'adresse enregistrée reste, elle, celle de discord.com. */
+  discordUrl?: string;
 }
 
 const root = resolve(import.meta.dirname, '../..');
@@ -83,10 +90,18 @@ export async function buildApp({
   const sync = createSync(data, { availability: app.availability });
   const scheduler = schedule ? startScheduler(sync, data.db) : null;
   const backups = schedule ? startBackups(data.db.$client, data.dir, parseBackupKeep(process.env.BACKUP_KEEP)) : null;
-  // Le balayage et la sauvegarde en cours finissent avant la fermeture de la base.
+  const discord = createDiscord(data, {
+    tmdb: app.tmdb,
+    ...(upstreams.discordUrl && { baseUrl: upstreams.discordUrl }),
+  });
+  app.decorate('discord', discord);
+  const unsubscribeDiscord = onRequestEvent(discord.enqueue);
+  // Le balayage, la sauvegarde et les envois Discord en cours finissent avant la fermeture de la base.
   app.addHook('onClose', async () => {
+    unsubscribeDiscord();
     await scheduler?.stop();
     await backups?.stop();
+    await discord.idle();
     data.db.$client.close();
   });
   app.setErrorHandler(apiErrorHandler);
@@ -107,6 +122,7 @@ export async function buildApp({
   usersRoutes(app);
   requestsRoutes(app);
   notificationsRoutes(app);
+  discordRoutes(app, discord);
   webhookRoutes(app, sync);
   await app.register(catalogueRoutes);
   await app.register(embyRoutes);

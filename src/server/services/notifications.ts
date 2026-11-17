@@ -87,12 +87,26 @@ export interface RequestEventFact {
   at: Date;
 }
 
+type RequestEventListener = (event: RequestEventFact) => void;
+const requestEventListeners = new Set<RequestEventListener>();
+
+/**
+ * S'abonne aux évènements qui méritent une notification (ceux de `notifyRequestEvent`, une fois par évènement et non
+ * par destinataire). L'écouteur est appelé dans la transaction de l'évènement : il ne fait que planifier son travail,
+ * qui s'exécute après la validation. Renvoie le désabonnement.
+ */
+export function onRequestEvent(listener: RequestEventListener): () => void {
+  requestEventListeners.add(listener);
+  return () => requestEventListeners.delete(listener);
+}
+
 /**
  * Notifications d'un évènement de demande, écrites dans sa transaction : liées à la transition (elle-même
  * idempotente), un webhook rejoué n'en crée pas de nouvelles. Le membre qui agit n'est jamais prévenu de sa propre
  * action (approbation automatique, refus par un gestionnaire de sa propre demande). Une nouvelle demande ne prévient
  * les gestionnaires que si elle attend une approbation : pas pour un rôle à approbation automatique, ni pour des
- * saisons ajoutées à une demande déjà en attente (évènement `requested` avec détail).
+ * saisons ajoutées à une demande déjà en attente (évènement `requested` avec détail). Les abonnés (Discord) sont
+ * prévenus de ces mêmes évènements, sans l'exclusion de l'acteur : un salon n'est pas un destinataire.
  */
 export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: RequestEventFact) {
   const { type: kind, requestId, actorId, detail, at } = event;
@@ -105,6 +119,7 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
     .get();
   if (!request) return;
   if (kind === 'requested' && (detail !== null || capabilitiesOf(request.role).autoApprove)) return;
+  for (const listener of requestEventListeners) listener(event);
   const to =
     RECIPIENTS[kind] === 'requester'
       ? [request.userId]

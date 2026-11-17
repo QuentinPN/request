@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
 import { setupStateQuery } from '@/lib/session';
 import { type SectionId, sectionOrder } from './config';
+import { DiscordSection } from './discord-section';
 import { IntegrationSection } from './integration-section';
 import { settingQuery } from './queries';
 import { RulesSection } from './rules-section';
@@ -55,7 +56,10 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
         />
       ))}
       {!wizard && viewer?.capabilities.isOwner && (
-        <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
+        <>
+          <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
+          <DiscordSection section="discord" open={open === 'discord'} onToggle={() => toggle('discord')} />
+        </>
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+import { DISCORD_SETTINGS_PATH } from '@shared/discord.ts';
 import type { MaskedSetting, SettingInput } from '@shared/settings.ts';
 import type { SetupSection } from '@shared/setup.ts';
 import { WEBHOOK_SETTINGS_PATH, type WebhookSettings } from '@shared/webhooks.ts';
@@ -24,6 +25,12 @@ export const settingQuery = <K extends SetupSection>(key: K) =>
 export const webhooksQuery = queryOptions({
   queryKey: ['settings', 'webhooks'],
   queryFn: ({ signal }) => apiGet<WebhookSettings>(WEBHOOK_SETTINGS_PATH, undefined, signal),
+});
+
+/** Notifications Discord : l'adresse du webhook est masquée (`{ set }`), le reste est lisible (propriétaire seulement). */
+export const discordQuery = queryOptions({
+  queryKey: ['settings', 'discord'],
+  queryFn: ({ signal }) => apiGet<MaskedSetting<'discord'>>(DISCORD_SETTINGS_PATH, undefined, signal),
 });
 
 /** Enregistre une section (le serveur refait le test de connexion), puis rafraîchit l'état de l'installation. */

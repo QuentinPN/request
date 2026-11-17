@@ -6,7 +6,8 @@ import { IntegrationError } from '../integrations/http.ts';
 import { MINUTE_MS } from '../lib/time.ts';
 
 const SERVICE = 'TMDB';
-const DEFAULT_UPSTREAM = 'https://image.tmdb.org/t/p';
+/** Images publiques de TMDB : le proxy les sert aux membres, Discord les lit directement. */
+export const DEFAULT_UPSTREAM = 'https://image.tmdb.org/t/p';
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MIB = 1024 * 1024;
 /** Taille maximale du cache disque, en Mio (`IMAGE_CACHE_MAX_MB`). */

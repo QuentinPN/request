@@ -38,6 +38,8 @@ export type SectionFrameProps<S extends SectionId = SectionId> = {
   disabled?: boolean;
   /** Libellé de « Testé » pour une section sans test (règles). */
   doneLabel?: string;
+  /** Libellé de « À faire » pour une section facultative (Discord : « Désactivé »). */
+  todoLabel?: string;
 };
 
 /** Élément d'accordéon de l'assistant et des réglages : en-tête numéroté, pastille de statut, contenu replié. */
@@ -47,6 +49,7 @@ export function SectionFrame({
   onToggle,
   disabled = false,
   doneLabel,
+  todoLabel,
   status,
   children,
 }: SectionFrameProps & { status: SectionStatus; children: ReactNode }) {
@@ -54,7 +57,7 @@ export function SectionFrame({
   const style = statusStyle[status];
   const headerId = `section-${section}`;
   const panelId = `${headerId}-contenu`;
-  const statusLabel = status === 'done' && doneLabel ? doneLabel : style.label;
+  const statusLabel = (status === 'done' && doneLabel) || (status === 'todo' && todoLabel) || style.label;
   return (
     <div
       className={cn(

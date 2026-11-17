@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { notificationKinds } from './notifications.ts';
 import { quotaRuleSchema } from './roles.ts';
 
 /** Adresse d'un service telle qu'enregistrée : sans `/` final. */
@@ -9,6 +10,14 @@ const service = z.object({ url, apiKey });
 /** Profil de qualité et dossier racine : réglages Radarr/Sonarr, et choix de l'approbateur avant envoi. */
 export const profileId = z.number().int().positive('Profil requis');
 export const rootFolderPath = z.string().trim().min(1, 'Dossier racine requis');
+
+/** Hôtes des webhooks Discord (`discordapp.com` : l'ancien nom de domaine, toujours accepté par Discord). */
+const DISCORD_HOSTS = ['discord.com', 'discordapp.com'];
+const isDiscordWebhook = (value: string) => {
+  if (!URL.canParse(value)) return false;
+  const { hostname, pathname } = new URL(value);
+  return DISCORD_HOSTS.includes(hostname) && pathname.startsWith('/api/webhooks/');
+};
 
 /** Disponibilité minimale d'un film avant que Radarr ne le cherche. */
 export const minimumAvailabilities = ['announced', 'inCinemas', 'released'] as const;
@@ -49,12 +58,21 @@ export const settingSchemas = {
     languageProfileId: profileId.optional(),
   }),
   tmdb: connectionSchemas.tmdb,
-  discord: z.object({
-    webhookUrl: z
-      .url({ protocol: /^https$/ })
-      .nullable()
-      .default(null),
-  }),
+  /** Notifications Discord, facultatives : rien n'est envoyé tant que `enabled` est faux ou l'adresse absente. */
+  discord: z
+    .object({
+      webhookUrl: z
+        .url({ protocol: /^https$/ })
+        .refine(isDiscordWebhook, 'Adresse attendue : https://discord.com/api/webhooks/…')
+        .nullable()
+        .default(null),
+      enabled: z.boolean().default(false),
+      events: z.array(z.enum(notificationKinds)).default([...notificationKinds]),
+    })
+    .refine((d) => !d.enabled || d.webhookUrl !== null, {
+      message: 'Adresse du webhook requise',
+      path: ['webhookUrl'],
+    }),
   /** Règles de demande : quotas par défaut, sur une fenêtre glissante (le rôle décide de l'approbation auto). */
   rules: z.object({
     defaultQuota: z

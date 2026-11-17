@@ -1,3 +1,4 @@
+import type { NotificationKind } from '@shared/notifications.ts';
 import type { IntegrationKey, minimumAvailabilities, seriesTypes } from '@shared/settings.ts';
 import type { ArrTestResult, SetupSection, TestResults } from '@shared/setup.ts';
 import type { WebhookService } from '@shared/webhooks.ts';
@@ -8,11 +9,23 @@ export const sectionOrder = ['emby', 'tmdb', 'radarr', 'sonarr', 'rules'] as con
 const _complete: Exclude<SetupSection, (typeof sectionOrder)[number]> extends never ? true : never = true;
 void _complete;
 
-/** Sections de Réglages : celles de l'assistant, plus les webhooks (propriétaire, hors assistant : rien à tester). */
-export type SectionId = SetupSection | 'webhooks';
-export const settingsSectionOrder = [...sectionOrder, 'webhooks'] as const satisfies readonly SectionId[];
+/**
+ * Sections de Réglages : celles de l'assistant, plus les webhooks et Discord (propriétaire, hors assistant : l'un n'a
+ * rien à enregistrer, l'autre est facultatif).
+ */
+export type SectionId = SetupSection | 'webhooks' | 'discord';
+export const settingsSectionOrder = [...sectionOrder, 'webhooks', 'discord'] as const satisfies readonly SectionId[];
 
 export const webhookLabels: Record<WebhookService, string> = { radarr: 'Radarr', sonarr: 'Sonarr' };
+
+/** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande. */
+export const discordEventLabels: Record<NotificationKind, string> = {
+  requested: 'Nouvelle demande à approuver',
+  approved: 'Demande approuvée',
+  declined: 'Demande refusée',
+  available: 'Titre disponible dans Emby',
+  failed: 'Échec de l’envoi à Radarr ou Sonarr',
+};
 
 export const sectionText: Record<SectionId, { title: string; description: string }> = {
   emby: { title: 'Emby', description: 'Connexion des membres et détection de ce qui est déjà là' },
@@ -21,6 +34,7 @@ export const sectionText: Record<SectionId, { title: string; description: string
   sonarr: { title: 'Sonarr', description: 'Séries : profil de qualité, dossier racine et type' },
   rules: { title: 'Règles et quotas', description: 'Quotas de demandes par défaut des membres' },
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
+  discord: { title: 'Notifications Discord', description: 'Facultatif : les évènements des demandes dans un salon' },
 };
 
 /** Champs de connexion de chaque intégration ; `url: null` = clé seule (TMDB). */
