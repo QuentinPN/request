@@ -74,6 +74,12 @@ const rawProviders = z.object({
   buy: z.array(rawProvider).nullish(),
 });
 
+/** Plateformes de la région (`/watch/providers/{type}`) : `display_priorities` donne le rang par pays. */
+const rawRegionProvider = rawProvider.extend({
+  display_priority: z.number().nullish(),
+  display_priorities: z.record(z.string(), z.number()).nullish(),
+});
+
 const rawCast = z.object({
   id: z.number().int(),
   name: z.string(),
@@ -157,6 +163,23 @@ function toDetails(raw: RawDetails, type: MediaType): MediaDetails {
   };
 }
 
+/** Sépare les résultats d'un flux mixte : films et séries d'un côté, personnes de l'autre ; le reste est ignoré. */
+function splitMixed(items: z.infer<typeof rawSearchItem>[]) {
+  const results: MediaSummary[] = [];
+  const people: PersonSummary[] = [];
+  for (const item of items) {
+    if (item.media_type === 'movie' || item.media_type === 'tv') results.push(toSummary(item, item.media_type));
+    else if (item.media_type === 'person')
+      people.push({
+        id: item.id,
+        name: item.name ?? '',
+        profilePath: item.profile_path || null,
+        knownFor: (item.known_for ?? []).map((k) => k.title || k.name || '').filter(Boolean),
+      });
+  }
+  return { results, people };
+}
+
 const toPaged = (raw: z.infer<typeof mediaPage>, type: MediaType): Paged<MediaSummary> => ({
   page: raw.page,
   totalPages: raw.total_pages,
@@ -213,6 +236,10 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
     trending: async (type: MediaType, window: 'day' | 'week'): Promise<MediaSummary[]> =>
       (await list(type, `/trending/${type}/${window}`)).results,
 
+    /** Films et séries mélangés, dans l'ordre de TMDB (les personnes sont écartées). */
+    trendingAll: async (window: 'day' | 'week'): Promise<MediaSummary[]> =>
+      splitMixed((await get(`/trending/all/${window}`, rawPage(rawSearchItem), {}, LIST_TTL_MS)).results).results,
+
     popular: async (type: MediaType): Promise<MediaSummary[]> => (await list(type, `/${type}/popular`)).results,
 
     /** Films à venir en France. */
@@ -234,22 +261,26 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
     genres: async (type: MediaType): Promise<Genre[]> =>
       (await get(`/genre/${type}/list`, z.object({ genres: z.array(genreSchema) }), {}, DETAILS_TTL_MS)).genres,
 
+    /**
+     * Plateformes de streaming de la région, les plus en vue d'abord. TMDB ne filtre pas ici par mode
+     * (abonnement, location, achat) : le filtre « abonnement » s'applique à `discoverByProvider`.
+     */
+    providers: async (type: MediaType): Promise<WatchProvider[]> => {
+      const raw = await get(
+        `/watch/providers/${type}`,
+        z.object({ results: z.array(rawRegionProvider) }),
+        { watch_region: REGION },
+        DETAILS_TTL_MS,
+      );
+      const rank = (p: z.infer<typeof rawRegionProvider>) =>
+        p.display_priorities?.[REGION] ?? p.display_priority ?? Number.MAX_SAFE_INTEGER;
+      return toProviders([...raw.results].sort((a, b) => rank(a) - rank(b)));
+    },
+
     /** Films et séries (un seul flux paginé) et personnes (à part) ; les autres types sont ignorés. */
     searchMulti: async (query: string, page = 1): Promise<MediaSearchResults> => {
       const raw = await get('/search/multi', rawPage(rawSearchItem), { query, page }, LIST_TTL_MS);
-      const results: MediaSummary[] = [];
-      const people: PersonSummary[] = [];
-      for (const item of raw.results) {
-        if (item.media_type === 'movie' || item.media_type === 'tv') results.push(toSummary(item, item.media_type));
-        else if (item.media_type === 'person')
-          people.push({
-            id: item.id,
-            name: item.name ?? '',
-            profilePath: item.profile_path || null,
-            knownFor: (item.known_for ?? []).map((k) => k.title || k.name || '').filter(Boolean),
-          });
-      }
-      return { page: raw.page, totalPages: raw.total_pages, results, people };
+      return { page: raw.page, totalPages: raw.total_pages, ...splitMixed(raw.results) };
     },
 
     /** Fiche complète ; si le titre ou le synopsis manquent en français, ils sont complétés en anglais (un seul appel, au mieux). */

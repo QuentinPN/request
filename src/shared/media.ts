@@ -77,17 +77,28 @@ export interface Paged<T> {
   totalPages: number;
   results: T[];
 }
+export const pagedSchema = <T extends z.ZodType>(item: T) =>
+  z.object({ page: z.number().int(), totalPages: z.number().int(), results: z.array(item) });
 
 /** Résultat d'une recherche globale : films et séries paginés, personnes à part. */
-export interface MediaSearchResults extends Paged<MediaSummary> {
-  people: PersonSummary[];
-}
+export const mediaSearchResultsSchema = pagedSchema(mediaSummarySchema).extend({
+  people: z.array(personSummarySchema),
+});
+export type MediaSearchResults = z.infer<typeof mediaSearchResultsSchema>;
 
-export const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
-export const IMAGE_SIZES = { poster: 'w342', backdrop: 'w1280', profile: 'w185' } as const;
+/** Tailles d'image acceptées par le proxy d'images (celles de TMDB). */
+export const imageSizeSchema = z.enum(['w185', 'w342', 'w500', 'w780', 'w1280', 'original']);
+export type ImageSize = z.infer<typeof imageSizeSchema>;
+
+/** Les images sont servies par l'appli (proxy avec cache disque) : le navigateur n'appelle jamais TMDB. */
+export const IMAGE_BASE_URL = '/api/images';
+export const IMAGE_SIZES = { poster: 'w342', backdrop: 'w1280', profile: 'w185' } as const satisfies Record<
+  string,
+  ImageSize
+>;
 export type ImageKind = keyof typeof IMAGE_SIZES;
 
-/** Adresse d'une image TMDB (`null` si le média n'en a pas). */
+/** Adresse d'une image TMDB, servie par l'appli (`null` si le média n'en a pas). */
 export function imageUrl(path: string | null | undefined, kind: ImageKind): string | null {
   return path ? `${IMAGE_BASE_URL}/${IMAGE_SIZES[kind]}${path}` : null;
 }

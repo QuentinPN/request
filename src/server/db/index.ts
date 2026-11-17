@@ -22,9 +22,9 @@ export function openDb(file: string) {
 
 export type Db = ReturnType<typeof openDb>;
 
-/** Dossier de données (volume /data en production) : base SQLite et clé de chiffrement des secrets. */
+/** Dossier de données (volume /data en production) : base SQLite, clé de chiffrement des secrets et caches. */
 export function openDataDir(dir: string) {
-  return { db: openDb(join(dir, 'request.db')), cryptoKey: loadOrCreateKey(join(dir, 'secret.key')) };
+  return { dir, db: openDb(join(dir, 'request.db')), cryptoKey: loadOrCreateKey(join(dir, 'secret.key')) };
 }
 
 export type Data = ReturnType<typeof openDataDir>;

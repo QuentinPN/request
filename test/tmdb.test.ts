@@ -375,9 +375,9 @@ describe('cache', () => {
 
 describe('imageUrl', () => {
   it('construit les adresses par type', () => {
-    expect(imageUrl('/a.jpg', 'poster')).toBe('https://image.tmdb.org/t/p/w342/a.jpg');
-    expect(imageUrl('/a.jpg', 'backdrop')).toBe('https://image.tmdb.org/t/p/w1280/a.jpg');
-    expect(imageUrl('/a.jpg', 'profile')).toBe('https://image.tmdb.org/t/p/w185/a.jpg');
+    expect(imageUrl('/a.jpg', 'poster')).toBe('/api/images/w342/a.jpg');
+    expect(imageUrl('/a.jpg', 'backdrop')).toBe('/api/images/w1280/a.jpg');
+    expect(imageUrl('/a.jpg', 'profile')).toBe('/api/images/w185/a.jpg');
   });
 
   it("renvoie null sans chemin d'image", () => {
