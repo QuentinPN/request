@@ -1,0 +1,26 @@
+{
+  "page": 1,
+  "total_pages": 3,
+  "results": [
+    {
+      "id": 603,
+      "media_type": "movie",
+      "title": "Matrix",
+      "release_date": "1999-03-30",
+      "poster_path": "/p.jpg",
+      "overview": "Film."
+    },
+    { "id": 1396, "media_type": "tv", "name": "Breaking Bad", "first_air_date": "2008-01-20", "overview": "Série." },
+    {
+      "id": 6384,
+      "media_type": "person",
+      "name": "Keanu Reeves",
+      "profile_path": "/keanu.jpg",
+      "known_for": [
+        { "id": 603, "title": "Matrix" },
+        { "id": 245891, "title": "John Wick" },
+        { "id": 1, "name": "Une série" }
+      ]
+    }
+  ]
+}
