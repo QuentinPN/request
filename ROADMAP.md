@@ -22,7 +22,7 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
   - Validation : Playwright clavier + axe, `npm run verify`
 - [x] **1.5** (P1) API : `FastifyInstance.data` typé honnêtement ; tout chemin `/api` inconnu (y compris `/api` et `/api?x`) renvoie un 404 JSON, avec ou sans client compilé → test de route
 - [x] **1.6** (P1) Intégration continue GitHub Actions (`npm run verify`) sur les PR vers `dev` et `main`
-- [ ] **1.7** (P1) Base : index `sessions(user_id)` et `sessions(expires_at)`, `CHECK` sur `users.role`, lecture validée de `quota_override`, PRAGMA `synchronous=NORMAL` et `journal_size_limit` (cf. docs/DATA_MODEL.md) → tests de migration, `EXPLAIN QUERY PLAN` sur la purge
+- [x] **1.7** (P1) Base : index `sessions(user_id)` et `sessions(expires_at)`, `CHECK` sur `users.role`, lecture validée de `quota_override`, PRAGMA `synchronous=NORMAL` et `journal_size_limit` (cf. docs/DATA_MODEL.md) → tests de migration, `EXPLAIN QUERY PLAN` sur la purge
 
 ## Phase 2 — Configuration et connexion
 

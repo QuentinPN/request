@@ -24,7 +24,7 @@ export const toMember = (user: User): Member => ({
   role: user.role,
   avatarUrl: avatarUrlOf(user),
   quotaOverride: user.quotaOverride ?? null,
-  lastLoginAt: user.lastLoginAt.toISOString(),
+  lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
 });
 
 export type EmbyIdentity = { id: string; name: string; avatar: string | null; isEmbyAdmin: boolean };
@@ -92,7 +92,7 @@ export function importFromEmby(
   const profile = { name: identity.name, avatar: identity.avatar, updatedAt: now };
   return db
     .insert(users)
-    .values({ id: identity.id, ...profile, role: 'member', createdAt: now, lastLoginAt: now })
+    .values({ id: identity.id, ...profile, role: 'member', createdAt: now, lastLoginAt: null })
     .onConflictDoUpdate({ target: users.id, set: profile })
     .returning()
     .get();

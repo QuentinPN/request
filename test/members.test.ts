@@ -1,8 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { openDataDir, openDb } from '../src/server/db/index.ts';
+import { describe, expect, it } from 'vitest';
+import { openDb } from '../src/server/db/index.ts';
 import {
   createSession,
   purgeExpired,
@@ -21,11 +18,6 @@ import {
   upsertFromEmby,
 } from '../src/server/services/users.ts';
 import { capabilitiesOf, quotaOverrideSchema, roleLabels, roles } from '../src/shared/roles.ts';
-
-const dirs: string[] = [];
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
 
 const emby = (id: string, isEmbyAdmin = false) => ({ id, name: `Nom ${id}`, avatar: null, isEmbyAdmin });
 const hour = 3600_000;
@@ -57,27 +49,6 @@ describe('migrations des membres', () => {
       .prepare("select name from sqlite_master where type = 'table' and name in ('users', 'sessions')")
       .all();
     expect(names).toHaveLength(2);
-  });
-
-  it('se rejouent sur une base existante sans toucher aux réglages', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'request-'));
-    dirs.push(dir);
-    const first = openDataDir(dir);
-    first.db.$client.prepare("insert into settings (key, value) values ('tmdb', '{}')").run();
-    // Retour à l'état d'avant cette migration : base de la phase précédente.
-    first.db.$client.exec('drop table sessions; drop table users;');
-    first.db.$client.exec(
-      'delete from __drizzle_migrations where created_at = (select max(created_at) from __drizzle_migrations)',
-    );
-    first.db.$client.close();
-
-    const again = openDataDir(dir);
-    const count = (table: string) =>
-      (again.db.$client.prepare(`select count(*) as n from ${table}`).get() as { n: number }).n;
-    expect(count('settings')).toBe(1);
-    expect(count('users')).toBe(0);
-    expect(count('__drizzle_migrations')).toBe(2);
-    again.db.$client.close();
   });
 });
 

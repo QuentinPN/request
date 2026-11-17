@@ -104,7 +104,7 @@ erDiagram
 
 ## 5. Tâches, par priorité
 
-1. **Maintenant (correctif socle)** — index `sessions(user_id)` et `sessions(expires_at)`, `CHECK` sur `users.role`, PRAGMA `synchronous`/`journal_size_limit`. _Critères_ : migration générée ; `EXPLAIN QUERY PLAN` des deux requêtes de `sessions.ts` utilise l'index ; un `INSERT` avec un rôle inconnu échoue.
+1. **Fait (tâche 1.7, correctif socle)** — index `sessions(user_id)` et `sessions(expires_at)`, `CHECK` sur `users.role` et `json_valid` sur `quota_override` (relu avec `quotaOverrideSchema`), `users.last_login_at` nullable, PRAGMA `synchronous`/`journal_size_limit`. _Critères_ : migration générée ; `EXPLAIN QUERY PLAN` des deux requêtes de `sessions.ts` utilise l'index ; un `INSERT` avec un rôle inconnu échoue.
 2. **3.2** — `media`, `seasons`, `requestStatuses` dans `status.ts`, fonction unique de calcul du statut. _Critères_ : tests absent / partiel / disponible / en téléchargement ; lecture par lot des statuts d'une page d'affiches en une requête.
 3. **4.1** — `requests`, `request_seasons`, `request_events`, index `requests_active`. _Critères_ : quota testé en bord de fenêtre ; deux POST identiques → une seule ligne ; quota dépassé → rien d'inséré (transaction).
 4. **4.2** — évènements `approved`/`declined`/`sent`/`failed`, relance d'un échec. _Critères_ : la frise se reconstruit depuis `request_events` ; une relance ajoute un évènement sans en effacer.

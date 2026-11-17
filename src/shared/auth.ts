@@ -34,8 +34,8 @@ export interface Member {
   role: Role;
   avatarUrl: string | null;
   quotaOverride: QuotaOverride | null;
-  /** ISO 8601. */
-  lastLoginAt: string;
+  /** ISO 8601, `null` pour un membre importé qui ne s'est jamais connecté. */
+  lastLoginAt: string | null;
 }
 
 export const memberUpdateSchema = z.object({

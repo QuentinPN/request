@@ -44,7 +44,7 @@ describe('POST /api/users/import', () => {
     expect(res.statusCode).toBe(200);
     const byId = new Map((res.json() as Array<{ id: string; role: string }>).map((m) => [m.id, m]));
     expect(byId.get('u-1')).toMatchObject({ name: 'alice', role: 'member', avatarUrl: '/api/users/u-1/avatar' });
-    expect(byId.get('u-3')).toMatchObject({ role: 'member' });
+    expect(byId.get('u-3')).toMatchObject({ role: 'member', lastLoginAt: null }); // jamais connecté
     expect(byId.has('u-2')).toBe(false); // désactivé dans Emby
 
     // Un rôle déjà attribué survit à un nouvel import.
