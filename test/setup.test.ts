@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { setSetting } from '../src/server/services/settings.ts';
+import { getSetting, setSetting } from '../src/server/services/settings.ts';
 import { CSRF_HEADERS } from '../src/shared/auth.ts';
 import { closedPortUrl, type FakeHandler, status } from './fake-server.ts';
 import librariesFixture from './fixtures/emby/libraries.json';
@@ -74,7 +74,7 @@ describe('amorçage', () => {
 
     const save = await call(app, 'PUT', '/api/settings/emby', { url: emby.url, apiKey: EMBY_KEY, libraryIds: ['10'] });
     expect(save.statusCode).toBe(200);
-    expect(save.json()).toEqual({ url: emby.url, apiKey: { set: true }, libraryIds: ['10'] });
+    expect(save.json()).toEqual({ url: emby.url, apiKey: { set: true }, libraryIds: ['10'], publicUrl: null });
   });
 
   it('les autres services exigent une session même avant le propriétaire', async () => {
@@ -94,6 +94,35 @@ describe('amorçage', () => {
     expect((await call(app, 'PUT', '/api/settings/emby', body)).statusCode).toBe(401);
     expect((await call(app, 'POST', '/api/setup/emby/test', body, member.headers)).statusCode).toBe(403);
     expect((await call(app, 'POST', '/api/setup/emby/test', body, owner.headers)).statusCode).toBe(200);
+  });
+});
+
+describe('adresse publique d’Emby', () => {
+  const put = async (publicUrl?: unknown) => {
+    const app = await newApp();
+    const { headers } = await loginAsOwner(app);
+    const emby = await fakeEmby();
+    const body = { url: emby.url, apiKey: EMBY_KEY, ...(publicUrl !== undefined && { publicUrl }) };
+    return { app, headers, res: await call(app, 'PUT', '/api/settings/emby', body, headers) };
+  };
+
+  it('s’enregistre sans « / » final et se relit en clair (ce n’est pas un secret)', async () => {
+    const { app, headers, res } = await put('https://tv.exemple.fr/emby/');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().publicUrl).toBe('https://tv.exemple.fr/emby');
+    const read = await call(app, 'GET', '/api/settings/emby', undefined, headers);
+    expect(read.json().publicUrl).toBe('https://tv.exemple.fr/emby');
+    expect(getSetting(app.data.db, app.data.cryptoKey, 'emby')?.publicUrl).toBe('https://tv.exemple.fr/emby');
+  });
+
+  it('est facultative : absente ou nulle', async () => {
+    expect((await put()).res.json().publicUrl).toBeNull();
+    expect((await put(null)).res.json().publicUrl).toBeNull();
+  });
+
+  it('refuse une adresse qui n’est pas http(s)', async () => {
+    for (const bad of ['emby.exemple.fr', 'ftp://emby.exemple.fr', 'javascript:alert(1)', ''])
+      expect((await put(bad)).res.statusCode, bad).toBe(400);
   });
 });
 

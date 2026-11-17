@@ -9,6 +9,7 @@ import { apiErrorHandler } from './lib/api-errors.ts';
 import { registerAuth } from './plugins/auth.ts';
 import { authRoutes } from './routes/auth.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
+import { embyRoutes } from './routes/emby.ts';
 import { imageRoutes } from './routes/images.ts';
 import { requestsRoutes } from './routes/requests.ts';
 import { setupRoutes } from './routes/setup.ts';
@@ -95,6 +96,7 @@ export async function buildApp({
   requestsRoutes(app);
   webhookRoutes(app, sync);
   await app.register(catalogueRoutes);
+  await app.register(embyRoutes);
   await app.register(
     imageRoutes(createImageCache({ dir: data.dir, ...(upstreams.imagesUrl && { upstreamUrl: upstreams.imagesUrl }) })),
   );

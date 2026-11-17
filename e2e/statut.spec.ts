@@ -1,16 +1,8 @@
-import type { Page } from '@playwright/test';
-import { fixtures, mockCatalogue, tvWithEverySeasonStatus } from './catalogue-mocks.ts';
+import { fixtures, mockCatalogue, posterOf, tvWithEverySeasonStatus } from './catalogue-mocks.ts';
 import { expect, expectNoAxeViolations, test } from './support/api.ts';
 
 const trending = fixtures.discover.rows.find((row) => row.id === 'trending')?.items ?? [];
 const [partial, available, downloading, requested, pending, declined, absent] = trending;
-
-/** Affiche d'une rangée, trouvée par son titre ; la pastille et la barre vivent dans le même `article`. */
-const posterOf = (page: Page, title: string | undefined) =>
-  page
-    .getByRole('region', { name: 'Tendances' })
-    .getByRole('article')
-    .filter({ has: page.getByRole('link', { name: new RegExp(`^${title}`) }) });
 
 test('les affiches montrent le statut : pastille, barre de téléchargement, rien sans statut', async ({ page }) => {
   await mockCatalogue(page);

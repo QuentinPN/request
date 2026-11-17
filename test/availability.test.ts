@@ -5,14 +5,15 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { migrationsFolder, openDataDir, openDb } from '../src/server/db/index.ts';
-import { jobRuns, media } from '../src/server/db/schema.ts';
+import { jobRuns, media, requests } from '../src/server/db/schema.ts';
 import { createAvailability, displayStatus, libraryState, selectCached } from '../src/server/services/availability.ts';
 import { failOrphanJobs, finishJob, startJob } from '../src/server/services/jobs.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { createTmdbProvider } from '../src/server/services/tmdb.ts';
+import { upsertFromEmby } from '../src/server/services/users.ts';
 import type { MediaKey } from '../src/shared/media.ts';
 import { type FakeRequest, type FakeRoutes, startFakeServer, status } from './fake-server.ts';
-import { loginAsOwner, queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { loginAs, loginAsOwner, queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const cleanups: Array<() => unknown> = [];
@@ -113,10 +114,11 @@ interface Upstreams {
   sonarr?: FakeRoutes;
   tmdb?: FakeRoutes;
   libraryIds?: string[];
+  publicUrl?: string;
 }
 
 /** Dossier de données branché sur les faux services fournis (les autres restent non configurés). */
-async function setupData({ emby, radarr, sonarr, tmdb = {}, libraryIds = [] }: Upstreams) {
+async function setupData({ emby, radarr, sonarr, tmdb = {}, libraryIds = [], publicUrl }: Upstreams) {
   const start = async (routes: FakeRoutes) => {
     const server = await startFakeServer(routes);
     cleanups.push(server.close);
@@ -131,7 +133,13 @@ async function setupData({ emby, radarr, sonarr, tmdb = {}, libraryIds = [] }: U
   const data = openDataDir(tempDir());
   const { db, cryptoKey } = data;
   setSetting(db, cryptoKey, 'tmdb', { apiKey: V3_KEY });
-  if (servers.emby) setSetting(db, cryptoKey, 'emby', { url: servers.emby.url, apiKey: 'k', libraryIds });
+  if (servers.emby)
+    setSetting(db, cryptoKey, 'emby', {
+      url: servers.emby.url,
+      apiKey: 'k',
+      libraryIds,
+      ...(publicUrl && { publicUrl }),
+    });
   const arr = { apiKey: 'k', qualityProfileId: 1, rootFolderPath: '/media' };
   if (servers.radarr) setSetting(db, cryptoKey, 'radarr', { url: servers.radarr.url, ...arr });
   if (servers.sonarr) setSetting(db, cryptoKey, 'sonarr', { url: servers.sonarr.url, ...arr });
@@ -268,10 +276,10 @@ describe('statusesFor', () => {
     const statuses = await availability.statusesFor(page);
 
     expect(Object.fromEntries(statuses)).toEqual({
-      'movie:101': { status: 'available' }, // dans Emby
+      'movie:101': { status: 'available', embyItemId: 'e101' }, // dans Emby
       'movie:102': { status: 'downloading', progress: 0.75 },
-      'movie:103': { status: 'available' }, // fichier chez Radarr
-      'tv:201': { status: 'available' }, // dans Emby, hors Sonarr
+      'movie:103': { status: 'available' }, // fichier chez Radarr : pas dans Emby, rien à ouvrir
+      'tv:201': { status: 'available', embyItemId: 'e201' }, // dans Emby, hors Sonarr
       'tv:202': { status: 'partial' },
       'tv:203': { status: 'downloading', progress: 0.5 },
       'tv:204': { status: 'available' },
@@ -396,9 +404,72 @@ describe('statusesFor', () => {
     clock.now += 10 * 60_000;
     const statuses = await availability.statusesFor([movie(101), movie(999)]);
 
-    expect(Object.fromEntries(statuses)).toEqual({ 'movie:101': { status: 'available' } });
+    expect(Object.fromEntries(statuses)).toEqual({ 'movie:101': { status: 'available', embyItemId: 'e101' } });
     expect(selectCached(data.db, [movie(101)]).get()).toEqual(before);
     expect(selectCached(data.db, [movie(999)]).get()).toBeUndefined();
+  });
+});
+
+describe('lien vers Emby', () => {
+  it('une série partielle déjà demandée garde son id Emby, alors que le statut affiché est « Demandé »', async () => {
+    const { availability, data } = await setup({
+      emby: embyRoutes({ series: [{ id: 'e7', tmdb: 7 }] }),
+      sonarr: sonarrRoutes([{ id: 7, tvdbId: 97, tmdbId: 7, seasons: [[1, 3, 10]] }]),
+    });
+    expect(Object.fromEntries(await availability.statusesFor([tv(7)]))).toEqual({
+      'tv:7': { status: 'partial', embyItemId: 'e7' },
+    });
+
+    const user = upsertFromEmby(data.db, { id: 'u1', name: 'Alice', avatar: null, isEmbyAdmin: false });
+    const row = selectCached(data.db, [tv(7)]).get();
+    data.db
+      .insert(requests)
+      .values({ mediaId: row?.id ?? 0, userId: user.id, status: 'sent' })
+      .run();
+    expect(Object.fromEntries(await availability.statusesFor([tv(7)]))).toEqual({
+      'tv:7': { status: 'requested', embyItemId: 'e7' },
+    });
+  });
+
+  it('un titre en téléchargement, ou absent d’Emby, n’en a pas', async () => {
+    const { availability } = await setup(library);
+    const statuses = await availability.statusesFor(page);
+    expect(statuses.get('movie:102')).toEqual({ status: 'downloading', progress: 0.75 });
+    expect(statuses.get('tv:204')).toEqual({ status: 'available' });
+  });
+
+  const withPublicUrl = (extra: FakeRoutes = {}) => ({
+    emby: { ...embyRoutes({}), 'GET /System/Info/Public': { Id: 'srv-1' }, ...extra },
+    publicUrl: 'https://tv.exemple.fr/',
+  });
+
+  it('adresse publique et id du serveur ; l’id n’est lu qu’une fois', async () => {
+    const { availability, servers } = await setup(withPublicUrl());
+    const expected = { publicUrl: 'https://tv.exemple.fr', serverId: 'srv-1' };
+    expect(await availability.embyLink()).toEqual(expected);
+    expect(await availability.embyLink()).toEqual(expected);
+    expect(servers.emby?.requests.filter((r) => r.path === '/System/Info/Public')).toHaveLength(1);
+  });
+
+  it('pas d’adresse publique : pas de lien, et Emby n’est pas appelé', async () => {
+    const { availability, servers } = await setup({ emby: { 'GET /System/Info/Public': { Id: 'srv-1' } } });
+    expect(await availability.embyLink()).toBeNull();
+    expect(servers.emby?.requests).toHaveLength(0);
+  });
+
+  it('Emby injoignable ou illisible : pas de lien, jamais d’erreur', async () => {
+    const { availability } = await setup(withPublicUrl({ 'GET /System/Info/Public': status(500) }));
+    expect(await availability.embyLink()).toBeNull();
+  });
+
+  it('GET /api/emby/link : lisible par un simple membre, 401 sans session', async () => {
+    const { app, servers } = await setupApp(withPublicUrl());
+    const member = await loginAs(app, 'member');
+    const res = await app.inject({ method: 'GET', url: '/api/emby/link', headers: member.headers });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ link: { publicUrl: 'https://tv.exemple.fr', serverId: 'srv-1' } });
+    expect(JSON.stringify(res.json())).not.toContain(servers.emby?.url ?? '?');
+    expect((await app.inject({ method: 'GET', url: '/api/emby/link' })).statusCode).toBe(401);
   });
 });
 
@@ -478,12 +549,53 @@ describe('statuts dans les réponses du catalogue', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.status).toBe('partial');
+    expect(body.embyItemId).toBe('e1396');
     expect(body.seasons).toEqual([
-      { seasonNumber: 1, episodeCount: 3, airDate: '2008-01-20', status: 'available' },
-      { seasonNumber: 2, episodeCount: 2, airDate: '2009-03-08', status: 'partial' },
+      {
+        seasonNumber: 1,
+        episodeCount: 3,
+        airDate: '2008-01-20',
+        status: 'available',
+        episodes: { present: 3, expected: 3 },
+      },
+      {
+        seasonNumber: 2,
+        episodeCount: 2,
+        airDate: '2009-03-08',
+        status: 'partial',
+        episodes: { present: 1, expected: 2 },
+      },
       { seasonNumber: 3, episodeCount: 4, airDate: '2010-03-21' },
     ]);
     expect(body.similar[0]).not.toHaveProperty('status');
+  });
+
+  it('fiche : épisodes attendus d’une saison en cours = ceux déjà diffusés (dernier épisode diffusé de TMDB)', async () => {
+    const { get } = await setupApp({
+      emby: embyRoutes({ series: [{ id: 'e60', tvdb: 6, episodes: { 1: 8, 2: 4 } }] }),
+      tmdb: {
+        'GET /tv/60': {
+          id: 60,
+          name: 'En cours de diffusion',
+          last_episode_to_air: { season_number: 2, episode_number: 4 },
+          seasons: [
+            { season_number: 1, episode_count: 8, air_date: '2020-01-01' },
+            { season_number: 2, episode_count: 10, air_date: '2021-01-01' },
+            { season_number: 3, episode_count: 10, air_date: '2022-01-01' },
+          ],
+          external_ids: { tvdb_id: 6 },
+        },
+      },
+    });
+    const body = (await get('/api/media/tv/60')).json();
+    expect(body.status).toBe('available');
+    expect(body.seasons.map((s: { status?: string; episodes?: object }) => [s.status, s.episodes])).toEqual([
+      ['available', { present: 8, expected: 8 }],
+      ['available', { present: 4, expected: 4 }],
+      [undefined, undefined],
+    ]);
+    // Cache : relue sans nouvel appel Emby, les décomptes viennent de la base.
+    expect((await get('/api/media/tv/60')).json().seasons[1].episodes).toEqual({ present: 4, expected: 4 });
   });
 
   it('fiche : une saison TMDB à venir n’est pas attendue, et le calcul est gardé en cache', async () => {
@@ -506,6 +618,22 @@ describe('statuts dans les réponses du catalogue', () => {
     const calls = servers.emby?.requests.length;
     await get('/api/media/tv/50');
     expect(servers.emby?.requests.length).toBe(calls);
+  });
+
+  it('fiche : un appel Emby d’épisodes par série, quel que soit le nombre de saisons', async () => {
+    const { get, servers } = await setupApp({
+      emby: embyRoutes({ series: [{ id: 'e8', tvdb: 8, episodes: { 1: 2, 2: 2, 3: 2, 4: 1 } }] }),
+      tmdb: {
+        'GET /tv/80': {
+          id: 80,
+          name: 'Longue',
+          seasons: [1, 2, 3, 4].map((n) => ({ season_number: n, episode_count: 2, air_date: '2020-01-01' })),
+          external_ids: { tvdb_id: 8 },
+        },
+      },
+    });
+    await get('/api/media/tv/80');
+    expect(servers.emby?.requests.filter((r) => r.query.IncludeItemTypes === 'Episode')).toHaveLength(1);
   });
 
   it('intégrations non configurées : la page est servie, sans statut', async () => {

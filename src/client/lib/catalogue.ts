@@ -102,6 +102,10 @@ export function seasonMeta(season: Season): string {
   return [plural(season.episodeCount, 'épisode', 'épisodes'), year].filter(Boolean).join(' · ');
 }
 
+/** « 8/10 épisodes » : épisodes présents sur ceux déjà diffusés. */
+export const episodesLabel = ({ present, expected }: NonNullable<Season['episodes']>) =>
+  `${present}/${expected} ${expected > 1 ? 'épisodes' : 'épisode'}`;
+
 const present = (parts: (string | number | null | false | undefined)[]) =>
   parts.filter((part) => part !== null && part !== false && part !== undefined && part !== '').map(String);
 

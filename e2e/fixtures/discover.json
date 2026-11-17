@@ -12,7 +12,8 @@
           "posterPath": "/poster-tv-126308.jpg",
           "backdropPath": "/backdrop-tv-126308.jpg",
           "overview": "Au Japon, en 1600, le seigneur Toranaga lutte pour sa survie alors que ses ennemis au Conseil des régents s’unissent contre lui.",
-          "status": "partial"
+          "status": "partial",
+          "embyItemId": "emby-126308"
         },
         {
           "tmdbId": 1002,
@@ -22,7 +23,8 @@
           "posterPath": "/poster-movie-1002.jpg",
           "backdropPath": "/backdrop-movie-1002.jpg",
           "overview": "Après un naufrage, un robot échoue sur une île sauvage et apprend à survivre.",
-          "status": "available"
+          "status": "available",
+          "embyItemId": "emby-1002"
         },
         {
           "tmdbId": 1003,
@@ -313,7 +315,8 @@
           "posterPath": "/poster-movie-1009.jpg",
           "backdropPath": "/backdrop-movie-1009.jpg",
           "overview": "",
-          "status": "available"
+          "status": "available",
+          "embyItemId": "emby-1009"
         },
         {
           "tmdbId": 1010,
@@ -323,7 +326,8 @@
           "posterPath": "/poster-movie-1010.jpg",
           "backdropPath": "/backdrop-movie-1010.jpg",
           "overview": "",
-          "status": "available"
+          "status": "available",
+          "embyItemId": "emby-1010"
         },
         {
           "tmdbId": 1011,
@@ -333,7 +337,8 @@
           "posterPath": "/poster-movie-1011.jpg",
           "backdropPath": "/backdrop-movie-1011.jpg",
           "overview": "",
-          "status": "available"
+          "status": "available",
+          "embyItemId": "emby-1011"
         },
         {
           "tmdbId": 1012,
@@ -343,7 +348,8 @@
           "posterPath": "/poster-movie-1012.jpg",
           "backdropPath": "/backdrop-movie-1012.jpg",
           "overview": "",
-          "status": "available"
+          "status": "available",
+          "embyItemId": "emby-1012"
         },
         {
           "tmdbId": 1013,
@@ -353,7 +359,8 @@
           "posterPath": "/poster-movie-1013.jpg",
           "backdropPath": "/backdrop-movie-1013.jpg",
           "overview": "",
-          "status": "available"
+          "status": "available",
+          "embyItemId": "emby-1013"
         }
       ]
     }

@@ -27,14 +27,22 @@
       "seasonNumber": 1,
       "episodeCount": 10,
       "airDate": "2024-02-27",
-      "status": "available"
+      "status": "available",
+      "episodes": {
+        "present": 10,
+        "expected": 10
+      }
     },
     {
       "seasonNumber": 2,
       "episodeCount": 10,
       "airDate": "2026-02-01",
       "status": "downloading",
-      "progress": 0.42
+      "progress": 0.42,
+      "episodes": {
+        "present": 4,
+        "expected": 10
+      }
     }
   ],
   "cast": [
@@ -193,5 +201,6 @@
   "externalIds": {
     "imdb": "tt2788316",
     "tvdb": 391483
-  }
+  },
+  "embyItemId": "emby-126308"
 }

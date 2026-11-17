@@ -115,6 +115,9 @@ export const seasons = sqliteTable(
       .references(() => media.id, { onDelete: 'cascade' }),
     seasonNumber: integer().notNull(),
     status: text({ enum: mediaStatuses }).notNull(),
+    /** Épisodes présents et attendus (diffusés) au dernier calcul ; `NULL` = inconnus (saison marquée « en téléchargement » par un webhook). */
+    episodesPresent: integer(),
+    episodesExpected: integer(),
   },
   (table) => [
     enumCheck('seasons_status_check', table.status, mediaStatuses),

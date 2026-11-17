@@ -6,6 +6,7 @@ import { type ReactNode, useRef } from 'react';
 import { MediaRail, Rail, SectionHeading } from '@/components/media/rail';
 import { DownloadBar, StatusPill } from '@/components/media/status-pill';
 import { Backdrop, GlassPill, MetaLine, RequestButton } from '@/components/media/title-parts';
+import { WatchLink } from '@/components/media/watch-link';
 import { Page } from '@/components/page';
 import { QueryState } from '@/components/query-state';
 import { RequestTracking } from '@/components/requests/request-timeline';
@@ -14,7 +15,7 @@ import { Loading } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { detailsMeta, mediaQuery, regularSeasons, seasonMeta, seasonTitle } from '@/lib/catalogue';
+import { detailsMeta, episodesLabel, mediaQuery, regularSeasons, seasonMeta, seasonTitle } from '@/lib/catalogue';
 import { typeIdParamsSchema } from '../../shared/catalogue.ts';
 import {
   type CastMember,
@@ -197,7 +198,14 @@ function Seasons({ media }: { media: MediaDetails }) {
                 <span className="block font-semibold">{seasonTitle(season)}</span>
                 <span className="block text-[13px] text-muted-foreground">{seasonMeta(season)}</span>
               </div>
-              {season.status && <StatusPill status={season.status} className="shrink-0" />}
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                {season.status && <StatusPill status={season.status} />}
+                {season.episodes && (
+                  <span className="text-[13px] text-muted-foreground tabular-nums">
+                    {episodesLabel(season.episodes)}
+                  </span>
+                )}
+              </div>
             </div>
             <DownloadBar
               status={season.status}
@@ -251,6 +259,7 @@ function Fiche({ media }: { media: MediaDetails }) {
         {media.overview && <p className="text-muted-foreground lg:text-[17px]">{media.overview}</p>}
         <div className="flex flex-wrap gap-3 pt-2">
           <RequestButton media={media} className="grow sm:grow-0" />
+          <WatchLink media={media} className="grow sm:grow-0" />
           {isYoutubeKey(media.trailerKey) && <TrailerButton title={media.title} trailerKey={media.trailerKey} />}
         </div>
       </FicheFrame>

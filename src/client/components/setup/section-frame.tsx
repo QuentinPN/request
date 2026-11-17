@@ -1,7 +1,6 @@
-import type { SetupSection } from '@shared/setup.ts';
 import { cn } from 'cn';
 import type { ReactNode } from 'react';
-import { sectionOrder, sectionText } from './config';
+import { type SectionId, sectionText, settingsSectionOrder } from './config';
 
 export type SectionStatus = 'done' | 'todo' | 'active' | 'error';
 
@@ -31,8 +30,8 @@ export function sectionStatus({
   return open ? 'active' : 'todo';
 }
 
-export type SectionFrameProps = {
-  section: SetupSection;
+export type SectionFrameProps<S extends SectionId = SectionId> = {
+  section: S;
   open: boolean;
   onToggle: () => void;
   /** Section inaccessible pour l'instant (amorçage : Emby seul tant qu'aucun propriétaire n'existe). */
@@ -79,7 +78,7 @@ export function SectionFrame({
             aria-hidden
             className={cn('grid size-7 shrink-0 place-items-center rounded-full text-[13px] font-bold', style.number)}
           >
-            {sectionOrder.indexOf(section) + 1}
+            {settingsSectionOrder.indexOf(section) + 1}
           </span>
           <span className="flex min-w-0 grow flex-col gap-0.5">
             <span className="font-semibold">{title}</span>

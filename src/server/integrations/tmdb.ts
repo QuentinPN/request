@@ -94,6 +94,7 @@ const rawDetails = rawMedia.extend({
   seasons: z
     .array(z.object({ season_number: z.number().int(), episode_count: z.number().int(), air_date: optionalString }))
     .nullish(),
+  last_episode_to_air: z.object({ season_number: z.number().int(), episode_number: z.number().int() }).nullish(),
   credits: z.object({ cast: z.array(rawCast) }).nullish(),
   videos: z.object({ results: z.array(rawVideo) }).nullish(),
   recommendations: mediaPage.nullish(),
@@ -160,6 +161,12 @@ function toDetails(raw: RawDetails, type: MediaType): MediaDetails {
     recommendations: (raw.recommendations?.results ?? []).map((r) => toSummary(r, type)),
     similar: (raw.similar?.results ?? []).map((r) => toSummary(r, type)),
     externalIds: { imdb: raw.external_ids?.imdb_id || null, tvdb: raw.external_ids?.tvdb_id ?? null },
+    ...(raw.last_episode_to_air && {
+      lastAired: {
+        seasonNumber: raw.last_episode_to_air.season_number,
+        episodeNumber: raw.last_episode_to_air.episode_number,
+      },
+    }),
   };
 }
 

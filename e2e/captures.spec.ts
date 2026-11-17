@@ -1,5 +1,4 @@
-import type { Page } from '@playwright/test';
-import { fixtures, mockCatalogue, tvWithEverySeasonStatus } from './catalogue-mocks.ts';
+import { fixtures, mockCatalogue, settleImages, tvWithEverySeasonStatus } from './catalogue-mocks.ts';
 import { makeRequest, mediaNamed, mockRequests } from './requests-mocks.ts';
 import { expect, field, sonarrTest, test, viewerAs } from './support/api.ts';
 
@@ -42,15 +41,6 @@ test('captures de la connexion et de l’assistant (2.2)', async ({ page, api },
   await expect(page.getByText('Connexion réussie · Sonarr v4.0.11')).toBeVisible();
   await page.screenshot({ path: `${dir}/assistant-${width}.png`, fullPage: true });
 });
-
-/** Attend que toutes les images chargées paresseusement de la page entière soient décodées. */
-async function settleImages(page: Page) {
-  await page.evaluate(async () => {
-    for (const img of document.images) img.loading = 'eager';
-    await Promise.all([...document.images].map((img) => img.decode().catch(() => undefined)));
-    await document.fonts.ready;
-  });
-}
 
 test('captures des pastilles de statut (3.2)', async ({ page }, { project }) => {
   const dir = 'docs/captures/3.2';

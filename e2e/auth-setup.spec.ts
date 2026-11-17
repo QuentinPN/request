@@ -86,6 +86,7 @@ test('Emby enregistré sans propriétaire : invitation à se connecter', async (
     url: 'http://192.0.2.20:8096',
     apiKey: 'cle-emby',
     libraryIds: ['lib-films', 'lib-series'],
+    publicUrl: null,
   });
   await expect(section(page, 'Emby')).toContainText('Testé');
   await page.getByRole('link', { name: 'Se connecter' }).click();

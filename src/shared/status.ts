@@ -75,3 +75,10 @@ export const availabilitySchema = z.object({
   progress: z.number().min(0).max(1).optional(),
 });
 export type Availability = z.infer<typeof availabilitySchema>;
+
+/**
+ * Statut d'un titre (affiche, fiche) : celui d'une saison, plus l'id Emby du titre quand il est dans la bibliothèque
+ * (disponible ou partiel) : le navigateur en tire le lien « Regarder dans Emby » (`shared/emby.ts`).
+ */
+export const titleAvailabilitySchema = availabilitySchema.extend({ embyItemId: z.string().optional() });
+export type TitleAvailability = z.infer<typeof titleAvailabilitySchema>;

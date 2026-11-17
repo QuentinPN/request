@@ -21,6 +21,7 @@ const embyClient = (config: EmbyConfig) =>
 const id = z.union([z.string(), z.number()]).transform(String);
 
 const systemInfoSchema = z.object({ ServerName: z.string(), Version: z.string(), Id: id });
+const publicInfoSchema = z.object({ Id: id });
 
 const userSchema = z.object({
   Id: id,
@@ -102,6 +103,11 @@ const toEmbyUser = (user: EmbyUserDto): EmbyUser => ({
 export async function testEmby(config: EmbyConfig): Promise<EmbyServerInfo> {
   const info = await embyClient(config).get('/System/Info', systemInfoSchema);
   return { serverName: info.ServerName, version: info.Version, serverId: info.Id };
+}
+
+/** Id du serveur (`/System/Info/Public`, sans clé d'API) : le lien « Regarder dans Emby » le réclame. */
+export async function getEmbyServerId(config: EmbyConfig): Promise<string> {
+  return (await embyClient(config).get('/System/Info/Public', publicInfoSchema)).Id;
 }
 
 /**
@@ -303,10 +309,4 @@ export async function getEmbySeasonAvailability(
   return [...counts]
     .sort(([a], [b]) => a - b)
     .map(([seasonNumber, episodesPresent]) => ({ seasonNumber, episodesPresent, isSpecials: seasonNumber === 0 }));
-}
-
-/** Lien « Regarder dans Emby » (interface web ; format non documenté officiellement, `serverId` requis). */
-export function embyWebLink(baseUrl: string, serverId: string, itemId: string): string {
-  const base = baseUrl.replace(/\/+$/, '');
-  return `${base}/web/index.html#!/item?id=${encodeURIComponent(itemId)}&serverId=${encodeURIComponent(serverId)}`;
 }

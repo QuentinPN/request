@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   authenticateEmbyUser,
-  embyWebLink,
   findEmbyItems,
   getEmbySeasonAvailability,
+  getEmbyServerId,
   listEmbyLibraries,
   listEmbyUsers,
   testEmby,
 } from '../src/server/integrations/emby.ts';
 import type { IntegrationError } from '../src/server/integrations/http.ts';
+import { embyWebLink } from '../src/shared/emby.ts';
 import { closedPortUrl, startFakeServer, status } from './fake-server.ts';
 import authenticateFixture from './fixtures/emby/authenticate.json';
 import episodesFixture from './fixtures/emby/episodes.json';
@@ -217,8 +218,21 @@ describe('getEmbySeasonAvailability', () => {
 
 describe('embyWebLink', () => {
   it("construit le lien vers l'interface web d'Emby", () => {
-    expect(embyWebLink('http://emby:8096/', 'srv', '42')).toBe(
+    expect(embyWebLink({ publicUrl: 'http://emby:8096/', serverId: 'srv' }, '42')).toBe(
       'http://emby:8096/web/index.html#!/item?id=42&serverId=srv',
     );
+  });
+
+  it("encode les ids et garde le sous-chemin d'un reverse proxy", () => {
+    expect(embyWebLink({ publicUrl: 'https://tv.exemple.fr/emby', serverId: 'a b' }, 'x&y')).toBe(
+      'https://tv.exemple.fr/emby/web/index.html#!/item?id=x%26y&serverId=a%20b',
+    );
+  });
+});
+
+describe('getEmbyServerId', () => {
+  it("lit l'id du serveur sur /System/Info/Public", async () => {
+    const server = await serve({ 'GET /System/Info/Public': { Id: 'abc123', ServerName: 'Salon' } });
+    expect(await getEmbyServerId(server.config)).toBe('abc123');
   });
 });

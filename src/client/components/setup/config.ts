@@ -1,5 +1,6 @@
 import type { IntegrationKey, minimumAvailabilities, seriesTypes } from '@shared/settings.ts';
 import type { ArrTestResult, SetupSection, TestResults } from '@shared/setup.ts';
+import type { WebhookService } from '@shared/webhooks.ts';
 
 /** Ordre des sections à l'écran (DESIGN.md, maquette R-Assistant) : Emby, TMDB, Radarr, Sonarr, Règles. */
 export const sectionOrder = ['emby', 'tmdb', 'radarr', 'sonarr', 'rules'] as const satisfies readonly SetupSection[];
@@ -7,12 +8,19 @@ export const sectionOrder = ['emby', 'tmdb', 'radarr', 'sonarr', 'rules'] as con
 const _complete: Exclude<SetupSection, (typeof sectionOrder)[number]> extends never ? true : never = true;
 void _complete;
 
-export const sectionText: Record<SetupSection, { title: string; description: string }> = {
+/** Sections de Réglages : celles de l'assistant, plus les webhooks (propriétaire, hors assistant : rien à tester). */
+export type SectionId = SetupSection | 'webhooks';
+export const settingsSectionOrder = [...sectionOrder, 'webhooks'] as const satisfies readonly SectionId[];
+
+export const webhookLabels: Record<WebhookService, string> = { radarr: 'Radarr', sonarr: 'Sonarr' };
+
+export const sectionText: Record<SectionId, { title: string; description: string }> = {
   emby: { title: 'Emby', description: 'Connexion des membres et détection de ce qui est déjà là' },
   tmdb: { title: 'TMDB', description: 'Catalogue, affiches et tendances en français' },
   radarr: { title: 'Radarr', description: 'Films : profil de qualité et dossier racine' },
   sonarr: { title: 'Sonarr', description: 'Séries : profil de qualité, dossier racine et type' },
   rules: { title: 'Règles et quotas', description: 'Quotas de demandes par défaut des membres' },
+  webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
 };
 
 /** Champs de connexion de chaque intégration ; `url: null` = clé seule (TMDB). */

@@ -31,7 +31,11 @@ const defaultQuota = { limit: 10, days: 7 };
 
 /** Une seule définition des réglages : validée côté serveur, réutilisée par les formulaires. */
 export const settingSchemas = {
-  emby: service.extend({ libraryIds: z.array(z.string().min(1)).default([]) }),
+  emby: service.extend({
+    libraryIds: z.array(z.string().min(1)).default([]),
+    /** Adresse d'Emby pour les membres (« Regarder dans Emby ») : souvent différente de celle que joint le serveur. Pas un secret. */
+    publicUrl: url.nullable().default(null),
+  }),
   radarr: service.extend({
     qualityProfileId: profileId,
     rootFolderPath,

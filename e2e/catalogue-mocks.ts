@@ -108,3 +108,19 @@ export async function mockCatalogue(
     return route.fulfill({ status: response.status, json: response.body });
   });
 }
+
+/** Affiche d'une rangée de Découvrir, trouvée par son titre ; pastille, barre et actions vivent dans le même `article`. */
+export const posterOf = (page: Page, title: string | undefined) =>
+  page
+    .getByRole('region', { name: 'Tendances' })
+    .getByRole('article')
+    .filter({ has: page.getByRole('link', { name: new RegExp(`^${title}`) }) });
+
+/** Attend que toutes les images chargées paresseusement de la page entière soient décodées (captures). */
+export async function settleImages(page: Page) {
+  await page.evaluate(async () => {
+    for (const img of document.images) img.loading = 'eager';
+    await Promise.all([...document.images].map((img) => img.decode().catch(() => undefined)));
+    await document.fonts.ready;
+  });
+}

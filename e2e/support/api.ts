@@ -1,9 +1,18 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import type { Viewer } from '../../src/shared/auth.ts';
+import { EMBY_LINK_PATH, type EmbyLink } from '../../src/shared/emby.ts';
 import { capabilitiesOf, type Role } from '../../src/shared/roles.ts';
 import { type MaskedSetting, settingSchemas } from '../../src/shared/settings.ts';
 import type { SetupSection, SetupState, TestResults } from '../../src/shared/setup.ts';
+import {
+  WEBHOOK_SETTINGS_PATH,
+  WEBHOOK_TOKEN_PATH,
+  WEBHOOK_TOKEN_QUERY,
+  type WebhookSettings,
+  webhookPath,
+  webhookServices,
+} from '../../src/shared/webhooks.ts';
 
 // Faux serveur des tests du client : chaque `/api` est servi depuis un état en mémoire, typé par les contrats partagés.
 
@@ -47,17 +56,34 @@ export const sonarrTest: TestResults['sonarr'] = {
   ],
 };
 
+/** Réglages des webhooks pour un jeton donné, comme les bâtit le serveur (`routes/webhooks.ts`). */
+export const webhookSettingsOf = (token: string): WebhookSettings => ({
+  token,
+  urls: Object.fromEntries(
+    webhookServices.map((s) => [s, `http://localhost:3100${webhookPath(s)}?${WEBHOOK_TOKEN_QUERY}=${token}`]),
+  ) as WebhookSettings['urls'],
+});
+
 type MockState = {
   setup: SetupState;
   viewer: Viewer | null;
   settings: { [K in SetupSection]?: MaskedSetting<K> };
+  /** Adresse publique d'Emby et id du serveur : `null` tant qu'aucune adresse publique n'est réglée. */
+  embyLink: EmbyLink | null;
+  webhooks: WebhookSettings;
 };
 
 const json = (route: Route, status: number, body?: unknown) =>
   status === 204 ? route.fulfill({ status }) : route.fulfill({ status, json: body });
 
 export class ApiMock {
-  state: MockState = { setup: completeSetup, viewer: viewerAs('owner'), settings: {} };
+  state: MockState = {
+    setup: completeSetup,
+    viewer: viewerAs('owner'),
+    settings: {},
+    embyLink: null,
+    webhooks: webhookSettingsOf('jeton-initial'),
+  };
 
   readonly page: Page;
 
@@ -82,6 +108,12 @@ export class ApiMock {
     if (method === 'POST' && pathname === '/api/auth/logout') {
       state.viewer = null;
       return json(route, 204);
+    }
+    if (method === 'GET' && pathname === EMBY_LINK_PATH) return json(route, 200, { link: state.embyLink });
+    if (method === 'GET' && pathname === WEBHOOK_SETTINGS_PATH) return json(route, 200, state.webhooks);
+    if (method === 'POST' && pathname === WEBHOOK_TOKEN_PATH) {
+      state.webhooks = webhookSettingsOf('jeton-regenere');
+      return json(route, 200, state.webhooks);
     }
     const setting = pathname.match(/^\/api\/settings\/(\w+)$/)?.[1] as SetupSection | undefined;
     if (method === 'GET' && setting) {

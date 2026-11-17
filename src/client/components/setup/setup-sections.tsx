@@ -6,11 +6,12 @@ import { ErrorState } from '@/components/states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
 import { setupStateQuery } from '@/lib/session';
-import { sectionOrder } from './config';
+import { type SectionId, sectionOrder } from './config';
 import { IntegrationSection } from './integration-section';
 import { settingQuery } from './queries';
 import { RulesSection } from './rules-section';
 import { SectionFrame, type SectionFrameProps } from './section-frame';
+import { WebhooksSection } from './webhooks-section';
 
 /** Amorçage : sans propriétaire, seule la section Emby est accessible. */
 const isReachable = (section: SetupSection, setup: SetupState) => setup.hasOwner || section === 'emby';
@@ -23,12 +24,15 @@ function nextTodo(setup: SetupState, from = 0): SetupSection | null {
 
 /**
  * Les cinq sections de l'assistant, en accordéon. Mêmes composants pour l'assistant (`wizard` : l'enregistrement
- * ouvre la section suivante à faire) et pour les réglages (chaque section s'enregistre et reste ouverte).
+ * ouvre la section suivante à faire) et pour les réglages (chaque section s'enregistre et reste ouverte ; le
+ * propriétaire y trouve aussi les webhooks).
  */
 export function SetupSections({ wizard }: { wizard: boolean }) {
   const queryClient = useQueryClient();
   const { data: setup } = useSuspenseQuery(setupStateQuery);
-  const [open, setOpen] = useState<SetupSection | null>(() => (wizard ? nextTodo(setup) : null));
+  const viewer = useViewer();
+  const [open, setOpen] = useState<SectionId | null>(() => (wizard ? nextTodo(setup) : null));
+  const toggle = (section: SectionId) => setOpen((current) => (current === section ? null : section));
 
   const onSaved = (section: SetupSection) => {
     if (!wizard) return;
@@ -46,15 +50,18 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           wizard={wizard}
           open={open === section}
           disabled={!isReachable(section, setup)}
-          onToggle={() => setOpen((current) => (current === section ? null : section))}
+          onToggle={() => toggle(section)}
           onSaved={() => onSaved(section)}
         />
       ))}
+      {!wizard && viewer?.capabilities.isOwner && (
+        <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
+      )}
     </div>
   );
 }
 
-type ItemProps = SectionFrameProps & { saved: boolean; wizard: boolean; onSaved: () => void };
+type ItemProps = SectionFrameProps<SetupSection> & { saved: boolean; wizard: boolean; onSaved: () => void };
 
 /** Charge le réglage enregistré (propriétaire seulement) puis affiche le formulaire de la section. */
 function SetupSectionItem({ saved, wizard, onSaved, ...frame }: ItemProps) {

@@ -5,6 +5,7 @@ import { Info } from 'lucide-react';
 import { MediaRail, MediaRailSkeleton, Rail, RailSkeleton } from '@/components/media/rail';
 import { StatusPill } from '@/components/media/status-pill';
 import { Backdrop, MetaLine, RequestButton } from '@/components/media/title-parts';
+import { WatchLink } from '@/components/media/watch-link';
 import { Page } from '@/components/page';
 import { QueryState } from '@/components/query-state';
 import { ActiveRequestsStrip } from '@/components/requests/active-requests';
@@ -31,8 +32,9 @@ function Hero({ media }: { media: MediaSummary }) {
         <MetaLine parts={summaryMeta(media)} />
         {media.status && <StatusPill status={media.status} className="self-start" />}
         {media.overview && <p className="hidden text-[17px] text-muted-foreground sm:line-clamp-3">{media.overview}</p>}
-        <div className="mt-2 flex gap-3">
+        <div className="mt-2 flex flex-wrap gap-3">
           <RequestButton media={media} className="grow sm:grow-0" />
+          <WatchLink media={media} className="grow sm:grow-0" />
           <Link
             to="/titre/$type/$id"
             params={{ type: media.type, id: String(media.tmdbId) }}

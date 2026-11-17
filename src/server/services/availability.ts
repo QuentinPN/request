@@ -1,4 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { EmbyLink } from '../../shared/emby.ts';
 import {
   keyOf,
   type MediaDetails,
@@ -8,11 +9,23 @@ import {
   type Season,
 } from '../../shared/media.ts';
 import type { Setting } from '../../shared/settings.ts';
-import type { Availability, LibraryStatus, MediaStatus, RequestStatus } from '../../shared/status.ts';
+import type {
+  Availability,
+  LibraryStatus,
+  MediaStatus,
+  RequestStatus,
+  TitleAvailability,
+} from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
 import { media, requestSeasons, requests, seasons } from '../db/schema.ts';
 import { type ArrKind, arrKindOf, getQueue, type QueueItem } from '../integrations/arr.ts';
-import { findEmbyItems, getEmbySeasonAvailability, latestEmbyItems, listEmbyLibraries } from '../integrations/emby.ts';
+import {
+  findEmbyItems,
+  getEmbySeasonAvailability,
+  getEmbyServerId,
+  latestEmbyItems,
+  listEmbyLibraries,
+} from '../integrations/emby.ts';
 import { listMovies } from '../integrations/radarr.ts';
 import { listSeries } from '../integrations/sonarr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
@@ -31,6 +44,8 @@ const QUEUE_TTL_MS = 30 * 1000;
 /** Après un échec, un service n'est plus interrogé pendant ce délai : une panne ne ralentit pas chaque page. */
 const BACKOFF_MS = 60 * 1000;
 const LATEST_TTL_MS = 5 * 60 * 1000;
+/** L'id du serveur Emby ne change pas : une lecture par heure suffit. */
+const SERVER_ID_TTL_MS = 60 * 60 * 1000;
 /** Taille de la rangée « Ajoutés récemment dans Emby ». */
 export const LATEST_LIMIT = 20;
 
@@ -135,7 +150,7 @@ export function displayStatus(library: LibraryState | null, request: RequestStat
  * Copie d'un titre avec son statut tiré de `statuses` (clé `type:tmdbId`). Toujours une copie : les objets d'origine
  * sont partagés par le cache TMDB et ne doivent pas porter le statut d'une autre requête.
  */
-export const withStatus = <T extends MediaKey>(statuses: ReadonlyMap<string, Availability>, item: T): T => ({
+export const withStatus = <T extends MediaKey>(statuses: ReadonlyMap<string, TitleAvailability>, item: T): T => ({
   ...item,
   ...statuses.get(keyOf(item)),
 });
@@ -188,8 +203,13 @@ interface Update {
   radarrId?: number;
   sonarrId?: number;
   embyItemId?: string;
-  /** Statut par saison ; absent = saisons inconnues, les lignes existantes sont gardées. */
-  seasons?: Array<{ seasonNumber: number; status: LibraryStatus }>;
+  /** Statut et épisodes (présents, attendus) par saison ; absent = saisons inconnues, les lignes existantes sont gardées. */
+  seasons?: Array<{
+    seasonNumber: number;
+    status: LibraryStatus;
+    episodesPresent: number;
+    episodesExpected: number;
+  }>;
 }
 
 /**
@@ -240,6 +260,20 @@ interface ExactSeries {
   key: MediaKey;
   seasons: readonly Season[];
   tvdbId: number | null;
+  lastAired: MediaDetails['lastAired'];
+}
+
+/**
+ * Épisodes déjà diffusés d'une saison TMDB : tous si une saison plus récente a commencé, jusqu'au dernier épisode
+ * diffusé pour la saison en cours, aucun pour une saison à venir. Sans « dernier épisode diffusé » (TMDB ne le donne
+ * pas toujours), une saison compte tout entière une fois sa date de diffusion passée.
+ */
+function airedEpisodes(season: Season, lastAired: ExactSeries['lastAired'], today: string): number {
+  if (lastAired) {
+    if (season.seasonNumber < lastAired.seasonNumber) return season.episodeCount;
+    return season.seasonNumber === lastAired.seasonNumber ? Math.min(lastAired.episodeNumber, season.episodeCount) : 0;
+  }
+  return season.airDate && season.airDate <= today ? season.episodeCount : 0;
 }
 
 const groupBy = <T, K>(items: readonly T[], keyFn: (item: T) => K | undefined) => {
@@ -432,11 +466,11 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
           seasonNumber,
           present: Math.max(fromSonarr?.episodeFileCount ?? 0, fromEmby?.episodesPresent ?? 0),
           // Épisodes déjà diffusés seulement (une série à jour est complète, une saison annoncée n'attend rien) :
-          // Sonarr les compte ; sur TMDB, une saison compte une fois sa date de diffusion passée.
+          // Sonarr les compte, à défaut TMDB (`airedEpisodes`).
           expected: fromSonarr
             ? fromSonarr.episodeCount
-            : fromTmdb?.airDate && fromTmdb.airDate <= today
-              ? fromTmdb.episodeCount
+            : fromTmdb
+              ? airedEpisodes(fromTmdb, exact?.lastAired, today)
               : 0,
           queue: progressOf(seriesQueue.filter((q) => q.seasonNumber === seasonNumber)),
         };
@@ -459,7 +493,17 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
         ...(knowsSeasons && {
           seasons: seasonFacts.flatMap((s) => {
             const season = seasonState(s);
-            return season ? [{ seasonNumber: s.seasonNumber, status: season.status }] : [];
+            return season
+              ? [
+                  {
+                    seasonNumber: s.seasonNumber,
+                    status: season.status,
+                    episodesPresent: s.present,
+                    // Jamais moins que ce qui est déjà là (TMDB en retard sur Emby) : « 10/10 », pas « 11/10 ».
+                    episodesExpected: Math.max(s.expected, s.present),
+                  },
+                ]
+              : [];
           }),
         }),
       };
@@ -534,13 +578,16 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
    * est configuré) et demandes, lues chacune en une requête pour tout le lot.
    */
   async function statusesFor(items: readonly MediaKey[], exact?: ExactSeries) {
-    const result = new Map<string, Availability>();
+    const result = new Map<string, TitleAvailability>();
     const resolved = await resolve(items, exact);
     const requested = requestStatesFor(db, items);
     for (const key of new Set([...(resolved?.rows.keys() ?? []), ...requested.keys()])) {
-      const library = resolved ? await libraryOf(resolved.rows.get(key), resolved.settings) : null;
+      const row = resolved?.rows.get(key);
+      const library = resolved ? await libraryOf(row, resolved.settings) : null;
       const availability = displayStatus(library, requested.get(key) ?? null);
-      if (availability.status) result.set(key, availability);
+      // Le lien vers Emby suit la bibliothèque, pas le statut affiché : une série partielle déjà demandée se regarde.
+      const embyItemId = library?.status === 'available' || library?.status === 'partial' ? row?.embyItemId : null;
+      if (availability.status) result.set(key, { ...availability, ...(embyItemId && { embyItemId }) });
     }
     return result;
   }
@@ -565,6 +612,7 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
           key: { type: details.type, tmdbId: details.tmdbId },
           seasons: details.seasons,
           tvdbId: details.externalIds.tvdb,
+          lastAired: details.lastAired,
         };
     }
     const statuses = await statusesFor([details, ...posters], exact);
@@ -574,15 +622,24 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
       const settings = settingsOf();
       const row = selectCached(db, [details]).get();
       const rows = row ? db.select().from(seasons).where(eq(seasons.mediaId, row.id)).all() : [];
-      const byNumber = new Map(rows.map((s) => [s.seasonNumber, s.status as LibraryStatus]));
+      const byNumber = new Map(rows.map((s) => [s.seasonNumber, s]));
       const requested = row ? seasonRequestStates(db, row.id) : new Map<number, RequestState>();
       seasonList = await Promise.all(
         details.seasons.map(async (season) => {
-          const status = byNumber.get(season.seasonNumber);
+          const cached = byNumber.get(season.seasonNumber);
+          const status = cached?.status as LibraryStatus | undefined;
           const progress =
             row && status === 'downloading' ? await progressFor(row, settings, season.seasonNumber) : undefined;
           const library = status ? { status, ...(progress !== undefined && { progress }) } : null;
-          return { ...season, ...displayStatus(library, requested.get(season.seasonNumber) ?? null) };
+          const episodes =
+            cached?.episodesPresent != null && cached.episodesExpected != null
+              ? { present: cached.episodesPresent, expected: cached.episodesExpected }
+              : undefined;
+          return {
+            ...season,
+            ...(episodes && { episodes }),
+            ...displayStatus(library, requested.get(season.seasonNumber) ?? null),
+          };
         }),
       );
     }
@@ -609,6 +666,17 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     if (!latest) return null;
     const settled = await Promise.allSettled(latest.map(({ type, tmdbId }) => tmdb.summary(type, tmdbId)));
     return settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+  }
+
+  /**
+   * De quoi bâtir « Regarder dans Emby » : adresse publique réglée et id du serveur (`/System/Info/Public`, gardé une
+   * heure). `null` sans adresse publique ou si Emby ne répond pas : pas de lien, jamais d'erreur.
+   */
+  async function embyLink(): Promise<EmbyLink | null> {
+    const emby = getSetting(db, cryptoKey, 'emby');
+    if (!emby?.publicUrl) return null;
+    const serverId = await cachedList('emby', emby.url, 'server-id', SERVER_ID_TTL_MS, () => getEmbyServerId(emby));
+    return serverId ? { publicUrl: emby.publicUrl, serverId } : null;
   }
 
   // --- Synchronisation (webhooks, balayages) ---
@@ -656,7 +724,7 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     });
   }
 
-  return { statusesFor, withStatuses, withDetailsStatus, recentlyAdded, refresh, markDownloading };
+  return { statusesFor, withStatuses, withDetailsStatus, recentlyAdded, embyLink, refresh, markDownloading };
 }
 
 export type AvailabilityService = ReturnType<typeof createAvailability>;

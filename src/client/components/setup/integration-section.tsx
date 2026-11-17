@@ -33,6 +33,8 @@ type Values = {
   /** Vide : garder la clé enregistrée (même adresse seulement, voir withStoredSecrets côté serveur). */
   apiKey: string;
   libraryIds: string[];
+  /** Emby : adresse que les membres utilisent (« Regarder dans Emby »), vide = aucune. */
+  publicUrl: string;
   qualityProfileId: string;
   rootFolderPath: string;
   minimumAvailability: MinimumAvailability;
@@ -41,8 +43,9 @@ type Values = {
 };
 
 /** Vue à plat d'un réglage masqué, quelle que soit l'intégration. */
-type StoredFields = Partial<Omit<Values, 'apiKey' | 'qualityProfileId' | 'languageProfileId'>> & {
+type StoredFields = Partial<Omit<Values, 'apiKey' | 'publicUrl' | 'qualityProfileId' | 'languageProfileId'>> & {
   apiKey?: { set: boolean };
+  publicUrl?: string | null;
   qualityProfileId?: number;
   languageProfileId?: number;
 };
@@ -51,6 +54,7 @@ const initialValues = (s: StoredFields): Values => ({
   url: s.url ?? '',
   apiKey: '',
   libraryIds: s.libraryIds ?? [],
+  publicUrl: s.publicUrl ?? '',
   qualityProfileId: s.qualityProfileId ? String(s.qualityProfileId) : '',
   rootFolderPath: s.rootFolderPath ?? '',
   minimumAvailability: s.minimumAvailability ?? 'released',
@@ -67,7 +71,7 @@ function payloadOf(key: IntegrationKey, v: Values): SettingInput<IntegrationKey>
   const arr = { ...connection, qualityProfileId: Number(v.qualityProfileId), rootFolderPath: v.rootFolderPath };
   switch (key) {
     case 'emby':
-      return { ...connection, libraryIds: v.libraryIds } as SettingInput<'emby'>;
+      return { ...connection, libraryIds: v.libraryIds, publicUrl: v.publicUrl.trim() || null } as SettingInput<'emby'>;
     case 'tmdb':
       return connection as SettingInput<'tmdb'>;
     case 'radarr':
@@ -114,11 +118,17 @@ function prefill(key: IntegrationKey, v: Values, result: TestResults[Integration
   return v;
 }
 
+const isHttpUrl = (value: string) => /^https?:\/\/[^\s/]+/i.test(value.trim());
+const URL_ERROR = 'Adresse invalide : elle doit commencer par http:// ou https://';
+
+/** Adresse publique d'Emby : facultative, mais valide si elle est renseignée. */
+const publicUrlError = (key: IntegrationKey, v: Values) =>
+  key === 'emby' && v.publicUrl.trim() !== '' && !isHttpUrl(v.publicUrl) ? URL_ERROR : null;
+
 /** Vérification locale avant d'appeler le serveur ; `null` si rien à signaler. */
 function localError(key: IntegrationKey, v: Values, stored: StoredFields): string | null {
   const hasUrl = connectionText[key].url !== null;
-  if (hasUrl && !/^https?:\/\/[^\s/]+/i.test(v.url.trim()))
-    return 'Adresse invalide : elle doit commencer par http:// ou https://';
+  if (hasUrl && !isHttpUrl(v.url)) return URL_ERROR;
   const keepsKey = stored.apiKey?.set === true && (!hasUrl || normalizeUrl(v.url.trim()) === stored.url);
   if (!v.apiKey.trim() && !keepsKey)
     return stored.apiKey?.set ? 'Nouvelle adresse : saisissez à nouveau la clé d’API' : 'Clé d’API requise';
@@ -182,8 +192,12 @@ export function IntegrationSection({ service, stored: storedSetting, saved, wiza
 
   const result = test.data;
   const arr = result && (service === 'radarr' || service === 'sonarr') ? (result as TestResults['sonarr']) : null;
+  const publicError = publicUrlError(service, values);
   const canSave =
-    test.isSuccess && !save.isPending && (!arr || (values.qualityProfileId !== '' && values.rootFolderPath !== ''));
+    test.isSuccess &&
+    !save.isPending &&
+    !publicError &&
+    (!arr || (values.qualityProfileId !== '' && values.rootFolderPath !== ''));
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -243,6 +257,28 @@ export function IntegrationSection({ service, stored: storedSetting, saved, wiza
             <FieldHint id={`${id}-key-hint`}>{text.apiKeyHint}</FieldHint>
           </div>
         </div>
+
+        {service === 'emby' && (
+          <div>
+            <Label htmlFor={`${id}-public-url`}>Adresse publique d’Emby</Label>
+            <Input
+              id={`${id}-public-url`}
+              type="url"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="https://emby.exemple.fr"
+              aria-describedby={`${id}-public-url-hint`}
+              aria-invalid={publicError ? true : undefined}
+              value={values.publicUrl}
+              onChange={(e) => setChoice({ publicUrl: e.target.value })}
+            />
+            <FieldHint id={`${id}-public-url-hint`} className={publicError ? 'text-(--text-danger)' : undefined}>
+              {publicError ??
+                'Facultative. Celle que vos membres utilisent pour ouvrir Emby : elle active le lien « Regarder dans Emby ».'}
+            </FieldHint>
+          </div>
+        )}
 
         {result && service === 'emby' && (
           <fieldset>

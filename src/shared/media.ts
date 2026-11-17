@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { availabilitySchema } from './status.ts';
+import { availabilitySchema, titleAvailabilitySchema } from './status.ts';
 
 export const mediaTypes = ['movie', 'tv'] as const;
 export const mediaTypeSchema = z.enum(mediaTypes);
@@ -26,7 +26,7 @@ export const mediaSummarySchema = z
     backdropPath: z.string().nullable(),
     overview: z.string(),
   })
-  .extend(availabilitySchema.shape);
+  .extend(titleAvailabilitySchema.shape);
 export type MediaSummary = z.infer<typeof mediaSummarySchema>;
 
 export const genreSchema = z.object({ id: z.number().int(), name: z.string() });
@@ -38,6 +38,8 @@ export const seasonSchema = z
     seasonNumber: z.number().int(),
     episodeCount: z.number().int(),
     airDate: z.string().nullable(),
+    /** Épisodes présents et attendus (diffusés) quand la saison a un statut : « 8/10 épisodes ». */
+    episodes: z.object({ present: z.number().int(), expected: z.number().int() }).optional(),
   })
   .extend(availabilitySchema.shape);
 export type Season = z.infer<typeof seasonSchema>;
@@ -76,6 +78,8 @@ export const mediaDetailsSchema = mediaSummarySchema.extend({
   recommendations: z.array(mediaSummarySchema),
   similar: z.array(mediaSummarySchema),
   externalIds: z.object({ imdb: z.string().nullable(), tvdb: z.number().int().nullable() }),
+  /** Série : dernier épisode diffusé (TMDB), pour compter les épisodes attendus d'une saison en cours ; usage serveur. */
+  lastAired: z.object({ seasonNumber: z.number().int(), episodeNumber: z.number().int() }).nullish(),
 });
 export type MediaDetails = z.infer<typeof mediaDetailsSchema>;
 
