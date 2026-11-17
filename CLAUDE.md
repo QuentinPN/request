@@ -31,6 +31,7 @@ This file, the project's own `.claude/skills/` and the agents above take precede
 - `brainstorming` and `writing-plans` are fine, but specs and plans go in the PR or a scratch folder, never in a commit (no `docs/superpowers/`).
 - A project skill that verifies or ships work (tests, PR, merge) replaces `verification-before-completion`, `finishing-a-development-branch` and `requesting-code-review`.
 - `systematic-debugging`, `test-driven-development` and `receiving-code-review` apply as is.
+- Database work: `database-architect` (`.claude/skills/`) before any new table, relation or migration (the `coder`/`checker` brief says to read it); `database-optimizer` when reviewing queries, indexes or a slow path. Both are generic: apply them to SQLite (WAL, `EXPLAIN QUERY PLAN`, partial and composite indexes, no server-side tuning). The data model lives in `docs/DATA_MODEL.md`.
 
 ## DRY (mandatory)
 

@@ -20,8 +20,9 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 - [x] **1.4** (P0) Shell : navigation pilule (ordinateur) et barre d'onglets flottante (mobile), routes TanStack Router à chargement différé, `Ctrl+K`, états globaux (chargement, vide, erreur « Réessayer »)
   - Critères : navigation au clavier complète, `Ctrl+K` ouvre la recherche, `Échap` la ferme ; aucune violation axe à 1440 et 390 px ; captures `docs/captures/1.4`
   - Validation : Playwright clavier + axe, `npm run verify`
-- [ ] **1.5** (P1) API : `FastifyInstance.data` typé honnêtement ; tout chemin `/api` inconnu (y compris `/api` et `/api?x`) renvoie un 404 JSON, avec ou sans client compilé → test de route
-- [ ] **1.6** (P1) Intégration continue GitHub Actions (`npm run verify`) sur les PR vers `dev` et `main`
+- [x] **1.5** (P1) API : `FastifyInstance.data` typé honnêtement ; tout chemin `/api` inconnu (y compris `/api` et `/api?x`) renvoie un 404 JSON, avec ou sans client compilé → test de route
+- [x] **1.6** (P1) Intégration continue GitHub Actions (`npm run verify`) sur les PR vers `dev` et `main`
+- [ ] **1.7** (P1) Base : index `sessions(user_id)` et `sessions(expires_at)`, `CHECK` sur `users.role`, lecture validée de `quota_override`, PRAGMA `synchronous=NORMAL` et `journal_size_limit` (cf. docs/DATA_MODEL.md) → tests de migration, `EXPLAIN QUERY PLAN` sur la purge
 
 ## Phase 2 — Configuration et connexion
 
