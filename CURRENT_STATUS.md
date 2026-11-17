@@ -4,32 +4,37 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 
 ## Où on en est (2026-11-17)
 
-- **Phases 0 à 3** : faites, sauf 0.5 (points [?] de `docs/integrations.md` à confirmer sur les vraies instances), 3.3 (lien « Regarder dans Emby », épisodes présents par saison) et 3.4 (logo : choix du propriétaire attendu).
-- **Phase 4** : API des demandes (4.1, 4.2) en cours sur `feat/demandes-api` ; puis écrans Demandes, Approbations, feuille de demande (4.2, 4.3).
-- **Dépôt** : `github.com/QuentinPN/Request` (privé). `main` = production (rien n'y a encore été fusionné), `dev` = intégration ; une PR par lot, CI `npm run verify`.
+- **MVP fonctionnellement complet sur `dev`** : phases 0 à 6 faites, sauf ce qui dépend du propriétaire ou des vraies instances (voir « Prochaines actions »).
+- **Dépôt** : `github.com/QuentinPN/Request` (privé). `main` = production (rien n'y a encore été fusionné), `dev` = intégration ; une PR par lot (#1 à #29), CI `npm run verify` + construction de l'image Docker.
 - **Méthode** : lots indépendants en parallèle (un worktree par agent), `checker` sur chaque PR, correctifs avant fusion.
 
 ## Ce qui existe réellement
 
-- **Serveur** : Fastify, garde de session globale sur `/api/*` (cookie httpOnly, CSRF par en-tête + origine, proxy de confiance limité à la boucle locale ou `TRUST_PROXY`), erreurs uniformes `{ error }`.
-- **Connexion** par compte Emby, premier admin Emby = propriétaire, rôles et quotas par membre, import des membres.
-- **Assistant** et Réglages : Emby (bibliothèques), TMDB, Radarr, Sonarr (profils, dossiers), règles et quotas ; secrets chiffrés, jamais renvoyés.
-- **Catalogue** : Découvrir (tendances, populaires, prochainement, ajoutés récemment dans Emby, plateformes), Films/Séries par genre, fiche complète, recherche `Ctrl+K`, images relayées avec cache disque.
-- **Statuts** calculés côté serveur (disponible, partiel, en téléchargement avec progression) et affichés sur chaque affiche et chaque saison.
-- **Base** : SQLite (WAL), migrations 0000 à 0004, modèle dans `docs/DATA_MODEL.md`.
-- **Tests** : ~290 unitaires et de routes (faux Emby/Radarr/Sonarr/TMDB), ~80 e2e Playwright avec axe à 1440 et 390 px.
+- **Serveur** : Fastify, garde de session globale sur `/api/*` (cookie httpOnly, CSRF par en-tête + origine, proxy de confiance limité à la boucle locale ou `TRUST_PROXY`), erreurs uniformes `{ error }`. Seules exceptions publiques : `/api/health` et les deux webhooks *arr (jeton).
+- **Connexion** par compte Emby, premier admin Emby = propriétaire, rôles et quotas par membre (propriétaire et gestionnaires exemptés), import des membres.
+- **Assistant** et Réglages : Emby (bibliothèques, adresse publique), TMDB, Radarr, Sonarr (profils, dossiers), règles et quotas, Webhooks (adresses, jeton régénérable), Discord (facultatif), import Seerr ; secrets chiffrés, jamais renvoyés.
+- **Catalogue** : Découvrir, Films/Séries par genre, fiche complète, recherche `Ctrl+K`, images relayées avec cache disque borné.
+- **Statuts** calculés côté serveur (disponible, partiel, en téléchargement), épisodes présents/attendus par saison, lien « Regarder dans Emby ».
+- **Demandes** : feuille de demande (film, saisons), Mes demandes, bande « Vos demandes en cours », frise ; Approbations (tableau + panneau, cartes sur mobile) avec choix du profil et du dossier, refus motivé, relance des échecs ; envoi à Radarr/Sonarr.
+- **Synchronisation** : webhooks Radarr/Sonarr, balayage léger (10 min) et complet (24 h, purges), passage automatique des demandes à « disponible ».
+- **Notifications** dans l'appli (cloche), Discord facultatif.
+- **Production** : Dockerfile, `compose.yml` durci + Caddy, sauvegarde quotidienne de la base, guide [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).
+- **Base** : SQLite (WAL), migrations 0000 à 0009, modèle dans `docs/DATA_MODEL.md`.
+- **Tests** : ~455 unitaires et de routes (faux Emby/Radarr/Sonarr/TMDB/Discord/Seerr), ~175 e2e Playwright avec axe à 1440 et 390 px.
 
 ## Risques et points de vigilance
 
-| Risque                                                                                                                 | Impact                                   | Traitement                                               |
-| ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------- |
-| Points [?] des API (Emby `AnyProviderIdEquals`, lien profond, webhooks Premiere) non vérifiés sur les vraies instances | Statuts ou liens faux en production      | 0.5 : essai sur le mini-PC avant 6.3                     |
-| Rebinding DNS pendant l'amorçage (avant propriétaire)                                                                  | Prise de contrôle pendant l'installation | Accepté, documenté ; installation courte en réseau local |
-| Lignes `media` sans statut accumulées                                                                                  | Base qui grossit                         | Purge dans le balayage complet (5.1)                     |
-| Disque du cache d'images sans limite                                                                                   | Espace disque                            | À borner en 6.1                                          |
+| Risque                                                                                                                 | Impact                                         | Traitement                                                    |
+| ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
+| Points [?] des API (Emby `AnyProviderIdEquals`, lien profond et `serverId`, noms d'événements Sonarr, champs de Seerr) | Statuts, liens ou import faux en production    | 0.5 : essai sur le mini-PC avant 6.3                          |
+| Radarr/Sonarr doivent joindre l'adresse des webhooks depuis leur conteneur                                             | Statuts mis à jour seulement par les balayages | Vérifier au déploiement ; le balayage de 10 min sert de filet |
+| Rebinding DNS pendant l'amorçage (avant propriétaire)                                                                  | Prise de contrôle pendant l'installation       | Accepté, documenté ; installation courte en réseau local      |
+| Clé de chiffrement `/data/secret.key`                                                                                  | Sauvegarde inutilisable sans elle              | Documenté dans DEPLOIEMENT.md ; la sauvegarder à part         |
+| Restauration de sauvegarde jamais exercée                                                                              | Perte de données en cas d'incident             | À tester lors du déploiement (6.3)                            |
 
-## Prochaines actions
+## Prochaines actions (côté propriétaire)
 
-1. Fusionner l'API des demandes (4.1/4.2), puis en parallèle : écrans des demandes (feuille, Mes demandes, Approbations) et 3.3.
-2. Phase 5 : webhooks Radarr/Sonarr, balayages planifiés, notifications.
-3. Choix du logo par le propriétaire (3.4), puis phase 6 (Docker, déploiement).
+1. **Logo (3.4)** : choisir entre les finalistes de `docs/logo/round2/final` (R-loupe ou U négatif), puis intégration.
+2. **Versions réelles (0.5)** : fournir les versions d'Emby, Radarr, Sonarr et Seerr du mini-PC pour lever les points [?].
+3. **Fusion `dev` → `main`** : à faire avec votre accord.
+4. **Déploiement (6.3)** : sur le mini-PC à côté de Seerr, avec votre accord ; parcourir l'assistant, tester la restauration, essai avec de vrais membres, puis arrêt de Seerr.

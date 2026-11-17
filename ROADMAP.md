@@ -35,24 +35,24 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 
 - [x] **3.1** (P0) Client TMDB avec cache, rangées Découvrir, recherche, fiche film et série → fixtures TMDB, captures
 - [x] **3.2** (P0) Statut de disponibilité calculé côté serveur (Emby + Radarr/Sonarr) et affiché sur chaque affiche → tests par cas (absent, partiel, disponible, en téléchargement)
-- [ ] **3.3** (P1) Lien « Regarder dans Emby » (adresse publique d'Emby dans les réglages) et nombre d'épisodes présents par saison dans le contrat → affiches et fiche
+- [x] **3.3** (P1) Lien « Regarder dans Emby » (adresse publique d'Emby dans les réglages) et nombre d'épisodes présents par saison dans le contrat → affiches et fiche
 - [ ] **3.4** (P1) Logo et favicon : choix du propriétaire entre les finalistes de `docs/logo/round2/final`, puis intégration (en-tête, favicon, icônes)
 
 ## Phase 4 — Demandes
 
-- [~] **4.1** (P0) Création (film, saisons), droits, approbation automatique, quotas → tests transactionnels, double clic idempotent
-- [~] **4.2** (P0) Approbations (tableau + panneau sur ordinateur, carte par carte sur mobile), modification avant envoi, refus avec motif, envoi à Radarr/Sonarr → faux Radarr/Sonarr, échec visible et rejouable
-- [ ] **4.3** (P1) Mes demandes / Toutes les demandes, annulation, bande « Vos demandes en cours » et frise de suivi
+- [x] **4.1** (P0) Création (film, saisons), droits, approbation automatique, quotas → tests transactionnels, double clic idempotent
+- [x] **4.2** (P0) Approbations (tableau + panneau sur ordinateur, carte par carte sur mobile), modification avant envoi, refus avec motif, envoi à Radarr/Sonarr → faux Radarr/Sonarr, échec visible et rejouable
+- [x] **4.3** (P1) Mes demandes / Toutes les demandes, annulation, bande « Vos demandes en cours » et frise de suivi
 
 ## Phase 5 — Synchronisation et notifications
 
-- [ ] **5.1** (P0) Webhooks Radarr/Sonarr entrants (jeton), balayage Emby léger et complet planifié, progression de téléchargement → tests de transition de statut
-- [ ] **5.2** (P1) Notifications dans l'appli (créée, approuvée, refusée, disponible) → tests du contenu des messages
-- [ ] **5.3** (P2) Facultatif : webhook Discord dans Réglages › Notifications, désactivé par défaut → aucun appel sans webhook
+- [x] **5.1** (P0) Webhooks Radarr/Sonarr entrants (jeton), balayage Emby léger et complet planifié, progression de téléchargement → tests de transition de statut
+- [x] **5.2** (P1) Notifications dans l'appli (créée, approuvée, refusée, disponible) → tests du contenu des messages
+- [x] **5.3** (P2) Facultatif : webhook Discord dans Réglages › Notifications, désactivé par défaut → aucun appel sans webhook
 
 ## Phase 6 — Mise en production
 
-- [ ] **6.1** (P0) Dockerfile `linux/amd64`, `compose.yml` durci, Caddy, healthcheck, sauvegarde de `/data` → image démarrée en local, assistant parcouru de bout en bout
+- [~] **6.1** (P0) Dockerfile `linux/amd64`, `compose.yml` durci, Caddy, healthcheck, sauvegarde de `/data` → image démarrée en local, assistant parcouru de bout en bout. Fait : image construite et lancée (lecture seule, `healthy`), compose + Caddy en HTTPS, sauvegarde, cache d'images borné, [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md). Reste : assistant parcouru de bout en bout et restauration exercée, avec les vraies instances
 - [x] **6.2** (P2) Import facultatif des demandes de Seerr (Réglages › Importer depuis Seerr : aperçu, puis import idempotent)
 - [ ] **6.3** (P0) Déploiement sur le mini-PC à côté de Seerr, essai avec de vrais membres, puis arrêt de Seerr (avec l'accord du propriétaire)
 
