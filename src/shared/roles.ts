@@ -36,12 +36,12 @@ export function capabilitiesOf(role: Role): Capabilities {
 }
 
 /** Plafond de demandes sur une fenêtre glissante de `days` jours. */
-const quotaRule = z.object({ limit: z.number().int().min(0), days: z.number().int().min(1) });
-export type QuotaRule = z.output<typeof quotaRule>;
+export const quotaRuleSchema = z.object({ limit: z.number().int().min(0), days: z.number().int().min(1) });
+export type QuotaRule = z.output<typeof quotaRuleSchema>;
 
 /** Quotas propres à un membre ; `null` = valeur par défaut des réglages. */
 export const quotaOverrideSchema = z.object({
-  movies: quotaRule.nullable().default(null),
-  seasons: quotaRule.nullable().default(null),
+  movies: quotaRuleSchema.nullable().default(null),
+  seasons: quotaRuleSchema.nullable().default(null),
 });
 export type QuotaOverride = z.output<typeof quotaOverrideSchema>;

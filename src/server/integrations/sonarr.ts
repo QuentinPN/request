@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import type { Setting } from '../../shared/settings.ts';
+import type { SonarrTestResult } from '../../shared/setup.ts';
 import {
   type ArrConfig,
-  type ArrTestResult,
   arrClient,
   createOrRecover,
   lenient,
@@ -30,7 +31,7 @@ const seriesSchema = z.looseObject({
 });
 type Series = z.infer<typeof seriesSchema>;
 
-export type SeriesType = 'standard' | 'anime' | 'daily';
+export type SeriesType = Setting<'sonarr'>['seriesType'];
 
 export interface AddSeriesInput {
   tvdbId: number;
@@ -52,10 +53,7 @@ export interface SeasonStatus {
   totalEpisodeCount?: number;
 }
 
-export interface SonarrTestResult extends ArrTestResult {
-  /** Présent uniquement en Sonarr v3 (supprimé en v4). */
-  languageProfiles?: Array<{ id: number; name: string }>;
-}
+export type { SonarrTestResult };
 
 export async function testSonarr(config: ArrConfig): Promise<SonarrTestResult> {
   const result = await testArr('sonarr', config);

@@ -2,10 +2,20 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { IntegrationError } from '../integrations/http.ts';
 
+/** Erreur renvoyée telle quelle : statut HTTP et message court, lisible, en français (401, 403, 409, 429…). */
+export class HttpError extends Error {
+  readonly statusCode: number;
+  constructor(statusCode: number, message: string) {
+    super(message);
+    this.name = 'HttpError';
+    this.statusCode = statusCode;
+  }
+}
+
 /** Requête du client invalide (paramètres, requête ou corps) : la faute est de son côté (une `ZodError` brute est un bug serveur). */
-export class BadRequestError extends Error {
+export class BadRequestError extends HttpError {
   constructor() {
-    super('Requête invalide');
+    super(400, 'Requête invalide');
     this.name = 'BadRequestError';
   }
 }
@@ -41,12 +51,13 @@ export function parseUpstream<T>(service: string, schema: z.ZodType<T>, data: un
 }
 
 /**
- * Gestionnaire d'erreurs unique de l'API : requête invalide (`BadRequestError`) → 400, service non configuré → 503,
+ * Gestionnaire d'erreurs unique de l'API : `HttpError` (dont `BadRequestError` → 400) → son statut, service
+ * non configuré → 503,
  * échec ou réponse hors contrat d'un service externe → 502 (message lisible et sans secret). Erreur 4xx de Fastify
  * (JSON illisible, 404…) → même statut. Le reste est journalisé et devient un 500 générique, jamais le message brut.
  */
 export function apiErrorHandler(error: unknown, _req: FastifyRequest, reply: FastifyReply) {
-  if (error instanceof BadRequestError) return reply.code(400).send({ error: error.message });
+  if (error instanceof HttpError) return reply.code(error.statusCode).send({ error: error.message });
   if (error instanceof NotConfiguredError) return reply.code(503).send({ error: error.message });
   if (error instanceof IntegrationError || error instanceof UpstreamContractError)
     return reply.code(502).send({ error: error.message });

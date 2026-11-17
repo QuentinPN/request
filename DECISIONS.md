@@ -13,3 +13,4 @@ Journal des décisions techniques et produit. La plus récente en bas.
 | 2026-11-17 | Lots indépendants délégués en parallèle (un worktree par `coder`), règle dans CLAUDE.md                       | Demande du propriétaire : accélérer le développement                            |
 | 2026-11-17 | Cache disque des affiches TMDB dans le MVP ; 8 fonctions de Seerr ajoutées à « Plus tard »                    | Comparaison avec Seerr (0.4)                                                    |
 | 2026-11-17 | Quotas comptés en saisons (PRODUCT.md), alors que Seerr compte les demandes de séries                         | Choix initial du propriétaire conservé                                          |
+| 2026-11-17 | Risque de rebinding DNS accepté pendant l'amorçage d'Emby (avant le premier propriétaire)                     | Fenêtre courte, réseau local, comme Seerr ; détail dans ARCHITECTURE.md         |

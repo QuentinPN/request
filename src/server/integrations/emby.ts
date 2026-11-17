@@ -1,8 +1,10 @@
 import { z } from 'zod';
-import type { Setting } from '../../shared/settings.ts';
+import type { Connection } from '../../shared/settings.ts';
+import type { EmbyLibrary } from '../../shared/setup.ts';
 import { createClient, httpRequest, IntegrationError } from './http.ts';
 
-export type EmbyConfig = Setting<'emby'>;
+/** Adresse et clé suffisent : les autres réglages d'Emby (bibliothèques suivies) ne servent pas aux appels. */
+export type EmbyConfig = Connection<'emby'>;
 
 const SERVICE = 'Emby';
 /** Nombre maximal d'identifiants par requête `AnyProviderIdEquals` (liste séparée par des virgules). */
@@ -71,11 +73,7 @@ export interface EmbyListedUser extends EmbyUser {
   isDisabled: boolean;
 }
 
-export interface EmbyLibrary {
-  id: string;
-  name: string;
-  type: 'movies' | 'tvshows' | 'other';
-}
+export type { EmbyLibrary };
 
 export interface EmbyItem {
   embyId: string;

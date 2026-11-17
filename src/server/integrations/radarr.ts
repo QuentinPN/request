@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Setting } from '../../shared/settings.ts';
 import {
   type ArrConfig,
   type ArrTestResult,
@@ -29,7 +30,7 @@ const toStatus = (movie: Movie): MovieStatus => ({
   monitored: movie.monitored,
 });
 
-export type MinimumAvailability = 'announced' | 'inCinemas' | 'released';
+export type MinimumAvailability = Setting<'radarr'>['minimumAvailability'];
 
 export interface AddMovieInput {
   tmdbId: number;

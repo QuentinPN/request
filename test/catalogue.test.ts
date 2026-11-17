@@ -4,7 +4,7 @@ import { buildApp } from '../src/server/app.ts';
 import { openDataDir } from '../src/server/db/index.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { closedPortUrl, type FakeRoutes, startFakeServer, status } from './fake-server.ts';
-import { trackTempDirs } from './helpers.ts';
+import { loginAsOwner, trackTempDirs } from './helpers.ts';
 
 const fixture = (name: string): Record<string, unknown> =>
   JSON.parse(readFileSync(new URL(`./fixtures/tmdb/${name}.json`, import.meta.url), 'utf8'));
@@ -24,7 +24,8 @@ async function setup(routes: FakeRoutes = {}, { tmdb = true, tmdbUrl }: { tmdb?:
   if (tmdb) setSetting(data.db, data.cryptoKey, 'tmdb', { apiKey: V3_KEY });
   const app = await buildApp({ data, upstreams: { tmdbUrl: tmdbUrl ?? server.url } });
   cleanups.push(() => app.close(), server.close);
-  const get = (url: string) => app.inject({ method: 'GET', url });
+  const { headers } = await loginAsOwner(app);
+  const get = (url: string) => app.inject({ method: 'GET', url, headers });
   return { app, data, server, get };
 }
 
@@ -44,6 +45,15 @@ const discoverRoutes = (overrides: FakeRoutes = {}): FakeRoutes => ({
 });
 
 describe('GET /api/discover', () => {
+  it('exige une session (garde global de /api)', async () => {
+    const { app, server } = await setup(discoverRoutes());
+    const res = await app.inject({ method: 'GET', url: '/api/discover' });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'Connexion requise' });
+    expect(server.requests).toHaveLength(0);
+  });
+
   it('renvoie les rangées dans l’ordre du produit, en films et séries', async () => {
     const { get } = await setup(discoverRoutes());
     const res = await get('/api/discover');

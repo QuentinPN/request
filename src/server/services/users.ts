@@ -1,16 +1,42 @@
 import { asc, count, eq } from 'drizzle-orm';
-import { type QuotaOverride, quotaOverrideSchema, type Role } from '../../shared/roles.ts';
+import type { Member, Viewer } from '../../shared/auth.ts';
+import { capabilitiesOf, type QuotaOverride, type Role } from '../../shared/roles.ts';
 import type { Db } from '../db/index.ts';
 import { users } from '../db/schema.ts';
+import { HttpError } from '../lib/api-errors.ts';
 
 export type User = typeof users.$inferSelect;
 
+/** Photo relayée par l'appli (jamais l'adresse d'Emby ni sa clé), `null` sans photo. */
+export const avatarUrlOf = (user: User) => (user.avatar ? `/api/users/${encodeURIComponent(user.id)}/avatar` : null);
+
+export const toViewer = (user: User): Viewer => ({
+  id: user.id,
+  name: user.name,
+  role: user.role,
+  capabilities: capabilitiesOf(user.role),
+  avatarUrl: avatarUrlOf(user),
+});
+
+export const toMember = (user: User): Member => ({
+  id: user.id,
+  name: user.name,
+  role: user.role,
+  avatarUrl: avatarUrlOf(user),
+  quotaOverride: user.quotaOverride ?? null,
+  lastLoginAt: user.lastLoginAt.toISOString(),
+});
+
 export type EmbyIdentity = { id: string; name: string; avatar: string | null; isEmbyAdmin: boolean };
 
-export class UsersError extends Error {
-  code: 'not_found' | 'last_owner';
+const USERS_STATUS = { not_found: 404, last_owner: 409 } as const;
+
+/** Refus métier sur les membres ; son statut HTTP est porté par `HttpError`. */
+export class UsersError extends HttpError {
+  code: keyof typeof USERS_STATUS;
   constructor(code: UsersError['code'], message: string) {
-    super(message);
+    super(USERS_STATUS[code], message);
+    this.name = 'UsersError';
     this.code = code;
   }
 }
@@ -52,6 +78,26 @@ export function upsertFromEmby(db: Db, identity: EmbyIdentity, now = new Date())
   );
 }
 
+export const hasOwner = (db: Db) => countOwners(db) > 0;
+
+/**
+ * Import depuis la liste des comptes Emby : crée les membres absents (rôle « Membre »), rafraîchit nom et
+ * avatar des autres. Ne promeut jamais et ne touche ni au rôle ni à la dernière connexion d'un membre existant.
+ */
+export function importFromEmby(
+  db: Pick<Db, 'insert'>,
+  identity: Omit<EmbyIdentity, 'isEmbyAdmin'>,
+  now = new Date(),
+): User {
+  const profile = { name: identity.name, avatar: identity.avatar, updatedAt: now };
+  return db
+    .insert(users)
+    .values({ id: identity.id, ...profile, role: 'member', createdAt: now, lastLoginAt: now })
+    .onConflictDoUpdate({ target: users.id, set: profile })
+    .returning()
+    .get();
+}
+
 export function getUser(db: Db, id: string): User | null {
   return db.select().from(users).where(eq(users.id, id)).get() ?? null;
 }
@@ -75,9 +121,11 @@ export function setRole(db: Db, id: string, role: Role, now = new Date()): User 
   );
 }
 
-/** Enregistre les quotas propres au membre, ou `null` pour revenir aux quotas par défaut. */
-export function setQuotaOverride(db: Db, id: string, input: unknown, now = new Date()): User {
-  const quotaOverride: QuotaOverride | null = input === null ? null : quotaOverrideSchema.parse(input);
+/**
+ * Enregistre les quotas propres au membre, ou `null` pour revenir aux quotas par défaut. La valeur est déjà
+ * validée par `memberUpdateSchema` (qui reprend `quotaOverrideSchema`) : un seul endroit valide.
+ */
+export function setQuotaOverride(db: Db, id: string, quotaOverride: QuotaOverride | null, now = new Date()): User {
   const user = db.update(users).set({ quotaOverride, updatedAt: now }).where(eq(users.id, id)).returning().get();
   if (!user) throw new UsersError('not_found', 'Membre introuvable');
   return user;

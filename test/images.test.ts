@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { openDataDir } from '../src/server/db/index.ts';
 import { closedPortUrl, type FakeRoutes, startFakeServer, status } from './fake-server.ts';
-import { trackTempDirs } from './helpers.ts';
+import { loginAsOwner, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const cleanups: Array<() => Promise<unknown>> = [];
@@ -24,7 +24,8 @@ async function setup(routes: FakeRoutes = {}, imagesUrl?: string) {
   const dir = tempDir();
   const app = await buildApp({ data: openDataDir(dir), upstreams: { imagesUrl: imagesUrl ?? upstream.url } });
   cleanups.push(() => app.close(), upstream.close);
-  const get = (url: string) => app.inject({ method: 'GET', url });
+  const { headers } = await loginAsOwner(app);
+  const get = (url: string) => app.inject({ method: 'GET', url, headers });
   return { get, upstream, dir };
 }
 

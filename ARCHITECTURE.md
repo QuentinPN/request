@@ -60,3 +60,9 @@ Chaque intégration est un module unique, typé, avec délai d'expiration, nouve
 ## Déploiement
 
 Comme Hub : image Docker `linux/amd64` (GHCR), `compose.yml` avec un seul service, conteneur `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, volume `/data` (base SQLite, clé de chiffrement, cache d'images éventuel), healthcheck `/api/health`, derrière Caddy en HTTPS. Joint Radarr, Sonarr et Emby par le réseau Docker de l'hôte. Migration depuis Seerr : import facultatif des demandes existantes (lecture de sa base SQLite) en fin de MVP.
+
+Proxy de confiance : par défaut, l'appli ne croit les en-têtes `X-Forwarded-For`, `X-Forwarded-Proto` et `X-Forwarded-Host` que venant de la boucle locale (`127.0.0.1`, `::1`). Derrière Caddy dans un autre conteneur, renseigner la variable facultative `TRUST_PROXY` avec son adresse ou son sous-réseau (adresses ou CIDR séparés par des virgules, ex. `TRUST_PROXY=172.18.0.2`). Elle est lue une fois au démarrage. Ces en-têtes donnent l'IP du client (limite des tentatives de connexion), le HTTPS (cookie `secure`) et l'hôte (contrôle d'origine CSRF) ; venant d'une autre adresse, ils sont ignorés.
+
+## Sécurité
+
+Amorçage avant le premier propriétaire : tant qu'aucun propriétaire n'existe, tester et enregistrer Emby est ouvert sans session (PRODUCT §1), donc une page web malveillante pourrait, par rebinding DNS, viser l'appli sur le réseau local et la brancher sur un faux Emby. Risque accepté : la fenêtre est courte (quelques minutes, du premier lancement à la première connexion d'un administrateur Emby), limitée au réseau local, et Seerr se comporte de même. La clé enregistrée n'est jamais renvoyée vers une autre adresse, et la fenêtre se ferme dès qu'un propriétaire existe.

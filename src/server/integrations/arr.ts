@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { ArrTestResult } from '../../shared/setup.ts';
 import { createClient, IntegrationError } from './http.ts';
 
 /** Réglages d'une instance Radarr ou Sonarr (voir `settingSchemas.radarr` / `.sonarr`). */
@@ -66,11 +67,7 @@ const statusSchema = z.looseObject({ version: z.string() });
 /** Ne garde de `{ id, name }` que ces deux champs (profils de qualité ou de langue). */
 export const toProfile = ({ id, name }: { id: number; name: string }) => ({ id, name });
 
-export interface ArrTestResult {
-  version: string;
-  qualityProfiles: Array<{ id: number; name: string }>;
-  rootFolders: Array<{ id: number; path: string; freeSpace: number }>;
-}
+export type { ArrTestResult };
 
 /** Vérifie l'adresse et la clé, et renvoie de quoi alimenter les listes déroulantes. */
 export async function testArr(kind: ArrKind, config: ArrConfig): Promise<ArrTestResult> {

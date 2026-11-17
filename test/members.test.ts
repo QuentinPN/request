@@ -20,7 +20,7 @@ import {
   UsersError,
   upsertFromEmby,
 } from '../src/server/services/users.ts';
-import { capabilitiesOf, roleLabels, roles } from '../src/shared/roles.ts';
+import { capabilitiesOf, quotaOverrideSchema, roleLabels, roles } from '../src/shared/roles.ts';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -140,14 +140,21 @@ describe('membres', () => {
     upsertFromEmby(db, emby('a'));
     expect(getUser(db, 'a')?.quotaOverride).toBeNull();
 
-    const saved = setQuotaOverride(db, 'a', { movies: { limit: 5, days: 7 } });
+    const saved = setQuotaOverride(db, 'a', { movies: { limit: 5, days: 7 }, seasons: null });
     expect(saved.quotaOverride).toEqual({ movies: { limit: 5, days: 7 }, seasons: null });
     expect(getUser(db, 'a')?.quotaOverride).toEqual(saved.quotaOverride);
 
     expect(setQuotaOverride(db, 'a', null).quotaOverride).toBeNull();
-    expect(() => setQuotaOverride(db, 'a', { movies: { limit: -1, days: 7 } })).toThrow();
-    expect(() => setQuotaOverride(db, 'a', { seasons: { limit: 2, days: 0 } })).toThrow();
     expect(() => setQuotaOverride(db, 'inconnu', null)).toThrowError('Membre introuvable');
+  });
+
+  it('valident les quotas une seule fois, dans le schéma partagé', () => {
+    expect(quotaOverrideSchema.parse({ movies: { limit: 5, days: 7 } })).toEqual({
+      movies: { limit: 5, days: 7 },
+      seasons: null,
+    });
+    expect(quotaOverrideSchema.safeParse({ movies: { limit: -1, days: 7 } }).success).toBe(false);
+    expect(quotaOverrideSchema.safeParse({ seasons: { limit: 2, days: 0 } }).success).toBe(false);
   });
 });
 
