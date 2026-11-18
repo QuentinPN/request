@@ -72,18 +72,23 @@ Si Radarr ou Sonarr ne parvient pas à joindre le domaine public depuis l'hôte 
 
 ## Réseau local seul
 
-Le push et l'installation de l'appli (PWA) exigent le HTTPS. `compose.local.yml` l'obtient sans rien exposer sur Internet : Caddy (image construite avec le module `caddy-dns/cloudflare`, voir `caddy/`) prouve la possession du domaine par un enregistrement DNS créé chez Cloudflare (défi DNS-01), et le domaine pointe vers l'IP locale du mini-PC. Le conteneur de l'appli est celui de `compose.yml` (`extends`).
+Le push et l'installation de l'appli (PWA) exigent le HTTPS. `compose.local.yml` l'obtient sans rien exposer sur Internet : Caddy (image construite avec le module `caddy-dns/cloudflare`, voir `caddy/`) prouve la possession du domaine par un enregistrement DNS créé chez Cloudflare (défi DNS-01), et le domaine pointe vers l'IP locale du mini-PC.
+
+Le fichier est autonome : il n'utilise que des images publiées sur GHCR (`ghcr.io/quentinpn/request` et `request-caddy`) par `.github/workflows/images.yml` à chaque push sur `main` (donc à chaque mise en production), étiquetées `latest` et `sha-<commit>`. `REQUEST_TAG` (défaut `latest`) choisit l'étiquette, par exemple `sha-<commit>` pour revenir à une version précédente. Il reprend le durcissement et les variables de `compose.yml` : modifier l'un, c'est vérifier l'autre.
 
 1. **Cloudflare › DNS** : enregistrement `A` `demandes` → IP locale du mini-PC (ex. `192.0.2.14`), **nuage gris (DNS only)** : le proxy Cloudflare ne joint pas une IP privée. Fixez cette IP (bail DHCP réservé dans la box).
 2. **Cloudflare › Mon profil › Jetons d'API** : modèle « Modifier la zone DNS », zone `example.com` seule. C'est `CLOUDFLARE_API_TOKEN`.
-3. Variables : `DOMAIN=demandes.example.com`, `CLOUDFLARE_API_TOKEN=…`, `REQUEST_BIND=<IP locale de l'hôte>` (Caddy n'est publié que sur elle), `TZ` (défaut `Europe/Paris`), plus celles du tableau ci-dessus si besoin. `HTTPS_PORT` (défaut `8445`, le 443 de l'hôte étant laissé au Caddy public) fixe le port publié ; l'adresse est `https://<DOMAIN>:<port>`, reprise dans `PUBLIC_URL`.
-4. `docker compose -f compose.local.yml up -d --build`, puis ouvrez `https://demandes.example.com:8445` depuis le réseau local. Le premier certificat prend une à deux minutes (`docker compose -f compose.local.yml logs caddy`).
+3. **GHCR** : les paquets sont privés comme le dépôt. Sur l'hôte (ou dans les registres de Dockhand), connectez-vous à `ghcr.io` avec un jeton GitHub classique limité à `read:packages` : `docker login ghcr.io -u <utilisateur>`.
+4. Variables : `DOMAIN=demandes.example.com`, `CLOUDFLARE_API_TOKEN=…`, `REQUEST_BIND=<IP locale de l'hôte>` (Caddy n'est publié que sur elle), `TZ` (défaut `Europe/Paris`), plus celles du tableau ci-dessus si besoin. `HTTPS_PORT` (défaut `8445`, le 443 de l'hôte étant laissé au Caddy public) fixe le port publié ; l'adresse est `https://<DOMAIN>:<port>`, reprise dans `PUBLIC_URL`.
+5. `docker compose -f compose.local.yml up -d`, puis ouvrez `https://demandes.example.com:8445` depuis le réseau local. Le premier certificat prend une à deux minutes (journaux du service `caddy`).
 
-L'appli rejoint aussi le réseau Docker externe `media` (à créer s'il n'existe pas : `docker network create media`) : dans l'assistant, Radarr, Sonarr et Emby se renseignent par leur nom de conteneur (`http://radarr:7878`, `http://sonarr:8989`), et leurs webhooks visent `http://request:3000/api/webhooks/…?token=…` sans passer par Caddy. `host.docker.internal` ne joint pas un port publié sur une seule IP de l'hôte (`192.0.2.14:7878`) : utilisez le nom de conteneur ou cette IP.
+Mettre à jour : `docker compose -f compose.local.yml pull && docker compose -f compose.local.yml up -d` (dans Dockhand : « Pull » puis redéployer la stack).
+
+L'appli rejoint aussi le réseau Docker externe `media` (à créer s'il n'existe pas : `docker network create media`) : dans l'assistant, Radarr, Sonarr et Emby se renseignent par leur nom de conteneur (`http://radarr:7878`, `http://sonarr:8989`), et leurs webhooks visent `http://request:3000/api/webhooks/…` sans passer par Caddy. `host.docker.internal` ne joint pas un port publié sur une seule IP de l'hôte (`192.0.2.14:7878`) : utilisez le nom de conteneur ou cette IP.
 
 Certaines box (protection « DNS rebinding ») refusent une réponse DNS en IP privée : le domaine ne se résout alors pas ; désactivez cette protection pour ce domaine, ou utilisez un autre résolveur (1.1.1.1).
 
-**Dockhand** : créez une stack depuis le dépôt Git (fichier `compose.local.yml`, dépôt privé : jeton GitHub requis), ou clonez le dépôt sur l'hôte et pointez la stack sur ce dossier ; les variables (dont `CLOUDFLARE_API_TOKEN`) se renseignent dans l'environnement de la stack, jamais dans le dépôt.
+**Dockhand** : nouvelle stack, collez `compose.local.yml`, renseignez les variables (dont `CLOUDFLARE_API_TOKEN`) dans l'environnement de la stack, jamais dans le dépôt.
 
 ## Cohabiter avec Seerr sur le mini-PC
 

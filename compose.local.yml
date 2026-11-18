@@ -1,29 +1,39 @@
 # Request sur le réseau local, en HTTPS (certificat Let's Encrypt par défi DNS Cloudflare), sans rien exposer
 # sur Internet. Voir docs/DEPLOIEMENT.md (« Réseau local seul »).
+# Autonome : images publiées sur GHCR par .github/workflows/images.yml, à coller tel quel dans Dockhand.
 #   Variables : DOMAIN (ex. demandes.example.com), CLOUDFLARE_API_TOKEN, REQUEST_BIND (IP locale de l'hôte)
-#   docker compose -f compose.local.yml up -d --build
 #   Puis https://<DOMAIN>:8445 (HTTPS_PORT)
 name: request
 
 services:
-  # Même conteneur que compose.yml (durcissement, variables, volume) : seuls le proxy et les réseaux changent.
   request:
-    extends:
-      file: compose.yml
-      service: request
+    image: ghcr.io/quentinpn/request:${REQUEST_TAG:-latest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
     mem_limit: 512m
     environment:
+      # Caddy est le seul proxy de confiance : son adresse est dans ce sous-réseau (voir `networks`).
+      TRUST_PROXY: ${PROXY_SUBNET:-172.28.80.0/24}
+      IMAGE_CACHE_MAX_MB: ${IMAGE_CACHE_MAX_MB:-500}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      # Jeton d'installation de l'assistant ; vide : tiré au hasard et écrit dans les journaux au démarrage.
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      # Lien des courriels et contact push : le port fait partie de l'adresse.
+      PUBLIC_URL: https://${DOMAIN:?DOMAIN}:${HTTPS_PORT:-8445}
       # Fuseau de la sauvegarde quotidienne et des dates.
       TZ: ${TZ:-Europe/Paris}
-      # Lien des courriels et contact push : le port fait partie de l'adresse.
-      PUBLIC_URL: https://${DOMAIN}:${HTTPS_PORT:-8445}
-    # `media` : Radarr, Sonarr et Emby se joignent par leur nom de conteneur (http://radarr:7878), et leurs
-    # webhooks visent http://request:3000.
+    volumes:
+      - data:/data
+    # Aucun port publié : Caddy joint l'appli par `proxy` ; Radarr, Sonarr et Emby par `media`
+    # (http://radarr:7878 dans l'assistant, webhooks vers http://request:3000).
+    expose: ['3000']
     networks: [proxy, media]
 
   caddy:
-    build: ./caddy
-    image: request-caddy:local
+    image: ghcr.io/quentinpn/request-caddy:${REQUEST_TAG:-latest}
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
@@ -38,7 +48,6 @@ services:
     ports:
       - '${REQUEST_BIND:?REQUEST_BIND}:${HTTPS_PORT:-8445}:443'
     volumes:
-      - ./caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
       # Certificat : se réobtient tout seul, inutile à sauvegarder.
       - caddy_data:/data
       - caddy_config:/config
