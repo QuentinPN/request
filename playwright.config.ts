@@ -6,6 +6,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
+  // Les runners GitHub ont 4 cœurs ; par défaut, Playwright n'en prendrait que la moitié.
+  workers: process.env.CI ? 4 : undefined,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   // Service worker bloqué : les requêtes qu'il verrait échapperaient aux faux serveurs (`page.route`). Le push du
   // navigateur est simulé au besoin (e2e/canaux-mocks.ts).
