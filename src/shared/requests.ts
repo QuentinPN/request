@@ -5,6 +5,17 @@ import { profileId, rootFolderPath, type SeriesType, seriesTypes } from './setti
 import type { ArrTestResult } from './setup.ts';
 import { type RequestEventType, type RequestStatus, requestStatusSchema } from './status.ts';
 
+// --- Adresses de l'API ---
+
+export const REQUESTS_PATH = '/api/requests';
+export const REQUEST_QUOTA_PATH = `${REQUESTS_PATH}/quota`;
+export const REQUEST_COUNTS_PATH = `${REQUESTS_PATH}/counts`;
+export const REQUEST_BATCH_PATH = `${REQUESTS_PATH}/batch`;
+export const sendOptionsPath = (type: MediaType | ':type') => `${REQUESTS_PATH}/send-options/${type}`;
+/** Une demande, ou l'une de ses actions. */
+export const requestPath = (id: number | ':id', action?: 'approve' | 'decline' | 'retry' | 'cancel') =>
+  `${REQUESTS_PATH}/${id}${action ? `/${action}` : ''}`;
+
 // --- Saisons demandables ---
 
 /**

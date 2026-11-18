@@ -1,10 +1,16 @@
 import type { FastifyPluginAsync } from 'fastify';
 import {
+  DISCOVER_PATH,
+  discoverListPath,
   discoverRowSchema,
+  genresPath,
   genresResponseSchema,
+  mediaPath,
   pagedMediaSchema,
   pageQuerySchema,
+  providersPath,
   providersResponseSchema,
+  SEARCH_PATH,
   searchQuerySchema,
   typeIdParamsSchema,
   typeParamsSchema,
@@ -24,7 +30,7 @@ const LIBRARY_ROW = 'emby-recent';
 
 /** API du catalogue TMDB : rangées Découvrir, genres, plateformes, recherche et fiches, avec le statut de chaque titre. */
 export const catalogueRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/api/discover', async (req) => {
+  app.get(DISCOVER_PATH, async (req) => {
     const tmdb = app.tmdb();
     const viewer = viewerOf(req);
     const { id: userId } = viewer.user;
@@ -75,7 +81,7 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     ['genre', 'byGenre'],
     ['provider', 'discoverByProvider'],
   ] as const) {
-    app.get(`/api/discover/:type/${segment}/:id`, async (req) => {
+    app.get(discoverListPath(':type', segment, ':id'), async (req) => {
       const { type, id } = parseRequest(typeIdParamsSchema, req.params);
       const { page } = parseRequest(pageQuerySchema, req.query);
       const viewer = viewerOf(req);
@@ -87,24 +93,24 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     });
   }
 
-  app.get('/api/genres/:type', async (req) => {
+  app.get(genresPath(':type'), async (req) => {
     const { type } = parseRequest(typeParamsSchema, req.params);
     return parseUpstream(SERVICE, genresResponseSchema, { genres: await app.tmdb().genres(type) });
   });
 
-  app.get('/api/providers/:type', async (req) => {
+  app.get(providersPath(':type'), async (req) => {
     const { type } = parseRequest(typeParamsSchema, req.params);
     return parseUpstream(SERVICE, providersResponseSchema, { providers: await app.tmdb().providers(type) });
   });
 
-  app.get('/api/search', async (req) => {
+  app.get(SEARCH_PATH, async (req) => {
     const { q, page } = parseRequest(searchQuerySchema, req.query);
     const found = parseUpstream(SERVICE, mediaSearchResultsSchema, await app.tmdb().searchMulti(q, page));
     const results = forViewer(app.data.db, viewerOf(req), found.results);
     return { ...found, results: await app.availability.withStatuses(results) };
   });
 
-  app.get('/api/media/:type/:id', async (req) => {
+  app.get(mediaPath(':type', ':id'), async (req) => {
     const { type, id } = parseRequest(typeIdParamsSchema, req.params);
     const details = await app.availability.withDetailsStatus(await loadDetails(app.tmdb(), type, id));
     const blocked = blockOf(app.data, details);

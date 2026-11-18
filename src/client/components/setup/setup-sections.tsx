@@ -3,7 +3,7 @@ import { type MaskedSetting, settingSchemas } from '@shared/settings.ts';
 import type { SettingSection, SetupSection, SetupState } from '@shared/setup.ts';
 import { type UseQueryResult, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
-import { ErrorState } from '@/components/states';
+import { Loading } from '@/components/states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
 import { setupStateQuery } from '@/lib/session';
@@ -15,7 +15,7 @@ import { DiscordSection } from './discord-section';
 import { IntegrationSection } from './integration-section';
 import { arrServersQuery, settingQuery } from './queries';
 import { RulesSection } from './rules-section';
-import { SectionFrame, type SectionFrameProps } from './section-frame';
+import { SectionFrame, type SectionFrameProps, SectionLoadError } from './section-frame';
 import { SeerrImportSection } from './seerr-import-section';
 import { SmtpSection } from './smtp-section';
 import { TraktSection } from './trakt-section';
@@ -147,18 +147,12 @@ function Loaded<T>({
   if (enabled && query.isPending)
     return (
       <SectionFrame {...frame} status={saved ? 'done' : 'todo'}>
-        <div role="status" className="space-y-4">
-          <span className="sr-only">Chargement…</span>
+        <Loading className="space-y-4">
           <Skeleton className="h-12 w-full rounded-(--r-button)" />
           <Skeleton className="ml-auto h-12 w-48 rounded-(--r-button)" />
-        </div>
+        </Loading>
       </SectionFrame>
     );
-  if (query.isError)
-    return (
-      <SectionFrame {...frame} status="error">
-        <ErrorState message="Ce réglage n’a pas pu se charger." onRetry={() => void query.refetch()} />
-      </SectionFrame>
-    );
+  if (query.isError) return <SectionLoadError {...frame} query={query} message="Ce réglage n’a pas pu se charger." />;
   return children(enabled ? query.data : undefined);
 }

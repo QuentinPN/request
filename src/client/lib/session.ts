@@ -1,5 +1,5 @@
-import type { Viewer } from '@shared/auth.ts';
-import type { SetupState } from '@shared/setup.ts';
+import { VIEWER_PATH, type Viewer } from '@shared/auth.ts';
+import { SETUP_STATE_PATH, type SetupState } from '@shared/setup.ts';
 import { type QueryClient, queryOptions } from '@tanstack/react-query';
 import { AuthRequiredError, apiGet } from './http.ts';
 
@@ -8,7 +8,7 @@ export const viewerQuery = queryOptions({
   queryKey: ['viewer'],
   queryFn: async (): Promise<Viewer | null> => {
     try {
-      return (await apiGet<{ viewer: Viewer }>('/api/auth/me')).viewer;
+      return (await apiGet<{ viewer: Viewer }>(VIEWER_PATH)).viewer;
     } catch (error) {
       if (error instanceof AuthRequiredError) return null;
       throw error;
@@ -18,7 +18,7 @@ export const viewerQuery = queryOptions({
 
 export const setupStateQuery = queryOptions({
   queryKey: ['setup-state'],
-  queryFn: () => apiGet<SetupState>('/api/setup/state'),
+  queryFn: () => apiGet<SetupState>(SETUP_STATE_PATH),
 });
 
 /** Fin de session (déconnexion ou 401) : plus de membre, et rien de ce qu'il a lu ne reste en cache. */

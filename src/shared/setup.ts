@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { arrKinds } from './arr-servers.ts';
 import { type IntegrationKey, integrationKeys, type MediaServerKind, type SettingKey } from './settings.ts';
+import { settingsPathOf } from './settings-path.ts';
 
 /** Sections de l'assistant enregistrées comme réglages (`/api/settings/:service`). */
 export const settingSections = [...integrationKeys, 'rules'] as const satisfies readonly SettingKey[];
@@ -14,6 +15,11 @@ export const settingSectionSchema = z.enum(settingSections);
 export const setupSections = [...integrationKeys, ...arrKinds, 'rules'] as const;
 export type SetupSection = (typeof setupSections)[number];
 export const integrationKeySchema = z.enum(integrationKeys as [IntegrationKey, ...IntegrationKey[]]);
+
+export const SETUP_STATE_PATH = '/api/setup/state';
+/** Réglage d'une section de l'assistant. */
+export const settingPath = (key: SettingSection | ':service') => settingsPathOf(key);
+export const setupTestPath = (key: IntegrationKey | ':service') => `/api/setup/${key}/test`;
 
 export interface SetupState {
   /** Section enregistrée au moins une fois. */

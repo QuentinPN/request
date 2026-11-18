@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { SMTP_SETTINGS_PATH, SMTP_TEST_PATH } from '../../shared/notifications.ts';
 import { type MaskedSetting, settingSchemas } from '../../shared/settings.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
-import { requireCapability, viewerOf } from '../plugins/auth.ts';
+import { ownerOnly, viewerOf } from '../plugins/auth.ts';
 import type { EmailService } from '../services/email.ts';
 import { getSetting, maskSetting, setSetting, withStoredSecrets } from '../services/settings.ts';
 
@@ -12,7 +12,6 @@ import { getSetting, maskSetting, setSetting, withStoredSecrets } from '../servi
  */
 export function smtpRoutes(app: FastifyInstance, email: EmailService) {
   const { db, cryptoKey } = app.data;
-  const ownerOnly = { preHandler: requireCapability('isOwner') };
   const stored = () => getSetting(db, cryptoKey, 'smtp');
   /** Réglage du formulaire, secret vide = l'enregistré. */
   const fromForm = (body: unknown) => parseRequest(settingSchemas.smtp, withStoredSecrets('smtp', body, stored()));

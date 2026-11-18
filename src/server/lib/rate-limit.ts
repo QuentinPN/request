@@ -1,3 +1,5 @@
+import type { FastifyReply } from 'fastify';
+
 /**
  * Limiteur en mémoire à fenêtre glissante : au plus `limit` essais par clé (ex. adresse IP) sur `windowMs`.
  * Suffisant pour une instance unique ; tout repart à zéro au redémarrage. La mémoire reste bornée : les clés
@@ -49,3 +51,7 @@ export function createRateLimiter({
 
   return { hit, peek, size: () => hits.size };
 }
+
+/** En-tête `Retry-After` (secondes, arrondi au-dessus) d'un essai refusé par le limiteur. */
+export const setRetryAfter = (reply: FastifyReply, { retryAfterMs }: { retryAfterMs: number }) =>
+  reply.header('retry-after', Math.ceil(retryAfterMs / 1000));

@@ -2,12 +2,14 @@ import { createHmac } from 'node:crypto';
 import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { API_KEY_HEADER } from '../../shared/api-keys.ts';
-import { CSRF_HEADER, CSRF_VALUE } from '../../shared/auth.ts';
+import { CSRF_HEADER, CSRF_VALUE, LOGIN_PATH, LOGOUT_PATH } from '../../shared/auth.ts';
+import { HEALTH_PATH } from '../../shared/health.ts';
 import { PLEX_PIN_CHECK_PATH, PLEX_PIN_PATH } from '../../shared/media-server.ts';
 import { type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
+import { SETUP_STATE_PATH, settingPath, setupTestPath } from '../../shared/setup.ts';
 import { webhookPath, webhookServices } from '../../shared/webhooks.ts';
 import { HttpError } from '../lib/api-errors.ts';
-import { createRateLimiter } from '../lib/rate-limit.ts';
+import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
 import { authenticateApiKey } from '../services/api-keys.ts';
 import { createSession, revokeSession, SESSION_TTL_MS, validateSession } from '../services/sessions.ts';
 import { hasOwner, type User } from '../services/users.ts';
@@ -44,12 +46,12 @@ const COOKIE_OPTIONS = {
  * efface toujours le cookie, même si la session est déjà invalide.
  */
 const PUBLIC_ROUTES = new Set([
-  'GET /api/health',
-  'POST /api/auth/login',
+  `GET ${HEALTH_PATH}`,
+  `POST ${LOGIN_PATH}`,
   `POST ${PLEX_PIN_PATH}`,
   `POST ${PLEX_PIN_CHECK_PATH}`,
-  'POST /api/auth/logout',
-  'GET /api/setup/state',
+  `POST ${LOGOUT_PATH}`,
+  `GET ${SETUP_STATE_PATH}`,
 ]);
 /**
  * Webhooks entrants Radarr/Sonarr, ces deux routes exactement : authentifiés par leur propre jeton (routes/webhooks.ts),
@@ -57,7 +59,7 @@ const PUBLIC_ROUTES = new Set([
  */
 const WEBHOOK_ROUTES = new Set(webhookServices.map((service) => `POST ${webhookPath(service)}`));
 /** Amorçage (PRODUCT §1) : tant qu'aucun propriétaire n'existe, tester et enregistrer le serveur multimédia est ouvert à tous. */
-const BOOTSTRAP_ROUTES = new Set(['POST /api/setup/:service/test', 'PUT /api/settings/:service']);
+const BOOTSTRAP_ROUTES = new Set([`POST ${setupTestPath(':service')}`, `PUT ${settingPath(':service')}`]);
 
 const routeKey = (req: FastifyRequest) => `${req.method === 'HEAD' ? 'GET' : req.method} ${req.routeOptions.url ?? ''}`;
 
@@ -130,7 +132,7 @@ function authenticateWithApiKey(
   const blocked = limiter.peek(req.ip);
   limiter.hit(req.ip);
   if (blocked) {
-    reply.header('retry-after', Math.ceil(blocked.retryAfterMs / 1000));
+    setRetryAfter(reply, blocked);
     return reply.code(429).send({ error: 'Trop de clés d’API invalides, réessayez dans quelques minutes' });
   }
   return reply.code(401).send({ error: 'Clé d’API invalide' });
@@ -170,6 +172,9 @@ export const requireCapability = (capability: keyof Capabilities) => async (req:
   if (isBootstrap(req)) return;
   if (!req.viewer?.capabilities[capability]) throw new HttpError(403, 'Accès refusé');
 };
+
+/** Options d'une route réservée au propriétaire (le serveur multimédia reste ouvert pendant l'amorçage, `isBootstrap`). */
+export const ownerOnly = { preHandler: requireCapability('isOwner') };
 
 /** preHandler : 403 si la requête s'est authentifiée par clé d'API (réservé à la session : une clé ne crée pas de clé). */
 export const forbidApiKey = async (req: FastifyRequest) => {

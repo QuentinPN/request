@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { MediaKey, Paged } from './media.ts';
+import { settingsPathOf } from './settings-path.ts';
 import type { RequestEventType } from './status.ts';
 
 /**
@@ -95,6 +96,8 @@ export type PushSubscriptionInput = z.input<typeof pushSubscriptionInputSchema>;
 export const pushEndpointSchema = pushSubscriptionInputSchema.pick({ endpoint: true });
 
 /** Préférences du membre connecté (Compte), et l'avis des « Envoyer un essai ». */
+export const NOTIFICATIONS_PATH = '/api/notifications';
+export const NOTIFICATIONS_READ_PATH = `${NOTIFICATIONS_PATH}/read`;
 export const NOTIFICATION_PREFERENCES_PATH = '/api/account/notifications';
 /** Push : clé publique VAPID, abonnement de l'appareil (`PUT`, `DELETE`, vérification), essai vers ses appareils. */
 export const PUSH_PUBLIC_KEY_PATH = '/api/push/public-key';
@@ -104,7 +107,7 @@ export const PUSH_TEST_PATH = '/api/push/test';
 /** Service worker de l'appli installable (`public/sw.js`), servi à la racine : sa portée est tout le site. */
 export const SERVICE_WORKER_PATH = '/sw.js';
 /** Réglage SMTP (propriétaire) et courriel d'essai vers son adresse. */
-export const SMTP_SETTINGS_PATH = '/api/settings/smtp';
+export const SMTP_SETTINGS_PATH = settingsPathOf('smtp');
 export const SMTP_TEST_PATH = `${SMTP_SETTINGS_PATH}/test`;
 
 // --- Réponses ---

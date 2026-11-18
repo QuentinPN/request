@@ -1,4 +1,4 @@
-import type { LoginInput, Viewer } from '@shared/auth.ts';
+import { LOGIN_PATH, type LoginInput, type Viewer } from '@shared/auth.ts';
 import {
   loginMethodOf,
   PLEX_PIN_CHECK_PATH,
@@ -88,7 +88,7 @@ function PasswordLogin({ name, notice }: { name: string; notice: ReactNode }) {
   const login = useMutation({
     // Un 401 ici est un identifiant refusé, pas une session perdue : pas de redirection globale.
     meta: { authRedirect: false },
-    mutationFn: (input: LoginInput) => apiSend<{ viewer: Viewer }>('POST', '/api/auth/login', input),
+    mutationFn: (input: LoginInput) => apiSend<{ viewer: Viewer }>('POST', LOGIN_PATH, input),
     onSuccess: ({ viewer }) => signedIn(viewer),
     onError: (error) => {
       if (error instanceof ApiError && error.status === 401) {

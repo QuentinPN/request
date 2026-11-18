@@ -1,3 +1,4 @@
+import { plural } from '@shared/text.ts';
 import {
   type ImportSource,
   LETTERBOXD_MAX_BYTES,
@@ -8,13 +9,13 @@ import {
 } from '@shared/watchlist.ts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
+import { ImportCounts } from '@/components/import-counts';
 import { ChipGroup, FilterChip } from '@/components/media/title-parts';
 import { Notice } from '@/components/notice';
 import { bottomSheet } from '@/components/requests/request-sheet';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FieldHint, Input, Label } from '@/components/ui/field';
-import { plural } from '@/lib/catalogue';
 import { importWatchlist, watchlistKeys } from '@/lib/watchlist';
 
 const sourceLabels: Record<ImportSource, string> = { trakt: 'Trakt', letterboxd: 'Letterboxd' };
@@ -33,14 +34,7 @@ function ResultSummary({ result }: { result: WatchlistImportResult }) {
       {result.truncated && (
         <p className="text-sm text-muted-foreground">Seuls les 2 000 premiers titres sont importés.</p>
       )}
-      <dl className="grid grid-cols-3 gap-2">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex flex-col gap-0.5 rounded-[12px] bg-muted px-3 py-2.5">
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="text-lg font-semibold tabular-nums">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <ImportCounts rows={rows} className="grid grid-cols-3 gap-2" />
       {result.skipped.length > 0 && (
         <div className="text-sm">
           <p className="text-muted-foreground">

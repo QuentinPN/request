@@ -10,7 +10,7 @@ import { EmptyState, Loading } from '@/components/states';
 import { ChartCard, ChartTable, MonthHistogram, RankedBars, SplitBar } from '@/components/stats/charts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
-import { mediaTypeLabel, mediaTypePlural } from '@/lib/catalogue';
+import { mediaTypeLabel, mediaTypePlural, titleLink } from '@/lib/catalogue';
 import { requestStatusLabel } from '@/lib/requests';
 import { delaySummary, formatCount, monthName, statsQuery } from '@/lib/stats';
 
@@ -157,8 +157,7 @@ export function StatistiquesPage() {
                       key: `${t.type}:${t.tmdbId}`,
                       label: (
                         <Link
-                          to="/titre/$type/$id"
-                          params={{ type: t.type, id: String(t.tmdbId) }}
+                          {...titleLink(t)}
                           className="rounded-sm outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
                         >
                           {t.title ?? unnamedTitle(t.type, t.tmdbId)}

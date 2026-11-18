@@ -4,16 +4,14 @@ import { Link } from '@tanstack/react-router';
 import { Plus, X } from 'lucide-react';
 import { useId, useState } from 'react';
 import { Notice } from '@/components/notice';
-import { ErrorState } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FieldHint, Input, Label } from '@/components/ui/field';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { blocklistQuery, keywordSearchQuery, useSetBlockedKeywords, useUnblockTitle } from '@/lib/blocklist';
-import { mediaTypeLabel } from '@/lib/catalogue';
+import { mediaTypeLabel, titleLink } from '@/lib/catalogue';
 import { errorMessage } from '@/lib/http';
 import { formatDay } from '@/lib/requests';
-import { SectionFrame, type SectionFrameProps } from './section-frame';
+import { LoadedSection, SectionFrame, type SectionFrameProps } from './section-frame';
 
 const SEARCH_DELAY_MS = 300;
 const subheading = 'mb-2 text-[13px] font-semibold';
@@ -24,8 +22,7 @@ function TitleRow({ title }: { title: BlockedTitle }) {
     <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-4">
       <div className="flex min-w-0 grow flex-col gap-0.5">
         <Link
-          to="/titre/$type/$id"
-          params={{ type: title.mediaType, id: String(title.tmdbId) }}
+          {...titleLink({ type: title.mediaType, tmdbId: title.tmdbId })}
           className="truncate font-semibold outline-none hover:underline focus-visible:underline"
         >
           {title.title}
@@ -155,53 +152,41 @@ function Keywords({ keywords }: { keywords: BlockedKeyword[] }) {
 export function BlocklistSection(frame: SectionFrameProps) {
   const query = useQuery(blocklistQuery);
 
-  if (query.isPending)
-    return (
-      <SectionFrame {...frame} status="todo">
-        <div role="status" className="space-y-4">
-          <span className="sr-only">Chargement…</span>
-          <Skeleton className="h-12 w-full rounded-(--r-button)" />
-          <Skeleton className="h-12 w-full rounded-(--r-button)" />
-        </div>
-      </SectionFrame>
-    );
-  if (query.isError)
-    return (
-      <SectionFrame {...frame} status="error">
-        <ErrorState message="Les blocages n’ont pas pu se charger." onRetry={() => void query.refetch()} />
-      </SectionFrame>
-    );
-
-  const { titles, keywords } = query.data;
-  const count = titles.length + keywords.length;
   return (
-    <SectionFrame
-      {...frame}
-      status={count > 0 ? 'done' : 'todo'}
-      todoLabel="Aucun"
-      doneLabel={`${count} ${count > 1 ? 'blocages' : 'blocage'}`}
-    >
-      <div className="flex flex-col gap-6">
-        <p className="text-sm text-muted-foreground">
-          Un titre bloqué ne peut plus être demandé, et les membres ne le voient plus dans Découvrir ni dans la
-          recherche. Les demandes déjà en attente restent à traiter.
-        </p>
-        <div>
-          <h3 className={subheading}>Titres bloqués</h3>
-          {titles.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Aucun titre bloqué. « Bloquer ce titre » se trouve sur la fiche d’un film ou d’une série.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border border-y border-border">
-              {titles.map((title) => (
-                <TitleRow key={`${title.mediaType}:${title.tmdbId}`} title={title} />
-              ))}
-            </ul>
-          )}
-        </div>
-        <Keywords keywords={keywords} />
-      </div>
-    </SectionFrame>
+    <LoadedSection {...frame} query={query} errorMessage="Les blocages n’ont pas pu se charger.">
+      {({ titles, keywords }) => {
+        const count = titles.length + keywords.length;
+        return (
+          <SectionFrame
+            {...frame}
+            status={count > 0 ? 'done' : 'todo'}
+            todoLabel="Aucun"
+            doneLabel={`${count} ${count > 1 ? 'blocages' : 'blocage'}`}
+          >
+            <div className="flex flex-col gap-6">
+              <p className="text-sm text-muted-foreground">
+                Un titre bloqué ne peut plus être demandé, et les membres ne le voient plus dans Découvrir ni dans la
+                recherche. Les demandes déjà en attente restent à traiter.
+              </p>
+              <div>
+                <h3 className={subheading}>Titres bloqués</h3>
+                {titles.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Aucun titre bloqué. « Bloquer ce titre » se trouve sur la fiche d’un film ou d’une série.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border border-y border-border">
+                    {titles.map((title) => (
+                      <TitleRow key={`${title.mediaType}:${title.tmdbId}`} title={title} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <Keywords keywords={keywords} />
+            </div>
+          </SectionFrame>
+        );
+      }}
+    </LoadedSection>
   );
 }

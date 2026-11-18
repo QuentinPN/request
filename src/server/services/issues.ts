@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, getTableColumns, isNull, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   ISSUES_PAGE_SIZE,
@@ -20,7 +20,7 @@ import type { SessionViewer } from '../plugins/auth.ts';
 import { type AvailabilityService, selectCached } from './availability.ts';
 import { mediaServerName } from './media-server.ts';
 import { notifyIssueEvent } from './notifications.ts';
-import { toPerson } from './requests.ts';
+import { peopleByIds, toPerson } from './requests.ts';
 import { loadSummaries } from './tmdb.ts';
 
 type CreateInput = z.output<typeof issueCreateSchema>;
@@ -72,14 +72,7 @@ export function createIssues(
   async function toViews(rows: Row[]): Promise<IssueView[]> {
     if (rows.length === 0) return [];
     const ids = [...new Set(rows.flatMap((r) => (r.resolvedBy ? [r.userId, r.resolvedBy] : [r.userId])))];
-    const people = new Map(
-      db
-        .select()
-        .from(users)
-        .where(inArray(users.id, ids))
-        .all()
-        .map((u) => [u.id, toPerson(u)]),
-    );
+    const people = peopleByIds(db, ids);
     const titles = await loadSummaries(
       deps.tmdb,
       rows.map((r) => ({ type: r.mediaType, tmdbId: r.tmdbId })),

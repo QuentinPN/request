@@ -157,7 +157,7 @@ function DiscordForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedS
 export function DiscordSection(frame: SectionFrameProps) {
   const query = useQuery(discordQuery);
   return (
-    <LoadedSection {...frame} query={query}>
+    <LoadedSection {...frame} todoLabel="Désactivé" query={query}>
       {(stored) => <DiscordForm {...frame} stored={stored} />}
     </LoadedSection>
   );

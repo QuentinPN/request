@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { CheckboxField, FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
 import { ApiError, apiSend } from '@/lib/http';
 import { smtpSecurityOptions } from './config';
-import { settingQuery } from './queries';
+import { smtpQuery } from './queries';
 import {
   actionClass,
   LoadedSection,
@@ -20,7 +20,6 @@ import {
 
 type Smtp = MaskedSetting<'smtp'>;
 type Security = (typeof smtpSecurities)[number];
-const smtpQuery = settingQuery('smtp');
 
 function SmtpForm({ stored, ...frame }: SectionFrameProps & { stored: Smtp | null }) {
   const id = useId();
@@ -221,7 +220,7 @@ function SmtpForm({ stored, ...frame }: SectionFrameProps & { stored: Smtp | nul
 export function SmtpSection(frame: SectionFrameProps) {
   const query = useQuery(smtpQuery);
   return (
-    <LoadedSection {...frame} query={query}>
+    <LoadedSection {...frame} todoLabel="Désactivé" query={query}>
       {(stored) => <SmtpForm {...frame} stored={stored} />}
     </LoadedSection>
   );

@@ -1,11 +1,14 @@
 import type { MediaType } from '@shared/media.ts';
-import type {
-  ApproveRequestInput,
-  BatchRequestInput,
-  BatchResult,
-  RequestDetail,
-  RequestView,
-  SendOptions,
+import {
+  type ApproveRequestInput,
+  type BatchRequestInput,
+  type BatchResult,
+  REQUEST_BATCH_PATH,
+  type RequestDetail,
+  type RequestView,
+  requestPath,
+  type SendOptions,
+  sendOptionsPath,
 } from '@shared/requests.ts';
 import type { RequestStatus } from '@shared/status.ts';
 import { keepPreviousData, queryOptions, useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
@@ -67,7 +70,7 @@ export const sendOptionsQuery = (target: SendTarget) =>
       const query = new URLSearchParams({ is4k: String(target.is4k) });
       if (target.serverId !== undefined) query.set('serverId', String(target.serverId));
       try {
-        return await apiGet<SendOptions>(`/api/requests/send-options/${target.type}?${query}`, undefined, signal);
+        return await apiGet<SendOptions>(`${sendOptionsPath(target.type)}?${query}`, undefined, signal);
       } catch (error) {
         if (isNotConfigured(error)) return null;
         throw error;
@@ -139,20 +142,20 @@ export function useApprovalActions() {
   const onSettled = () => invalidateAfterRequest(queryClient);
   const approve = useMutation({
     mutationFn: ({ id, choice }: { id: number; choice?: SendChoice }) =>
-      apiSend<RequestDetail>('POST', `/api/requests/${id}/approve`, choice ?? {}),
+      apiSend<RequestDetail>('POST', requestPath(id, 'approve'), choice ?? {}),
     onSettled,
   });
   const decline = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) =>
-      apiSend<RequestDetail>('POST', `/api/requests/${id}/decline`, { reason }),
+      apiSend<RequestDetail>('POST', requestPath(id, 'decline'), { reason }),
     onSettled,
   });
   const retry = useMutation({
-    mutationFn: ({ id }: { id: number }) => apiSend<RequestDetail>('POST', `/api/requests/${id}/retry`),
+    mutationFn: ({ id }: { id: number }) => apiSend<RequestDetail>('POST', requestPath(id, 'retry')),
     onSettled,
   });
   const batch = useMutation({
-    mutationFn: (input: BatchRequestInput) => apiSend<BatchResult>('POST', '/api/requests/batch', input),
+    mutationFn: (input: BatchRequestInput) => apiSend<BatchResult>('POST', REQUEST_BATCH_PATH, input),
     onSettled,
   });
   return { approve, decline, retry, batch, busy: [approve, decline, retry, batch].some((m) => m.isPending) };

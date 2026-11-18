@@ -2,11 +2,13 @@ import { z } from 'zod';
 import {
   genreSchema,
   imageSizeSchema,
+  type MediaType,
   mediaSummarySchema,
   mediaTypeSchema,
   pagedSchema,
   watchProviderSchema,
 } from './media.ts';
+import { settingsPathOf } from './settings-path.ts';
 
 // --- Paramètres de requête (validés côté serveur, réutilisables par le client) ---
 
@@ -19,8 +21,21 @@ export const searchQuerySchema = pageQuerySchema.extend({ q: z.string().trim().m
 export const typeParamsSchema = z.object({ type: mediaTypeSchema });
 export const typeIdParamsSchema = typeParamsSchema.extend({ id: positiveInt });
 
+// --- Adresses de l'API ---
+
+type TypeParam = MediaType | ':type';
+type IdParam = number | ':id';
+export const DISCOVER_PATH = '/api/discover';
+/** Liste « Charger plus » d'un genre ou d'une plateforme. */
+export const discoverListPath = (type: TypeParam, by: 'genre' | 'provider', id: IdParam) =>
+  `${DISCOVER_PATH}/${type}/${by}/${id}`;
+export const genresPath = (type: TypeParam) => `/api/genres/${type}`;
+export const providersPath = (type: TypeParam) => `/api/providers/${type}`;
+export const SEARCH_PATH = '/api/search';
+export const mediaPath = (type: TypeParam, id: IdParam) => `/api/media/${type}/${id}`;
+
 /** Réglage `discover` (masquer disponibles / déjà demandés), propriétaire seulement. */
-export const DISCOVER_SETTINGS_PATH = '/api/settings/discover';
+export const DISCOVER_SETTINGS_PATH = settingsPathOf('discover');
 
 // --- Réponses ---
 

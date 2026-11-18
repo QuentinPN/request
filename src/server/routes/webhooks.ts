@@ -11,7 +11,7 @@ import {
   webhookServices,
 } from '../../shared/webhooks.ts';
 import { HttpError } from '../lib/api-errors.ts';
-import { requireCapability } from '../plugins/auth.ts';
+import { ownerOnly } from '../plugins/auth.ts';
 import { listArrServers } from '../services/arr-servers.ts';
 import type { SyncService } from '../services/sync.ts';
 import { isValidWebhookToken, regenerateWebhookToken, webhookToken } from '../services/webhooks.ts';
@@ -57,7 +57,6 @@ export function webhookRoutes(app: FastifyInstance, sync: SyncService) {
       async (req): Promise<WebhookResult> => sync.handleWebhook(service, req.body, senderOf(req)),
     );
 
-  const ownerOnly = { preHandler: requireCapability('isOwner') };
   app.get(WEBHOOK_SETTINGS_PATH, ownerOnly, async (req) => settingsOf(req, webhookToken(app.data), app.data));
   app.post(WEBHOOK_TOKEN_PATH, ownerOnly, async (req) => settingsOf(req, regenerateWebhookToken(app.data), app.data));
 }

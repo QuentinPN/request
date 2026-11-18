@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import {
   markNotificationsReadSchema,
   NOTIFICATION_PREFERENCES_PATH,
+  NOTIFICATIONS_PATH,
+  NOTIFICATIONS_READ_PATH,
   type NotificationPage,
   type NotificationPreferencesView,
   type NotificationsRead,
@@ -24,13 +26,13 @@ export function notificationsRoutes(
   { service, email, push }: { service: NotificationService; email: EmailService; push: PushService },
 ) {
   app.get(
-    '/api/notifications',
+    NOTIFICATIONS_PATH,
     async (req): Promise<NotificationPage> =>
       service.list(viewerOf(req).user.id, parseRequest(notificationListQuerySchema, req.query)),
   );
 
   app.post(
-    '/api/notifications/read',
+    NOTIFICATIONS_READ_PATH,
     async (req): Promise<NotificationsRead> =>
       service.markRead(viewerOf(req).user.id, parseRequest(markNotificationsReadSchema, req.body)),
   );

@@ -6,10 +6,13 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { arrKindOf, arrLabel } from '../../shared/arr-servers.ts';
-import type { Member } from '../../shared/auth.ts';
+import { type Member, USERS_PATH } from '../../shared/auth.ts';
 import type { MediaKey, MediaType } from '../../shared/media.ts';
 import {
   type CreateRequestInput,
+  REQUEST_COUNTS_PATH,
+  REQUEST_QUOTA_PATH,
+  REQUESTS_PATH,
   type RequestCounts,
   type RequestDetail,
   type RequestListFilter,
@@ -17,6 +20,7 @@ import {
   type RequestQuota,
   type RequestView,
   requestListParams,
+  requestPath,
 } from '../../shared/requests.ts';
 import {
   type ActiveRequestStatus,
@@ -26,7 +30,7 @@ import {
   requestStatuses,
 } from '../../shared/status.ts';
 import { mediaTypeLabel } from './catalogue.ts';
-import { apiGet, apiSend } from './http.ts';
+import { apiGet, apiSend, nextPageParam } from './http.ts';
 import { downloadPercent } from './status.ts';
 import { watchlistKeys } from './watchlist.ts';
 
@@ -47,7 +51,7 @@ export const requestKeys = {
 };
 
 const fetchPage = (filter: RequestListFilter, signal?: AbortSignal) =>
-  apiGet<RequestPage>(`/api/requests?${requestListParams(filter)}`, undefined, signal);
+  apiGet<RequestPage>(`${REQUESTS_PATH}?${requestListParams(filter)}`, undefined, signal);
 
 /** Une page de demandes, filtrée côté serveur ; `totals` compte chaque statut du périmètre. */
 export const requestListQuery = (filter: RequestListFilter) =>
@@ -59,7 +63,7 @@ export const myRequestsQuery = (status?: readonly RequestStatus[]) =>
     queryKey: requestKeys.mine(status),
     queryFn: ({ pageParam, signal }) => fetchPage({ status, mine: true, page: pageParam }, signal),
     initialPageParam: 1,
-    getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
+    getNextPageParam: nextPageParam,
   });
 
 /** Demandes en cours du membre (bande de Découvrir), les plus récentes. */
@@ -78,7 +82,7 @@ export const requestQuotaQuery = (userId?: string) =>
     queryKey: requestKeys.quota(userId),
     queryFn: ({ signal }) =>
       apiGet<RequestQuota>(
-        `/api/requests/quota${userId ? `?${new URLSearchParams({ userId })}` : ''}`,
+        `${REQUEST_QUOTA_PATH}${userId ? `?${new URLSearchParams({ userId })}` : ''}`,
         undefined,
         signal,
       ),
@@ -87,21 +91,21 @@ export const requestQuotaQuery = (userId?: string) =>
 /** Membres de l'appli (gestionnaires) : sélecteur de la feuille de demande pour autrui. */
 export const membersQuery = queryOptions({
   queryKey: ['users'],
-  queryFn: ({ signal }) => apiGet<Member[]>('/api/users', undefined, signal),
+  queryFn: ({ signal }) => apiGet<Member[]>(USERS_PATH, undefined, signal),
 });
 
 /** Compteurs (navigation, bande de Découvrir) : relus au retour sur l'onglet, l'approbateur peut avoir attendu longtemps. */
 export const requestCountsQuery = () =>
   queryOptions({
     queryKey: requestKeys.counts,
-    queryFn: ({ signal }) => apiGet<RequestCounts>('/api/requests/counts', undefined, signal),
+    queryFn: ({ signal }) => apiGet<RequestCounts>(REQUEST_COUNTS_PATH, undefined, signal),
     refetchOnWindowFocus: true,
   });
 
 export const requestDetailQuery = (id: number) =>
   queryOptions({
     queryKey: requestKeys.detail(id),
-    queryFn: ({ signal }) => apiGet<RequestDetail>(`/api/requests/${id}`, undefined, signal),
+    queryFn: ({ signal }) => apiGet<RequestDetail>(requestPath(id), undefined, signal),
   });
 
 /** Une demande change le statut des titres : catalogue, fiches et recherche sont relus avec les demandes. */
@@ -113,7 +117,7 @@ export function invalidateAfterRequest(client: QueryClient) {
 export function useCreateRequest() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateRequestInput) => apiSend<RequestDetail>('POST', '/api/requests', input),
+    mutationFn: (input: CreateRequestInput) => apiSend<RequestDetail>('POST', REQUESTS_PATH, input),
     onSuccess: () => invalidateAfterRequest(client),
   });
 }
@@ -121,7 +125,7 @@ export function useCreateRequest() {
 export function useCancelRequest() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => apiSend<RequestDetail>('POST', `/api/requests/${id}/cancel`),
+    mutationFn: (id: number) => apiSend<RequestDetail>('POST', requestPath(id, 'cancel')),
     onSuccess: () => invalidateAfterRequest(client),
   });
 }

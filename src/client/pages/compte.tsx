@@ -1,3 +1,4 @@
+import { LOGOUT_PATH } from '@shared/auth.ts';
 import { roleLabels } from '@shared/roles.ts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -22,7 +23,7 @@ export function ComptePage() {
   const logout = useMutation({
     mutationFn: async () => {
       await releaseDevicePush();
-      await apiSend('POST', '/api/auth/logout');
+      await apiSend('POST', LOGOUT_PATH);
     },
     onSuccess: async () => {
       forgetSession(queryClient);

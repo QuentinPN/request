@@ -1,4 +1,4 @@
-import type { BatchResult, RequestView } from '@shared/requests.ts';
+import type { BatchResult, RequestDetail, RequestView } from '@shared/requests.ts';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { DeclineDialog } from '@/components/approvals/decline-dialog';
@@ -113,33 +113,22 @@ export function ApprobationsPage() {
     if (selected?.id === id) setSelectedId((rows[index + 1] ?? rows[index - 1])?.id);
   };
 
+  /** Issue d'un envoi (approbation ou relance) : sélection voisine, page à jour et résultat de l'envoi. */
+  const sent = (id: number) => ({
+    onSuccess: (request: RequestDetail) => {
+      advance(id);
+      leave([request]);
+      setFeedback(sendOutcome(request));
+    },
+    onError: fail,
+  });
   const approve = (id: number) => {
     setFeedback(null);
-    actions.approve.mutate(
-      { id, choice: choices[id] },
-      {
-        onSuccess: (request) => {
-          advance(id);
-          leave([request]);
-          setFeedback(sendOutcome(request));
-        },
-        onError: fail,
-      },
-    );
+    actions.approve.mutate({ id, choice: choices[id] }, sent(id));
   };
   const retry = (id: number) => {
     setFeedback(null);
-    actions.retry.mutate(
-      { id },
-      {
-        onSuccess: (request) => {
-          advance(id);
-          leave([request]);
-          setFeedback(sendOutcome(request));
-        },
-        onError: fail,
-      },
-    );
+    actions.retry.mutate({ id }, sent(id));
   };
   const approveChecked = () => {
     setFeedback(null);

@@ -1,5 +1,5 @@
 import { asc, count, eq } from 'drizzle-orm';
-import type { Member, Viewer } from '../../shared/auth.ts';
+import { type Member, userPath, type Viewer } from '../../shared/auth.ts';
 import type { NotificationPreferences } from '../../shared/notifications.ts';
 import { capabilitiesOf, type QuotaOverride, type Role } from '../../shared/roles.ts';
 import type { Db } from '../db/index.ts';
@@ -9,7 +9,7 @@ import { HttpError } from '../lib/api-errors.ts';
 export type User = typeof users.$inferSelect;
 
 /** Photo relayée par l'appli (jamais l'adresse d'Emby ni sa clé), `null` sans photo. */
-export const avatarUrlOf = (user: User) => (user.avatar ? `/api/users/${encodeURIComponent(user.id)}/avatar` : null);
+export const avatarUrlOf = (user: User) => (user.avatar ? userPath(encodeURIComponent(user.id), 'avatar') : null);
 
 export const toViewer = (user: User): Viewer => ({
   id: user.id,
@@ -122,14 +122,19 @@ export function setRole(db: Db, id: string, role: Role, now = new Date()): User 
   );
 }
 
+/** Modifie un membre et le renvoie ; membre inconnu → `not_found`. */
+function updateUser(db: Db, id: string, values: Partial<typeof users.$inferInsert>): User {
+  const user = db.update(users).set(values).where(eq(users.id, id)).returning().get();
+  if (!user) throw new UsersError('not_found', 'Membre introuvable');
+  return user;
+}
+
 /**
  * Enregistre les quotas propres au membre, ou `null` pour revenir aux quotas par défaut. La valeur est déjà
  * validée par `memberUpdateSchema` (qui reprend `quotaOverrideSchema`) : un seul endroit valide.
  */
 export function setQuotaOverride(db: Db, id: string, quotaOverride: QuotaOverride | null, now = new Date()): User {
-  const user = db.update(users).set({ quotaOverride, updatedAt: now }).where(eq(users.id, id)).returning().get();
-  if (!user) throw new UsersError('not_found', 'Membre introuvable');
-  return user;
+  return updateUser(db, id, { quotaOverride, updatedAt: now });
 }
 
 /** Adresse et canaux de notification du membre, déjà validés par `notificationPreferencesSchema`. */
@@ -139,12 +144,5 @@ export function setNotificationPreferences(
   preferences: NotificationPreferences,
   now = new Date(),
 ): User {
-  const user = db
-    .update(users)
-    .set({ ...preferences, updatedAt: now })
-    .where(eq(users.id, id))
-    .returning()
-    .get();
-  if (!user) throw new UsersError('not_found', 'Membre introuvable');
-  return user;
+  return updateUser(db, id, { ...preferences, updatedAt: now });
 }

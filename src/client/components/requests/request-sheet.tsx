@@ -13,9 +13,10 @@ import {
   type RequestQuota,
 } from '../../../shared/requests.ts';
 import { capabilitiesOf } from '../../../shared/roles.ts';
+import { plural } from '../../../shared/text.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
 import { blockLabel } from '../../lib/blocklist.ts';
-import { mediaQuery, plural, regularSeasons, seasonMeta, seasonTitle, summaryMeta } from '../../lib/catalogue.ts';
+import { mediaQuery, regularSeasons, seasonMeta, seasonTitle, summaryMeta } from '../../lib/catalogue.ts';
 import { errorMessage } from '../../lib/http.ts';
 import { useMediaServerName } from '../../lib/media-server.ts';
 import { arrName, membersQuery, requestProgress, requestQuotaQuery, useCreateRequest } from '../../lib/requests.ts';
@@ -91,7 +92,7 @@ export function RequestSheetProvider({ children }: { children: ReactNode }) {
       <Dialog open={open} onOpenChange={setOpen}>
         {media && (
           <DialogContent showCloseButton={false} className={bottomSheet}>
-            <span aria-hidden className="h-[5px] w-10 justify-self-center rounded-full bg-(--track) lg:hidden" />
+            <SheetHandle />
             <RequestForm key={session} media={media} is4k={is4k} onClose={() => setOpen(false)} />
           </DialogContent>
         )}
@@ -100,17 +101,30 @@ export function RequestSheetProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function SheetHeader({ media, is4k }: { media: MediaSummary; is4k: boolean }) {
+/** Poignée de la feuille, sur mobile seulement. */
+export const SheetHandle = () => (
+  <span aria-hidden className="h-[5px] w-10 justify-self-center rounded-full bg-(--track) lg:hidden" />
+);
+
+/** En-tête d'une feuille : vignette, ligne facultative au-dessus du titre, titre, description, « Fermer » sur ordinateur. */
+export function SheetHeader({
+  posterPath,
+  eyebrow,
+  title,
+  description,
+}: {
+  posterPath: string | null | undefined;
+  eyebrow?: ReactNode;
+  title: ReactNode;
+  description: ReactNode;
+}) {
   return (
     <div className="flex items-start gap-4">
-      <RequestThumb posterPath={media.posterPath} className="w-12 lg:w-16" />
+      <RequestThumb posterPath={posterPath} className="w-12 lg:w-16" />
       <div className="min-w-0 grow space-y-1">
-        <p className="text-xs text-muted-foreground">
-          {media.type === 'movie' ? 'Demander un film' : 'Demander une série'}
-          {is4k && ' en 4K'}
-        </p>
-        <DialogTitle className="text-lg font-bold lg:text-[22px]">{media.title}</DialogTitle>
-        <DialogDescription>{summaryMeta(media).join(' · ')}</DialogDescription>
+        {eyebrow && <p className="text-xs text-muted-foreground">{eyebrow}</p>}
+        <DialogTitle className="text-lg font-bold lg:text-[22px]">{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
       </div>
       <DialogClose aria-label="Fermer" className={cn(roundButton, 'size-10 shrink-0 max-lg:hidden')}>
         <X aria-hidden className="size-5" />
@@ -158,7 +172,17 @@ function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; 
     );
   return (
     <>
-      <SheetHeader media={media} is4k={is4k} />
+      <SheetHeader
+        posterPath={media.posterPath}
+        eyebrow={
+          <>
+            {media.type === 'movie' ? 'Demander un film' : 'Demander une série'}
+            {is4k && ' en 4K'}
+          </>
+        }
+        title={media.title}
+        description={summaryMeta(media).join(' · ')}
+      />
       {choice && <QualityChoice is4k={is4k} onChange={setIs4k} />}
       {!details.data?.blocked && (
         <ManagerOptions

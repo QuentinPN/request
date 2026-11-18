@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { loginSchema } from '../../shared/auth.ts';
+import { LOGIN_PATH, LOGOUT_PATH, loginSchema, VIEWER_PATH } from '../../shared/auth.ts';
 import {
   loginMethodOf,
   PLEX_PIN_CHECK_PATH,
@@ -12,7 +12,7 @@ import { IntegrationError } from '../integrations/http.ts';
 import { labelOf, type MediaServer, type MemberCredentials } from '../integrations/media-server.ts';
 import { checkPlexPin, createPlexPin, type PlexPin, plexAuthUrl } from '../integrations/plex.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
-import { createRateLimiter } from '../lib/rate-limit.ts';
+import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
 import { endSession, refreshSessionCookie, startSession, viewerOf } from '../plugins/auth.ts';
 import { toViewer, upsertFromEmby } from '../services/users.ts';
 
@@ -44,7 +44,7 @@ export function authRoutes(app: FastifyInstance) {
   function limit(req: FastifyRequest, reply: FastifyReply) {
     const blocked = loginLimiter.hit(req.ip);
     if (!blocked) return;
-    reply.header('retry-after', Math.ceil(blocked.retryAfterMs / 1000));
+    setRetryAfter(reply, blocked);
     throw new HttpError(429, 'Trop de tentatives de connexion, réessayez dans quelques minutes');
   }
 
@@ -78,7 +78,7 @@ export function authRoutes(app: FastifyInstance) {
     return toViewer(user);
   }
 
-  app.post('/api/auth/login', async (req, reply) => {
+  app.post(LOGIN_PATH, async (req, reply) => {
     limit(req, reply);
     const { username, password } = parseRequest(loginSchema, req.body);
     const server = serverFor('password');
@@ -153,13 +153,13 @@ export function authRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post('/api/auth/logout', async (req, reply) => {
+  app.post(LOGOUT_PATH, async (req, reply) => {
     endSession(req, reply);
     return reply.code(204).send();
   });
 
   // Appelée par le client au chargement : prolonge aussi le cookie.
-  app.get('/api/auth/me', async (req, reply) => {
+  app.get(VIEWER_PATH, async (req, reply) => {
     const { user } = viewerOf(req);
     refreshSessionCookie(req, reply);
     return { viewer: toViewer(user) };

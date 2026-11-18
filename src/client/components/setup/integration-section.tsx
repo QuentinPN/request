@@ -20,7 +20,7 @@ import {
   type SeriesType,
   type SettingInput,
 } from '@shared/settings.ts';
-import type { TestResults } from '@shared/setup.ts';
+import { setupTestPath, type TestResults } from '@shared/setup.ts';
 import { type UseMutationResult, useMutation, useQuery } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Notice } from '@/components/notice';
@@ -140,7 +140,7 @@ export function arrPayloadOf(type: ArrKind, v: Values, stored: StoredFields | nu
 const testRequest = (key: ConnectionKey, v: Values, stored: StoredFields) =>
   isArrKind(key)
     ? { path: ARR_SERVERS_TEST_PATH, body: { ...connectionOf(key, v), type: key, id: stored.id } }
-    : { path: `/api/setup/${key}/test`, body: connectionOf(key, v) };
+    : { path: setupTestPath(key), body: connectionOf(key, v) };
 
 const pick = (current: string, options: string[]) => (options.includes(current) ? current : (options[0] ?? ''));
 

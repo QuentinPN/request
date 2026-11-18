@@ -1,4 +1,5 @@
 import { arrKinds } from './arr-servers.ts';
+import { settingsPathOf } from './settings-path.ts';
 
 /** Services qui appellent l'appli par webhook (Réglages › Connexions › Webhook de Radarr et Sonarr). */
 export const webhookServices = arrKinds;
@@ -20,7 +21,7 @@ export const WEBHOOK_SERVER_QUERY = 'server';
 export const WEBHOOK_TOKEN_HEADER = 'x-webhook-token';
 
 /** Réglages des webhooks (propriétaire seulement) : lecture, et régénération du jeton (l'ancien cesse aussitôt). */
-export const WEBHOOK_SETTINGS_PATH = '/api/settings/webhooks';
+export const WEBHOOK_SETTINGS_PATH = settingsPathOf('webhooks');
 export const WEBHOOK_TOKEN_PATH = `${WEBHOOK_SETTINGS_PATH}/token`;
 
 export interface WebhookSettings {

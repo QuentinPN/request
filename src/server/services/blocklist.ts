@@ -3,12 +3,12 @@ import type { BlockedKeyword, Blocklist, BlockTitleInput } from '../../shared/bl
 import { keyOf, type MediaBlock, type MediaDetails, type MediaKey, type MediaSummary } from '../../shared/media.ts';
 import type { Data, Db } from '../db/index.ts';
 import { blockedTitles, users } from '../db/schema.ts';
-import { IntegrationError } from '../integrations/http.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { HttpError } from '../lib/api-errors.ts';
 import { keyPairsIn } from '../lib/sql.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
 import { getSetting, setSetting } from './settings.ts';
+import { orTitleNotFound } from './tmdb.ts';
 
 /**
  * Blocages (lot 7.9). Un titre bloqué (`blocked_titles`) ou portant un mot-clé bloqué (réglage `blockedKeywords`) ne se
@@ -98,14 +98,7 @@ export function createBlocklist(data: Data, deps: { tmdb: () => TmdbClient; now?
 
   /** Bloque un titre (idempotent) ; son nom vient de TMDB, jamais du navigateur. Titre inconnu de TMDB → 404. */
   async function block(actorId: string, { mediaType, tmdbId }: BlockTitleInput): Promise<Blocklist> {
-    let title: string;
-    try {
-      title = (await deps.tmdb().summary(mediaType, tmdbId)).title;
-    } catch (error) {
-      if (error instanceof IntegrationError && error.kind === 'not_found')
-        throw new HttpError(404, 'Titre introuvable');
-      throw error;
-    }
+    const { title } = await orTitleNotFound(() => deps.tmdb().summary(mediaType, tmdbId));
     db.insert(blockedTitles)
       .values({ mediaType, tmdbId, title, blockedBy: actorId, createdAt: new Date(now()) })
       .onConflictDoNothing()

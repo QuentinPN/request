@@ -1,7 +1,7 @@
 import type { UseQueryResult } from '@tanstack/react-query';
 import { cn } from 'cn';
 import type { ReactNode } from 'react';
-import { ErrorState } from '@/components/states';
+import { ErrorState, Loading } from '@/components/states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { type SectionId, sectionText, settingsSectionOrder } from './config';
 
@@ -113,28 +113,44 @@ export function SectionFrame({
   );
 }
 
-/** Section facultative (Discord, courriel) qui lit son réglage : squelette, erreur à réessayer, puis le formulaire. */
+/** Section dont la lecture a échoué : message et « Réessayer ». */
+export function SectionLoadError({
+  query,
+  message,
+  ...frame
+}: SectionFrameProps & { query: Pick<UseQueryResult, 'refetch'>; message: string }) {
+  return (
+    <SectionFrame {...frame} status="error">
+      <ErrorState message={message} onRetry={() => void query.refetch()} />
+    </SectionFrame>
+  );
+}
+
+/** Section qui lit ses données : squelette (`rows` lignes), erreur à réessayer, puis le contenu. */
 export function LoadedSection<T>({
   query,
+  rows = 2,
+  errorMessage = 'Ces réglages n’ont pas pu se charger.',
   children,
   ...frame
-}: SectionFrameProps & { query: UseQueryResult<T>; children: (data: T) => ReactNode }) {
+}: SectionFrameProps & {
+  query: UseQueryResult<T>;
+  rows?: number;
+  errorMessage?: string;
+  children: (data: T) => ReactNode;
+}) {
   if (query.isPending)
     return (
-      <SectionFrame {...frame} status="todo" todoLabel="Désactivé">
-        <div role="status" className="space-y-4">
-          <span className="sr-only">Chargement…</span>
-          <Skeleton className="h-12 w-full rounded-(--r-button)" />
-          <Skeleton className="h-12 w-full rounded-(--r-button)" />
-        </div>
+      <SectionFrame {...frame} status="todo">
+        <Loading className="space-y-4">
+          {Array.from({ length: rows }, (_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: liste fixe de squelettes identiques
+            <Skeleton key={i} className="h-12 w-full rounded-(--r-button)" />
+          ))}
+        </Loading>
       </SectionFrame>
     );
-  if (query.isError)
-    return (
-      <SectionFrame {...frame} status="error">
-        <ErrorState message="Ces réglages n’ont pas pu se charger." onRetry={() => void query.refetch()} />
-      </SectionFrame>
-    );
+  if (query.isError) return <SectionLoadError {...frame} query={query} message={errorMessage} />;
   return children(query.data);
 }
 

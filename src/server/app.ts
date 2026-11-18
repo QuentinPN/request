@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
-import type { Health } from '../shared/health.ts';
+import { HEALTH_PATH, type Health } from '../shared/health.ts';
 import { SERVICE_WORKER_PATH } from '../shared/notifications.ts';
 import { normalizeUrl } from '../shared/settings.ts';
 import type { Data } from './db/index.ts';
@@ -160,7 +160,7 @@ export async function buildApp({
   await registerAuth(app);
 
   // Santé : le processus répond et la base aussi (requête triviale), pour le HEALTHCHECK de l'image.
-  app.get('/api/health', async (): Promise<Health> => {
+  app.get(HEALTH_PATH, async (): Promise<Health> => {
     try {
       data.db.$client.prepare('select 1').get();
     } catch {

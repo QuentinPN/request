@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { Film, Play, Plus } from 'lucide-react';
+import { titleLink } from '@/lib/catalogue';
 import { imageUrl, type MediaSummary, type MediaType } from '../../../shared/media.ts';
 import type { Availability } from '../../../shared/status.ts';
 import { summaryMeta } from '../../lib/catalogue.ts';
@@ -54,11 +55,7 @@ export function Poster({
             <Film className="size-8" strokeWidth={1.5} />
           </div>
         )}
-        <Link
-          to="/titre/$type/$id"
-          params={{ type: to.type, id: String(to.id) }}
-          className="absolute inset-0 rounded-poster outline-none"
-        >
+        <Link {...titleLink({ type: to.type, tmdbId: to.id })} className="absolute inset-0 rounded-poster outline-none">
           <span className="sr-only">{subtitle ? `${title} (${subtitle})` : title}</span>
         </Link>
         {status && (

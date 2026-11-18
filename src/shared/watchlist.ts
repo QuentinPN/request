@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { mediaSummarySchema, mediaTypeSchema, pagedSchema } from './media.ts';
+import { settingsPathOf } from './settings-path.ts';
 
 /** Origine d'un titre de la liste de souhaits : ajouté dans l'appli, ou importé d'une liste Trakt ou Letterboxd. */
 export const watchlistSources = ['manual', 'trakt', 'letterboxd'] as const;
@@ -13,7 +14,7 @@ export const WATCHLIST_ITEM_ROUTE = `${WATCHLIST_PATH}/:type/:id`;
 export const watchlistItemPath = (type: string, id: number) => `${WATCHLIST_PATH}/${type}/${id}`;
 export const WATCHLIST_IMPORT_PATH = `${WATCHLIST_PATH}/import`;
 /** Réglage Trakt (propriétaire seulement) : lecture et enregistrement du `client_id`. */
-export const TRAKT_SETTINGS_PATH = '/api/settings/trakt';
+export const TRAKT_SETTINGS_PATH = settingsPathOf('trakt');
 
 /** Titres par page de « Ma liste ». */
 export const WATCHLIST_PAGE_SIZE = 40;

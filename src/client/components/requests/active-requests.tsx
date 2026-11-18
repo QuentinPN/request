@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { titleLink } from '@/lib/catalogue';
 import { useViewer } from '../../hooks/use-viewer.ts';
 import { useMediaServerName } from '../../lib/media-server.ts';
 import { myActiveRequestsQuery, requestCountsQuery, requestProgress, requestShortTitle } from '../../lib/requests.ts';
@@ -41,8 +42,7 @@ export function ActiveRequestsStrip() {
               <div className="min-w-0 grow space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Link
-                    to="/titre/$type/$id"
-                    params={{ type: request.type, id: String(request.tmdbId) }}
+                    {...titleLink(request)}
                     className="truncate text-sm font-semibold outline-none hover:underline focus-visible:underline"
                   >
                     {requestShortTitle(request)}

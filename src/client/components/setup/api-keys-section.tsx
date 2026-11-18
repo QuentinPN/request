@@ -2,7 +2,6 @@ import { API_KEYS_PATH, type ApiKey, type ApiKeyCreated, apiKeyCreateSchema, api
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
-import { ErrorState } from '@/components/states';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,12 +13,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input, Label } from '@/components/ui/field';
-import { Skeleton } from '@/components/ui/skeleton';
 import { apiSend } from '@/lib/http';
 import { formatDateTime, formatDay } from '@/lib/requests';
 import { CopyField } from './copy-field';
 import { apiKeysQuery } from './queries';
-import { actionClass, SectionFrame, type SectionFrameProps } from './section-frame';
+import { actionClass, LoadedSection, SectionFrame, type SectionFrameProps } from './section-frame';
 
 const isActive = (key: ApiKey) => key.revokedAt === null;
 
@@ -163,49 +161,38 @@ export function ApiKeysSection(frame: SectionFrameProps) {
   const [secret, setSecret] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
 
-  if (query.isPending)
-    return (
-      <SectionFrame {...frame} status="todo">
-        <div role="status" className="space-y-4">
-          <span className="sr-only">Chargement…</span>
-          <Skeleton className="h-12 w-full rounded-(--r-button)" />
-          <Skeleton className="h-12 w-full rounded-(--r-button)" />
-        </div>
-      </SectionFrame>
-    );
-  if (query.isError)
-    return (
-      <SectionFrame {...frame} status="error">
-        <ErrorState message="Les clés d’API n’ont pas pu se charger." onRetry={() => void query.refetch()} />
-      </SectionFrame>
-    );
-
-  const activeCount = query.data.filter(isActive).length;
   return (
-    <SectionFrame
-      {...frame}
-      status={activeCount > 0 ? 'done' : 'todo'}
-      todoLabel="Aucune clé"
-      doneLabel={`${activeCount} ${activeCount > 1 ? 'clés actives' : 'clé active'}`}
-    >
-      <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          Pour un script ou un outil externe : envoyez la clé dans l’en-tête{' '}
-          <code className="text-[13px] text-foreground">X-Api-Key</code> de chaque requête vers{' '}
-          <code className="text-[13px] text-foreground">/api</code>. La requête agit comme vous, avec vos droits de
-          propriétaire.
-        </p>
-        <CreateForm onCreated={setSecret} />
-        {query.data.length > 0 && (
-          <ul className="divide-y divide-border border-y border-border">
-            {query.data.map((apiKey) => (
-              <KeyRow key={apiKey.id} apiKey={apiKey} onRevoke={() => setRevoking(apiKey)} />
-            ))}
-          </ul>
-        )}
-      </div>
-      {secret !== null && <SecretDialog secret={secret} onClose={() => setSecret(null)} />}
-      {revoking && <RevokeDialog apiKey={revoking} onClose={() => setRevoking(null)} />}
-    </SectionFrame>
+    <LoadedSection {...frame} query={query} errorMessage="Les clés d’API n’ont pas pu se charger.">
+      {(keys) => {
+        const activeCount = keys.filter(isActive).length;
+        return (
+          <SectionFrame
+            {...frame}
+            status={activeCount > 0 ? 'done' : 'todo'}
+            todoLabel="Aucune clé"
+            doneLabel={`${activeCount} ${activeCount > 1 ? 'clés actives' : 'clé active'}`}
+          >
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
+                Pour un script ou un outil externe : envoyez la clé dans l’en-tête{' '}
+                <code className="text-[13px] text-foreground">X-Api-Key</code> de chaque requête vers{' '}
+                <code className="text-[13px] text-foreground">/api</code>. La requête agit comme vous, avec vos droits
+                de propriétaire.
+              </p>
+              <CreateForm onCreated={setSecret} />
+              {keys.length > 0 && (
+                <ul className="divide-y divide-border border-y border-border">
+                  {keys.map((apiKey) => (
+                    <KeyRow key={apiKey.id} apiKey={apiKey} onRevoke={() => setRevoking(apiKey)} />
+                  ))}
+                </ul>
+              )}
+            </div>
+            {secret !== null && <SecretDialog secret={secret} onClose={() => setSecret(null)} />}
+            {revoking && <RevokeDialog apiKey={revoking} onClose={() => setRevoking(null)} />}
+          </SectionFrame>
+        );
+      }}
+    </LoadedSection>
   );
 }

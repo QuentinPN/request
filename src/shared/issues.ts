@@ -81,6 +81,12 @@ export const issueSchema = z.object({
 
 // --- Listes et détail ---
 
+export const ISSUES_PATH = '/api/issues';
+export const ISSUE_COUNTS_PATH = `${ISSUES_PATH}/counts`;
+/** Un signalement, ou l'une de ses actions. */
+export const issuePath = (id: number | ':id', action?: 'comments' | 'resolve' | 'reopen') =>
+  `${ISSUES_PATH}/${id}${action ? `/${action}` : ''}`;
+
 export const ISSUES_PAGE_SIZE = 20;
 
 export const issueListQuerySchema = z.object({

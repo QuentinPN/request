@@ -1,53 +1,61 @@
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import {
+  DISCOVER_PATH,
+  discoverListPath,
   discoverResponseSchema,
+  genresPath,
   genresResponseSchema,
+  mediaPath,
   pagedMediaSchema,
+  providersPath,
   providersResponseSchema,
+  SEARCH_PATH,
 } from '../../shared/catalogue.ts';
 import {
   type MediaDetails,
+  type MediaKey,
   type MediaSummary,
   type MediaType,
   mediaDetailsSchema,
   mediaSearchResultsSchema,
   type Season,
 } from '../../shared/media.ts';
-import { apiGet } from './http.ts';
+import { plural } from '../../shared/text.ts';
+import { apiGet, nextPageParam } from './http.ts';
 
 // Seules définitions des requêtes du catalogue (clés et adresses), lues par toutes les pages.
 
 export const discoverQuery = () =>
   queryOptions({
     queryKey: ['discover'],
-    queryFn: ({ signal }) => apiGet('/api/discover', discoverResponseSchema, signal),
+    queryFn: ({ signal }) => apiGet(DISCOVER_PATH, discoverResponseSchema, signal),
   });
 
 export const genresQuery = (type: MediaType) =>
   queryOptions({
     queryKey: ['genres', type],
-    queryFn: ({ signal }) => apiGet(`/api/genres/${type}`, genresResponseSchema, signal),
+    queryFn: ({ signal }) => apiGet(genresPath(type), genresResponseSchema, signal),
     staleTime: Number.POSITIVE_INFINITY,
   });
 
 export const providersQuery = (type: MediaType) =>
   queryOptions({
     queryKey: ['providers', type],
-    queryFn: ({ signal }) => apiGet(`/api/providers/${type}`, providersResponseSchema, signal),
+    queryFn: ({ signal }) => apiGet(providersPath(type), providersResponseSchema, signal),
     staleTime: Number.POSITIVE_INFINITY,
   });
 
 export const mediaQuery = (type: MediaType, id: number) =>
   queryOptions({
     queryKey: ['media', type, id],
-    queryFn: ({ signal }) => apiGet(`/api/media/${type}/${id}`, mediaDetailsSchema, signal),
+    queryFn: ({ signal }) => apiGet(mediaPath(type, id), mediaDetailsSchema, signal),
   });
 
 export const searchQuery = (q: string) =>
   queryOptions({
     queryKey: ['search', q],
-    queryFn: ({ signal }) => apiGet(`/api/search?${new URLSearchParams({ q })}`, mediaSearchResultsSchema, signal),
+    queryFn: ({ signal }) => apiGet(`${SEARCH_PATH}?${new URLSearchParams({ q })}`, mediaSearchResultsSchema, signal),
     enabled: q.length > 0,
     placeholderData: keepPreviousData,
   });
@@ -57,10 +65,16 @@ export const discoverListQuery = (by: 'genre' | 'provider', type: MediaType, id:
   infiniteQueryOptions({
     queryKey: ['discover', by, type, id],
     queryFn: ({ pageParam, signal }) =>
-      apiGet(`/api/discover/${type}/${by}/${id}?page=${pageParam}`, pagedMediaSchema, signal),
+      apiGet(`${discoverListPath(type, by, id)}?page=${pageParam}`, pagedMediaSchema, signal),
     initialPageParam: 1,
-    getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
+    getNextPageParam: nextPageParam,
   });
+
+/** Fiche d'un titre : `<Link {...titleLink(media)}>` ou `navigate(titleLink(media))`. */
+export const titleLink = ({ type, tmdbId }: MediaKey) => ({
+  to: '/titre/$type/$id' as const,
+  params: { type, id: String(tmdbId) },
+});
 
 /** `?genre=` des pages Films et Séries (absent ou invalide : premier genre). */
 export const genreSearchSchema = z.object({ genre: z.coerce.number().int().positive().optional().catch(undefined) });
@@ -79,9 +93,6 @@ export const mediaTypeLabel: Record<MediaType, string> = { movie: 'Film', tv: 'S
 export const mediaTypePlural: Record<MediaType, string> = { movie: 'Films', tv: 'Séries' };
 /** « Aucun film » / « Aucune série » : le genre du nom compte. */
 export const mediaTypeNone: Record<MediaType, string> = { movie: 'Aucun film', tv: 'Aucune série' };
-
-/** « 1 épisode », « 3 épisodes ». */
-export const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
 
 /** 166 → « 2 h 46 », 45 → « 45 min ». */
 export function formatRuntime(minutes: number): string {

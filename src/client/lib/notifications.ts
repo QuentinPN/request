@@ -2,11 +2,14 @@ import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query
 import type { LinkProps } from '@tanstack/react-router';
 import {
   type MarkNotificationsReadInput,
+  NOTIFICATIONS_PATH,
+  NOTIFICATIONS_READ_PATH,
   type NotificationPage,
   type NotificationsRead,
   type NotificationView,
   notificationTarget,
 } from '../../shared/notifications.ts';
+import { titleLink } from './catalogue.ts';
 import { apiGet, apiSend } from './http.ts';
 
 // Seules définitions de la requête des notifications (clé, adresse, rafraîchissement), lues par la cloche.
@@ -20,7 +23,7 @@ export const NOTIFICATIONS_REFRESH_MS = 60_000;
 export const notificationsQuery = () =>
   queryOptions({
     queryKey: notificationKeys.all,
-    queryFn: ({ signal }) => apiGet<NotificationPage>('/api/notifications', undefined, signal),
+    queryFn: ({ signal }) => apiGet<NotificationPage>(NOTIFICATIONS_PATH, undefined, signal),
     refetchOnWindowFocus: true,
     refetchInterval: NOTIFICATIONS_REFRESH_MS,
   });
@@ -30,7 +33,7 @@ export function useMarkNotificationsRead() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: MarkNotificationsReadInput) =>
-      apiSend<NotificationsRead>('POST', '/api/notifications/read', input),
+      apiSend<NotificationsRead>('POST', NOTIFICATIONS_READ_PATH, input),
     onSettled: () => queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
   });
 }
@@ -41,7 +44,7 @@ export function notificationLink(notification: NotificationView): LinkProps | nu
   if (target === 'queue') return { to: '/approbations' };
   if (target === null) return null;
   if ('issueId' in target) return { to: '/signalements', search: { id: target.issueId } };
-  return { to: '/titre/$type/$id', params: { type: target.type, id: String(target.tmdbId) } };
+  return titleLink(target);
 }
 
 /** « 1 non lue », « 3 non lues ». */

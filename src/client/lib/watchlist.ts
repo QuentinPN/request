@@ -12,7 +12,7 @@ import {
   watchlistItemPath,
   watchlistPageSchema,
 } from '../../shared/watchlist.ts';
-import { apiGet, apiSend } from './http.ts';
+import { apiGet, apiSend, nextPageParam } from './http.ts';
 
 // Seules définitions des requêtes de la liste de souhaits (clés et adresses). Toutes les clés commencent par
 // `watchlist` : `invalidateQueries({ queryKey: watchlistKeys.all })` suffit.
@@ -29,7 +29,7 @@ export const watchlistQuery = () =>
     queryKey: watchlistKeys.list,
     queryFn: ({ pageParam, signal }) => apiGet(`${WATCHLIST_PATH}?page=${pageParam}`, watchlistPageSchema, signal),
     initialPageParam: 1,
-    getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
+    getNextPageParam: nextPageParam,
   });
 
 /** Le titre est-il dans la liste du membre (bouton de la fiche). */

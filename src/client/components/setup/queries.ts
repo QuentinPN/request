@@ -1,28 +1,35 @@
 import { API_KEYS_PATH, type ApiKey } from '@shared/api-keys.ts';
 import { ARR_SERVERS_PATH, type ArrServer, type ArrServerInput } from '@shared/arr-servers.ts';
 import { DISCORD_SETTINGS_PATH } from '@shared/discord.ts';
+import { SMTP_SETTINGS_PATH } from '@shared/notifications.ts';
 import type { MaskedSetting, SettingInput } from '@shared/settings.ts';
-import type { SettingSection } from '@shared/setup.ts';
+import { type SettingSection, settingPath } from '@shared/setup.ts';
 import { TRAKT_SETTINGS_PATH } from '@shared/watchlist.ts';
 import { WEBHOOK_SETTINGS_PATH, type WebhookSettings } from '@shared/webhooks.ts';
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ApiError, apiGet, apiSend } from '@/lib/http';
+import { apiGet, apiSend, isNotFound } from '@/lib/http';
 import { watchLinkQuery } from '@/lib/media-server';
 import { setupStateQuery } from '@/lib/session';
 
-/** Réglage enregistré (secrets masqués), `null` s'il ne l'a jamais été. */
-export const settingQuery = <K extends SettingSection | 'smtp'>(key: K) =>
-  queryOptions({
-    queryKey: ['settings', key],
-    queryFn: async (): Promise<MaskedSetting<K> | null> => {
-      try {
-        return await apiGet<MaskedSetting<K>>(`/api/settings/${key}`);
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null;
-        throw error;
-      }
-    },
-  });
+/** Réglage enregistré (secrets masqués), `null` s'il ne l'a jamais été (404). */
+async function storedSetting<K extends SettingSection | 'smtp'>(path: string): Promise<MaskedSetting<K> | null> {
+  try {
+    return await apiGet<MaskedSetting<K>>(path);
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+}
+
+/** Réglage d'une section de l'assistant. */
+export const settingQuery = <K extends SettingSection>(key: K) =>
+  queryOptions({ queryKey: ['settings', key], queryFn: () => storedSetting<K>(settingPath(key)) });
+
+/** Réglage du courriel (SMTP), `null` tant qu'il n'est pas configuré. */
+export const smtpQuery = queryOptions({
+  queryKey: ['settings', 'smtp'],
+  queryFn: () => storedSetting<'smtp'>(SMTP_SETTINGS_PATH),
+});
 
 /** Adresses des webhooks Radarr/Sonarr et leur jeton (propriétaire seulement). */
 export const webhooksQuery = queryOptions({
@@ -52,7 +59,7 @@ export const apiKeysQuery = queryOptions({
 export function useSaveSetting<K extends SettingSection>(key: K, onSaved: () => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (value: SettingInput<K>) => apiSend<MaskedSetting<K>>('PUT', `/api/settings/${key}`, value),
+    mutationFn: (value: SettingInput<K>) => apiSend<MaskedSetting<K>>('PUT', settingPath(key), value),
     onSuccess: async (saved) => {
       queryClient.setQueryData(settingQuery(key).queryKey, saved);
       await queryClient.invalidateQueries({ queryKey: setupStateQuery.queryKey });

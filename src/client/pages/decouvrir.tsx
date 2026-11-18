@@ -12,7 +12,7 @@ import { ActiveRequestsStrip } from '@/components/requests/active-requests';
 import { Loading } from '@/components/states';
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { discoverQuery, providersQuery, summaryMeta } from '@/lib/catalogue';
+import { discoverQuery, providersQuery, summaryMeta, titleLink } from '@/lib/catalogue';
 import { imageUrl, type MediaSummary, type WatchProvider } from '../../shared/media.ts';
 
 /** Plateformes affichées : la liste TMDB pour la France est longue, les premières sont les plus regardées. */
@@ -36,8 +36,7 @@ function Hero({ media }: { media: MediaSummary }) {
           <RequestButton media={media} className="grow sm:grow-0" />
           <WatchLink media={media} className="grow sm:grow-0" />
           <Link
-            to="/titre/$type/$id"
-            params={{ type: media.type, id: String(media.tmdbId) }}
+            {...titleLink(media)}
             className={buttonVariants({ variant: 'secondary', size: 'lg', className: 'border-input' })}
           >
             <Info data-icon="inline-start" />

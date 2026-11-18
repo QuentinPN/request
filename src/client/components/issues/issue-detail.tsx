@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Label, Textarea } from '@/components/ui/field';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
+import { titleLink } from '@/lib/catalogue';
 import { errorMessage } from '@/lib/http';
 import {
   issueDetailQuery,
@@ -114,9 +115,7 @@ function IssueBody({ issue }: { issue: IssueDetail }) {
         <div className="min-w-0 space-y-1.5">
           <IssueStatusPill status={issue.status} />
           <h2 className="text-xl leading-tight font-bold tracking-tight">
-            <Link to="/titre/$type/$id" params={{ type: issue.media.type, id: String(issue.media.tmdbId) }}>
-              {title}
-            </Link>
+            <Link {...titleLink(issue.media)}>{title}</Link>
           </h2>
           <p className="text-[13px] text-muted-foreground">{issueKind(issue)}</p>
         </div>

@@ -3,13 +3,18 @@ import { TRAKT_SETTINGS_PATH } from '@shared/watchlist.ts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
-import { ErrorState } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FieldHint, Input, Label } from '@/components/ui/field';
-import { Skeleton } from '@/components/ui/skeleton';
 import { apiSend } from '@/lib/http';
 import { traktQuery } from './queries';
-import { actionClass, SectionActions, SectionFrame, type SectionFrameProps, sectionStatus } from './section-frame';
+import {
+  actionClass,
+  LoadedSection,
+  SectionActions,
+  SectionFrame,
+  type SectionFrameProps,
+  sectionStatus,
+} from './section-frame';
 
 function TraktForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedSetting<'trakt'> }) {
   const id = useId();
@@ -86,21 +91,15 @@ function TraktForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedSet
 /** Listes externes (propriétaire) : Client ID Trakt, facultatif, hors de l'assistant. Il est vérifié avant d'être gardé. */
 export function TraktSection(frame: SectionFrameProps) {
   const query = useQuery(traktQuery);
-
-  if (query.isPending)
-    return (
-      <SectionFrame {...frame} status="todo" todoLabel="Désactivé">
-        <div role="status" className="space-y-4">
-          <span className="sr-only">Chargement…</span>
-          <Skeleton className="h-12 w-full rounded-(--r-button)" />
-        </div>
-      </SectionFrame>
-    );
-  if (query.isError)
-    return (
-      <SectionFrame {...frame} status="error">
-        <ErrorState message="Ce réglage n’a pas pu se charger." onRetry={() => void query.refetch()} />
-      </SectionFrame>
-    );
-  return <TraktForm {...frame} stored={query.data} />;
+  return (
+    <LoadedSection
+      {...frame}
+      todoLabel="Désactivé"
+      query={query}
+      rows={1}
+      errorMessage="Ce réglage n’a pas pu se charger."
+    >
+      {(stored) => <TraktForm {...frame} stored={stored} />}
+    </LoadedSection>
+  );
 }

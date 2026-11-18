@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { type Member, memberUpdateSchema } from '../../shared/auth.ts';
+import { type Member, memberUpdateSchema, USERS_IMPORT_PATH, USERS_PATH, userPath } from '../../shared/auth.ts';
 import { ofMediaServer } from '../../shared/settings.ts';
 import { labelOf } from '../integrations/media-server.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
@@ -25,14 +25,10 @@ export function usersRoutes(app: FastifyInstance) {
   const { db } = app.data;
   const members = () => listUsers(db).map(toMember);
 
-  app.get(
-    '/api/users',
-    { preHandler: requireCapability('canManageRequests') },
-    async (): Promise<Member[]> => members(),
-  );
+  app.get(USERS_PATH, { preHandler: requireCapability('canManageRequests') }, async (): Promise<Member[]> => members());
 
   /** Crée les comptes actifs du serveur multimédia absents de l'appli ; jamais de promotion (voir importFromEmby). */
-  app.post('/api/users/import', { preHandler: requireCapability('canManageUsers') }, async (): Promise<Member[]> => {
+  app.post(USERS_IMPORT_PATH, { preHandler: requireCapability('canManageUsers') }, async (): Promise<Member[]> => {
     const embyUsers = await app.mediaServers.require().listUsers();
     db.transaction((tx) => {
       for (const u of embyUsers) {
@@ -43,7 +39,7 @@ export function usersRoutes(app: FastifyInstance) {
   });
 
   app.put<IdParams>(
-    '/api/users/:id',
+    userPath(':id'),
     { preHandler: requireCapability('canManageUsers') },
     async (req): Promise<Member> => {
       const { id } = req.params;
@@ -61,7 +57,7 @@ export function usersRoutes(app: FastifyInstance) {
    * Relais de la photo du membre (le navigateur ne voit ni l'adresse du serveur ni sa clé ; Plex : photo plex.tv, sans
    * jeton). `fetch` direct plutôt que `httpRequest` : ce dernier ne sait lire que du texte, ici le corps est une image.
    */
-  app.get<IdParams>('/api/users/:id/avatar', async (req, reply) => {
+  app.get<IdParams>(userPath(':id', 'avatar'), async (req, reply) => {
     const user = getUser(db, req.params.id);
     if (!user?.avatar) throw new HttpError(404, 'Pas de photo');
     const server = app.mediaServers.require();

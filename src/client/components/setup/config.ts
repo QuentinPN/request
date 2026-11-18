@@ -9,6 +9,7 @@ import {
   type smtpSecurities,
 } from '@shared/settings.ts';
 import type { ArrTestResult, SetupSection, TestResults } from '@shared/setup.ts';
+import { plural } from '@shared/text.ts';
 
 /**
  * Ordre des sections à l'écran (DESIGN.md, maquette R-Assistant) : serveur multimédia (Emby, Jellyfin ou Plex), TMDB,
@@ -139,10 +140,8 @@ export const smtpSecurityOptions: Record<(typeof smtpSecurities)[number], { labe
 
 export const libraryTypeLabels = { movies: 'Films', tvshows: 'Séries', other: 'Autre' } as const;
 
-const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
-
 const arrSummary = (name: string, r: ArrTestResult) =>
-  `${name} v${r.version} · ${plural(r.qualityProfiles.length, 'profil')}, ${plural(r.rootFolders.length, 'dossier')}`;
+  `${name} v${r.version} · ${plural(r.qualityProfiles.length, 'profil', 'profils')}, ${plural(r.rootFolders.length, 'dossier', 'dossiers')}`;
 
 /** Ligne affichée après un test réussi : « Connexion réussie · Sonarr v4.0.11 · 3 profils, 2 dossiers ». */
 export function testSummary<K extends ConnectionKey>(
@@ -154,7 +153,7 @@ export function testSummary<K extends ConnectionKey>(
     mediaServer: () => {
       const r = result as TestResults['mediaServer'];
       const name = mediaServerKindLabels[kind ?? 'emby'];
-      return `${r.serverName} · ${name} v${r.version} · ${plural(r.libraries.length, 'bibliothèque')}`;
+      return `${r.serverName} · ${name} v${r.version} · ${plural(r.libraries.length, 'bibliothèque', 'bibliothèques')}`;
     },
     tmdb: () => 'TMDB',
     radarr: () => arrSummary('Radarr', result as TestResults['radarr']),

@@ -2,14 +2,12 @@ import { ISSUE_MESSAGE_MAX, type IssueCreateInput, issueTypeLabels, issueTypes }
 import type { MediaDetails } from '@shared/media.ts';
 import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
-import { Flag, X } from 'lucide-react';
+import { Flag } from 'lucide-react';
 import { type FormEvent, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
-import { RequestThumb } from '@/components/requests/request-progress';
-import { bottomSheet } from '@/components/requests/request-sheet';
-import { roundButton } from '@/components/shell/nav-items';
+import { bottomSheet, SheetHandle, SheetHeader } from '@/components/requests/request-sheet';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog';
 import { FieldHint, Input, Label, NativeSelect, Textarea } from '@/components/ui/field';
 import { useViewer } from '@/hooks/use-viewer';
 import { regularSeasons, seasonTitle, summaryMeta } from '@/lib/catalogue';
@@ -39,17 +37,12 @@ export function ReportIssueButton({ media, className }: { media: MediaDetails; c
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent showCloseButton={false} className={bottomSheet}>
-          <span aria-hidden className="h-[5px] w-10 justify-self-center rounded-full bg-(--track) lg:hidden" />
-          <div className="flex items-start gap-4">
-            <RequestThumb posterPath={media.posterPath} className="w-12 lg:w-16" />
-            <div className="min-w-0 grow space-y-1">
-              <DialogTitle className="text-lg font-bold lg:text-[22px]">Signaler un problème</DialogTitle>
-              <DialogDescription>{[media.title, ...summaryMeta(media)].join(' · ')}</DialogDescription>
-            </div>
-            <DialogClose aria-label="Fermer" className={cn(roundButton, 'size-10 shrink-0 max-lg:hidden')}>
-              <X aria-hidden className="size-5" />
-            </DialogClose>
-          </div>
+          <SheetHandle />
+          <SheetHeader
+            posterPath={media.posterPath}
+            title="Signaler un problème"
+            description={[media.title, ...summaryMeta(media)].join(' · ')}
+          />
           <ReportForm key={session} media={media} onClose={() => setOpen(false)} />
         </DialogContent>
       </Dialog>

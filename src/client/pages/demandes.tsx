@@ -1,3 +1,4 @@
+import { plural } from '@shared/text.ts';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -17,7 +18,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { plural } from '@/lib/catalogue';
+import { titleLink } from '@/lib/catalogue';
 import { errorMessage } from '@/lib/http';
 import { useMediaServerName } from '@/lib/media-server';
 import {
@@ -118,8 +119,7 @@ function RequestRow({ request }: { request: RequestView }) {
       <div className={rowGrid}>
         <div className="min-w-0">
           <Link
-            to="/titre/$type/$id"
-            params={{ type: request.type, id: String(request.tmdbId) }}
+            {...titleLink(request)}
             className="block truncate font-semibold outline-none hover:underline focus-visible:underline"
           >
             {title}

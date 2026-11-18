@@ -27,6 +27,16 @@ export function parseRequest<T>(schema: z.ZodType<T>, input: unknown): T {
   return parsed.data;
 }
 
+/** Un échec du service testé devient une 422 avec son message lisible (aussi pour les serveurs Radarr/Sonarr). */
+export async function asTestResult<T>(test: () => Promise<T>): Promise<T> {
+  try {
+    return await test();
+  } catch (error) {
+    if (error instanceof IntegrationError) throw new HttpError(422, error.message);
+    throw error;
+  }
+}
+
 /** Un service externe n'a pas encore ses réglages (assistant de configuration non terminé). */
 export class NotConfiguredError extends Error {
   constructor(service: string) {

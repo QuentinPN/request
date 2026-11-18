@@ -1,3 +1,4 @@
+import { plural } from '@shared/text.ts';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Upload, X } from 'lucide-react';
 import { useState } from 'react';
@@ -6,7 +7,6 @@ import { Notice } from '@/components/notice';
 import { Page } from '@/components/page';
 import { Button } from '@/components/ui/button';
 import { ImportDialog } from '@/components/watchlist/import-dialog';
-import { plural } from '@/lib/catalogue';
 import { errorMessage } from '@/lib/http';
 import { useSetInWatchlist, watchlistQuery } from '@/lib/watchlist';
 import type { MediaSummary } from '../../shared/media.ts';

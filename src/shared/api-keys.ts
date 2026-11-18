@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { settingsPathOf } from './settings-path.ts';
 
 /** En-tête d'authentification des clés d'API publiques (sans cookie, donc sans CSRF). */
 export const API_KEY_HEADER = 'x-api-key';
 
 /** Gestion des clés (propriétaire seulement, par session : une clé d'API ne peut pas en créer ni en révoquer). */
-export const API_KEYS_PATH = '/api/settings/api-keys';
+export const API_KEYS_PATH = settingsPathOf('api-keys');
 /** Adresse d'une clé ; `':id'` donne le motif de la route. */
 export const apiKeyPath = (id: number | ':id') => `${API_KEYS_PATH}/${id}`;
 

@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { normalizeUrl } from '../../shared/settings.ts';
 
 /** Nature de l'échec ; l'interface s'appuie dessus (le message est déjà lisible, en français). */
 export type IntegrationErrorKind = 'unreachable' | 'timeout' | 'unauthorized' | 'not_found' | 'bad_response' | 'http';
@@ -82,7 +83,7 @@ export function redactUrl(raw: string | URL): string {
 }
 
 function buildUrl(baseUrl: string, path: string, query: Query = {}): URL {
-  const url = new URL(`${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`);
+  const url = new URL(`${normalizeUrl(baseUrl)}/${path.replace(/^\/+/, '')}`);
   for (const [name, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(name, String(value));
   return url;
 }

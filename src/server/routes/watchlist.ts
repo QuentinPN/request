@@ -14,11 +14,10 @@ import {
   type WatchlistImportResult,
   type WatchlistPage,
 } from '../../shared/watchlist.ts';
-import { IntegrationError } from '../integrations/http.ts';
 import { testTrakt } from '../integrations/trakt.ts';
-import { HttpError, parseRequest } from '../lib/api-errors.ts';
-import { createRateLimiter } from '../lib/rate-limit.ts';
-import { requireCapability, viewerOf } from '../plugins/auth.ts';
+import { asTestResult, HttpError, parseRequest } from '../lib/api-errors.ts';
+import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
+import { ownerOnly, viewerOf } from '../plugins/auth.ts';
 import { getSetting, maskSetting, setSetting, withStoredSecrets } from '../services/settings.ts';
 import { createWatchlist } from '../services/watchlist.ts';
 import { createWatchlistImport } from '../services/watchlist-import.ts';
@@ -36,7 +35,6 @@ export function watchlistRoutes(app: FastifyInstance, upstreams: { traktUrl?: st
     tmdb: app.tmdb,
     ...(upstreams.traktUrl && { traktUrl: upstreams.traktUrl }),
   });
-  const ownerOnly = { preHandler: requireCapability('isOwner') };
   const userOf = (req: FastifyRequest) => viewerOf(req).user.id;
   // Par instance et par membre, aperçus compris : chaque import interroge Trakt ou TMDB.
   const importLimiter = createRateLimiter(IMPORT_LIMIT);
@@ -44,7 +42,7 @@ export function watchlistRoutes(app: FastifyInstance, upstreams: { traktUrl?: st
     preHandler: async (req: FastifyRequest, reply: FastifyReply) => {
       const blocked = importLimiter.hit(userOf(req));
       if (!blocked) return;
-      reply.header('retry-after', Math.ceil(blocked.retryAfterMs / 1000));
+      setRetryAfter(reply, blocked);
       throw new HttpError(429, 'Trop d’imports, réessayez dans quelques minutes');
     },
   };
@@ -92,12 +90,7 @@ export function watchlistRoutes(app: FastifyInstance, upstreams: { traktUrl?: st
   app.put(TRAKT_SETTINGS_PATH, ownerOnly, async (req): Promise<MaskedSetting<'trakt'>> => {
     const input = withStoredSecrets('trakt', req.body, stored());
     const value = parseRequest(settingSchemas.trakt, input);
-    try {
-      await testTrakt({ ...value, ...(upstreams.traktUrl && { baseUrl: upstreams.traktUrl }) });
-    } catch (error) {
-      if (error instanceof IntegrationError) throw new HttpError(422, error.message);
-      throw error;
-    }
+    await asTestResult(() => testTrakt({ ...value, ...(upstreams.traktUrl && { baseUrl: upstreams.traktUrl }) }));
     return maskSetting('trakt', setSetting(db, cryptoKey, 'trakt', value));
   });
 }

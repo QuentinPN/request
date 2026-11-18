@@ -10,6 +10,15 @@ export const CSRF_VALUE = '1';
 /** À joindre à chaque `fetch` d'écriture du client. */
 export const CSRF_HEADERS: Readonly<Record<string, string>> = { [CSRF_HEADER]: CSRF_VALUE };
 
+export const LOGIN_PATH = '/api/auth/login';
+export const LOGOUT_PATH = '/api/auth/logout';
+export const VIEWER_PATH = '/api/auth/me';
+
+export const USERS_PATH = '/api/users';
+export const USERS_IMPORT_PATH = `${USERS_PATH}/import`;
+/** Un membre (id déjà encodé pour une adresse), ou sa photo relayée. */
+export const userPath = (id: string, part?: 'avatar') => `${USERS_PATH}/${id}${part ? `/${part}` : ''}`;
+
 export const loginSchema = z.object({
   username: z.string().trim().min(1, 'Identifiant requis'),
   // Emby accepte les comptes sans mot de passe.

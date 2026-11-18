@@ -12,8 +12,8 @@ import type { ArrTestResult } from '../../shared/setup.ts';
 import type { ArrConfig } from '../integrations/arr.ts';
 import { testRadarr } from '../integrations/radarr.ts';
 import { testSonarr } from '../integrations/sonarr.ts';
-import { HttpError, parseRequest } from '../lib/api-errors.ts';
-import { requireCapability } from '../plugins/auth.ts';
+import { asTestResult, HttpError, parseRequest } from '../lib/api-errors.ts';
+import { ownerOnly } from '../plugins/auth.ts';
 import {
   deleteArrServer,
   getArrServer,
@@ -22,7 +22,6 @@ import {
   saveArrServer,
 } from '../services/arr-servers.ts';
 import { withStoredFields } from '../services/settings.ts';
-import { asTestResult } from './setup.ts';
 
 const testers: Record<ArrKind, (config: ArrConfig) => Promise<ArrTestResult>> = {
   radarr: testRadarr,
@@ -35,7 +34,6 @@ const testers: Record<ArrKind, (config: ArrConfig) => Promise<ArrTestResult>> = 
  * modification refont le test de connexion : un serveur injoignable n'est jamais enregistré.
  */
 export function arrServersRoutes(app: FastifyInstance) {
-  const ownerOnly = { preHandler: requireCapability('isOwner') };
   const idOf = (params: unknown) => parseRequest(arrServerIdParamsSchema, params).id;
   const stored = (id: number | undefined) => {
     if (id === undefined) return null;

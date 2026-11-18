@@ -19,8 +19,11 @@ const AUTHORIZATION = 'Emby Client="Request", Device="Server", DeviceId="request
  */
 export type EmbyFamilyClient = ReturnType<typeof createClient>;
 
+/** En-tête d'authentification d'Emby : la clé d'API. */
+const embyHeaders = (config: EmbyConfig) => ({ 'X-Emby-Token': config.apiKey });
+
 const embyClient = (config: EmbyConfig): EmbyFamilyClient =>
-  createClient({ service: SERVICE, baseUrl: config.url, headers: { 'X-Emby-Token': config.apiKey } });
+  createClient({ service: SERVICE, baseUrl: config.url, headers: embyHeaders(config) });
 
 // --- Schémas (tolérants : champs en trop ignorés, champs facultatifs absents acceptés) ---
 
@@ -419,5 +422,5 @@ export const getEmbySeasonAvailability = (
 /** Relais d'une photo de membre : adresse complète et en-tête de la clé (le navigateur ne voit ni l'une ni l'autre). */
 export const embyAvatarRequest = (config: EmbyConfig, path: string) => ({
   url: `${config.url}${path}`,
-  headers: { 'X-Emby-Token': config.apiKey },
+  headers: embyHeaders(config),
 });

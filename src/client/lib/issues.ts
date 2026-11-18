@@ -1,13 +1,16 @@
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import type {
-  IssueCommentInput,
-  IssueCounts,
-  IssueCreateInput,
-  IssueDetail,
-  IssuePage,
-  IssueStatus,
-  IssueView,
+import {
+  ISSUE_COUNTS_PATH,
+  ISSUES_PATH,
+  type IssueCommentInput,
+  type IssueCounts,
+  type IssueCreateInput,
+  type IssueDetail,
+  type IssuePage,
+  type IssueStatus,
+  type IssueView,
+  issuePath,
 } from '../../shared/issues.ts';
 import type { MediaDetails } from '../../shared/media.ts';
 import type { MediaStatus } from '../../shared/status.ts';
@@ -30,27 +33,27 @@ export const issueKeys = {
 export const issueListQuery = (status: IssueStatus, page = 1) =>
   queryOptions({
     queryKey: issueKeys.list(status, page),
-    queryFn: ({ signal }) => apiGet<IssuePage>(`/api/issues?status=${status}&page=${page}`, undefined, signal),
+    queryFn: ({ signal }) => apiGet<IssuePage>(`${ISSUES_PATH}?status=${status}&page=${page}`, undefined, signal),
   });
 
 export const issueDetailQuery = (id: number) =>
   queryOptions({
     queryKey: issueKeys.detail(id),
-    queryFn: ({ signal }) => apiGet<IssueDetail>(`/api/issues/${id}`, undefined, signal),
+    queryFn: ({ signal }) => apiGet<IssueDetail>(issuePath(id), undefined, signal),
   });
 
 /** Pastille de la navigation : relue au retour sur l'onglet. */
 export const issueCountsQuery = () =>
   queryOptions({
     queryKey: issueKeys.counts,
-    queryFn: ({ signal }) => apiGet<IssueCounts>('/api/issues/counts', undefined, signal),
+    queryFn: ({ signal }) => apiGet<IssueCounts>(ISSUE_COUNTS_PATH, undefined, signal),
     refetchOnWindowFocus: true,
   });
 
 export function useCreateIssue() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: IssueCreateInput) => apiSend<IssueDetail>('POST', '/api/issues', input),
+    mutationFn: (input: IssueCreateInput) => apiSend<IssueDetail>('POST', ISSUES_PATH, input),
     onSuccess: () => client.invalidateQueries({ queryKey: issueKeys.all }),
   });
 }
@@ -69,12 +72,12 @@ function useIssueAction<TVariables>(send: (variables: TVariables) => Promise<Iss
 
 export const useIssueComment = () =>
   useIssueAction(({ id, ...input }: { id: number } & IssueCommentInput) =>
-    apiSend<IssueDetail>('POST', `/api/issues/${id}/comments`, input),
+    apiSend<IssueDetail>('POST', issuePath(id, 'comments'), input),
   );
 export const useResolveIssue = () =>
-  useIssueAction((id: number) => apiSend<IssueDetail>('POST', `/api/issues/${id}/resolve`));
+  useIssueAction((id: number) => apiSend<IssueDetail>('POST', issuePath(id, 'resolve')));
 export const useReopenIssue = () =>
-  useIssueAction((id: number) => apiSend<IssueDetail>('POST', `/api/issues/${id}/reopen`));
+  useIssueAction((id: number) => apiSend<IssueDetail>('POST', issuePath(id, 'reopen')));
 
 export const issueStatusTabs = ['open', 'resolved'] as const satisfies readonly IssueStatus[];
 export const issueTabLabel: Record<IssueStatus, string> = { open: 'Ouverts', resolved: 'Résolus' };

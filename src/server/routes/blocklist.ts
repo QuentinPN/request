@@ -15,7 +15,7 @@ import {
 import { DISCOVER_SETTINGS_PATH, typeIdParamsSchema } from '../../shared/catalogue.ts';
 import { type Setting, settingSchemas } from '../../shared/settings.ts';
 import { parseRequest } from '../lib/api-errors.ts';
-import { requireCapability, viewerOf } from '../plugins/auth.ts';
+import { ownerOnly, requireCapability, viewerOf } from '../plugins/auth.ts';
 import { createBlocklist } from '../services/blocklist.ts';
 import { getSetting, setSetting } from '../services/settings.ts';
 
@@ -29,7 +29,6 @@ export function blocklistRoutes(app: FastifyInstance) {
   const { db, cryptoKey } = app.data;
   const service = createBlocklist(app.data, { tmdb: app.tmdb });
   const canManage = { preHandler: requireCapability('canManageBlocklist') };
-  const ownerOnly = { preHandler: requireCapability('isOwner') };
 
   app.get(BLOCKLIST_PATH, canManage, async (): Promise<Blocklist> => service.list());
 

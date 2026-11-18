@@ -44,6 +44,7 @@ import {
   type RequestStatus,
   requestStatuses,
 } from '../../shared/status.ts';
+import { plural } from '../../shared/text.ts';
 import { inLiterals } from '../db/checks.ts';
 import type { Data, Db } from '../db/index.ts';
 import { arrServers, media, requestEvents, requestSeasons, requests, users } from '../db/schema.ts';
@@ -89,9 +90,8 @@ const QUOTA_UNIT: Record<QuotaKind, [one: string, many: string]> = {
 /** Refusées et annulées ne comptent pas dans le quota. */
 const UNCOUNTED: RequestStatus[] = ['declined', 'cancelled'];
 
-const plural = (n: number, [one, many]: [string, string]) => `${n} ${n > 1 ? many : one}`;
 export const quotaMessage = (kind: QuotaKind, rule: QuotaRule) =>
-  `Quota atteint : ${plural(rule.limit, QUOTA_UNIT[kind])} sur ${plural(rule.days, ['jour', 'jours'])}`;
+  `Quota atteint : ${plural(rule.limit, ...QUOTA_UNIT[kind])} sur ${plural(rule.days, 'jour', 'jours')}`;
 
 /**
  * Films (demandes, à leur date) ou saisons (saisons demandées, à leur date d'ajout) d'un membre depuis `since`, hors refusées, annulées et demandes
@@ -197,6 +197,17 @@ export const ACTIVE_CONFLICT = {
 };
 
 export const toPerson = (user: User): RequestPerson => ({ id: user.id, name: user.name, avatarUrl: avatarUrlOf(user) });
+
+/** Membres de ces ids, prêts à afficher (`toPerson`), lus en une requête. */
+export const peopleByIds = (db: Db, ids: string[]): Map<string, RequestPerson> =>
+  new Map(
+    db
+      .select()
+      .from(users)
+      .where(inArray(users.id, ids))
+      .all()
+      .map((u) => [u.id, toPerson(u)]),
+  );
 
 function addEvent(
   tx: Writer,
@@ -476,14 +487,7 @@ export function createRequests(
     if (rows.length === 0) return [];
     const ids = rows.map((r) => r.id);
     const userIds = [...new Set(rows.flatMap((r) => [r.userId, r.decidedBy, r.createdBy].filter((id) => id !== null)))];
-    const people = new Map(
-      db
-        .select()
-        .from(users)
-        .where(inArray(users.id, userIds))
-        .all()
-        .map((u) => [u.id, toPerson(u)]),
-    );
+    const people = peopleByIds(db, userIds);
     const seasonsOf = seasonsByRequest(ids);
     const failedIds = rows.filter((r) => r.status === 'failed').map((r) => r.id);
     const failures = new Map<number, string | null>();

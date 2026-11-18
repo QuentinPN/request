@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BellRing } from 'lucide-react';
 import { type FormEvent, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
-import { ErrorState } from '@/components/states';
+import { ErrorState, Loading } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { CheckboxField, FieldHint, Input, Label } from '@/components/ui/field';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -170,11 +170,10 @@ export function NotificationSettings() {
         Notifications
       </h2>
       {query.isPending ? (
-        <div role="status" className="space-y-4">
-          <span className="sr-only">Chargement…</span>
+        <Loading className="space-y-4">
           <Skeleton className="h-12 w-full rounded-(--r-button)" />
           <Skeleton className="h-12 w-full rounded-(--r-button)" />
-        </div>
+        </Loading>
       ) : query.isError ? (
         <ErrorState message="Vos préférences n’ont pas pu se charger." onRetry={() => void query.refetch()} />
       ) : (

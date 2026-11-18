@@ -6,6 +6,7 @@ import { issues, media, requests } from '../db/schema.ts';
 import type { ArrWebhookEvent } from '../integrations/arr.ts';
 import { parseRadarrWebhook } from '../integrations/radarr.ts';
 import { parseSonarrWebhook } from '../integrations/sonarr.ts';
+import { startPeriodic } from '../lib/periodic.ts';
 import { one } from '../lib/sql.ts';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '../lib/time.ts';
 import { listArrServers } from './arr-servers.ts';
@@ -157,7 +158,6 @@ export type SyncService = ReturnType<typeof createSync>;
  * de fermer la base).
  */
 export function startScheduler(sync: SyncService, db: Db, now: () => number = Date.now) {
-  let current: Promise<void> | null = null;
   const isOlderThan = (at: Date | null, ms: number) => !at || now() - at.getTime() >= ms;
   const tick = async () => {
     await sync.lightScan();
@@ -167,23 +167,8 @@ export function startScheduler(sync: SyncService, db: Db, now: () => number = Da
     )
       await sync.fullScan();
   };
-  const run = () => {
-    if (current) return;
-    current = tick()
-      .catch((error: unknown) => console.error('Balayage planifié', error))
-      .finally(() => {
-        current = null;
-      });
-  };
-  const first = setTimeout(run, FIRST_TICK_DELAY_MS);
-  const timer = setInterval(run, LIGHT_SCAN_INTERVAL_MS);
-  first.unref();
-  timer.unref();
-  return {
-    async stop() {
-      clearTimeout(first);
-      clearInterval(timer);
-      await current;
-    },
-  };
+  return startPeriodic('Balayage planifié', tick, {
+    firstDelayMs: FIRST_TICK_DELAY_MS,
+    intervalMs: LIGHT_SCAN_INTERVAL_MS,
+  });
 }

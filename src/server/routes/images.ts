@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { imageParamsSchema } from '../../shared/catalogue.ts';
+import { IMAGE_BASE_URL } from '../../shared/media.ts';
 import { parseRequest } from '../lib/api-errors.ts';
 import { type ImageCache, imageContentType } from '../services/images.ts';
 
@@ -9,7 +10,7 @@ const THIRTY_DAYS_S = 30 * 24 * 60 * 60;
 export const imageRoutes =
   (images: ImageCache): FastifyPluginAsync =>
   async (app) => {
-    app.get('/api/images/:size/:file', async (req, reply) => {
+    app.get(`${IMAGE_BASE_URL}/:size/:file`, async (req, reply) => {
       const { size, file } = parseRequest(imageParamsSchema, req.params);
       const body = await images.get(size, file);
       if (!body) return reply.code(404).send({ error: 'Image introuvable' });

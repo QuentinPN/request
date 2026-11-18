@@ -4,11 +4,9 @@ import { keyOf } from '../../shared/media.ts';
 import { WATCHLIST_PAGE_SIZE, type WatchlistEntry, type WatchlistPage } from '../../shared/watchlist.ts';
 import type { Db } from '../db/index.ts';
 import { watchlist } from '../db/schema.ts';
-import { IntegrationError } from '../integrations/http.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
-import { HttpError } from '../lib/api-errors.ts';
 import type { AvailabilityService } from './availability.ts';
-import { loadSummaries } from './tmdb.ts';
+import { loadSummaries, orTitleNotFound } from './tmdb.ts';
 
 type Row = typeof watchlist.$inferSelect;
 
@@ -30,13 +28,7 @@ const asSummary = (row: Row, fresh: MediaSummary | undefined): MediaSummary =>
 export function createWatchlist(db: Db, deps: { tmdb: () => TmdbClient; availability: AvailabilityService }) {
   /** Ajoute un titre à la liste du membre (idempotent) ; titre inconnu de TMDB → 404, et rien n'est écrit. */
   async function add(userId: string, type: MediaType, tmdbId: number): Promise<void> {
-    let summary: MediaSummary;
-    try {
-      summary = await deps.tmdb().summary(type, tmdbId);
-    } catch (err) {
-      if (err instanceof IntegrationError && err.kind === 'not_found') throw new HttpError(404, 'Titre introuvable');
-      throw err;
-    }
+    const summary = await orTitleNotFound(() => deps.tmdb().summary(type, tmdbId));
     db.insert(watchlist)
       .values({
         userId,

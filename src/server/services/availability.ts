@@ -8,6 +8,7 @@ import {
   type Season,
 } from '../../shared/media.ts';
 import type { WatchLink } from '../../shared/media-server.ts';
+import { isoDay } from '../../shared/requests.ts';
 import type { MediaServerKind } from '../../shared/settings.ts';
 import type {
   Availability,
@@ -585,7 +586,7 @@ export function createAvailability(
         : [];
     if (!embySeasons) return undefined;
 
-    const today = new Date(now()).toISOString().slice(0, 10);
+    const today = isoDay(now());
     return keys.map((key): Update => {
       const tvdbId = tvdb.get(key.tmdbId);
       const hit = findSeries(normal, key.tmdbId, tvdbId);

@@ -37,6 +37,10 @@ export const shouldRetry = (failureCount: number, error: unknown) =>
   failureCount < 1 &&
   !(error instanceof ApiError && ((error.status >= 400 && error.status < 500) || error.status === 503));
 
+/** Page suivante d'une liste « Charger plus » (`getNextPageParam`), `undefined` après la dernière. */
+export const nextPageParam = (last: { page: number; totalPages: number }) =>
+  last.page < last.totalPages ? last.page + 1 : undefined;
+
 async function request<T>(
   method: string,
   path: string,

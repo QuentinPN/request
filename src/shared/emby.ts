@@ -1,3 +1,5 @@
+import { normalizeUrl } from './settings.ts';
+
 /** Adresse publique du serveur et son id : ce que réclament les liens d'Emby et de Jellyfin. */
 export interface WebLinkTarget {
   publicUrl: string;
@@ -5,7 +7,7 @@ export interface WebLinkTarget {
 }
 
 const webLink = ({ publicUrl, serverId }: WebLinkTarget, page: 'item' | 'details', itemId: string) =>
-  `${publicUrl.replace(/\/+$/, '')}/web/index.html#!/${page}?id=${encodeURIComponent(itemId)}&serverId=${encodeURIComponent(serverId)}`;
+  `${normalizeUrl(publicUrl)}/web/index.html#!/${page}?id=${encodeURIComponent(itemId)}&serverId=${encodeURIComponent(serverId)}`;
 
 /**
  * Lien « Regarder dans Emby » vers l'interface web (format du forum Emby, non documenté officiellement : `serverId`

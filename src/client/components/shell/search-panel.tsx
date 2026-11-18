@@ -4,7 +4,7 @@ import { cn } from 'cn';
 import { Film, Search, User } from 'lucide-react';
 import { type KeyboardEvent, type RefObject, useEffect, useId, useState } from 'react';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { mediaKey, searchQuery, summaryMeta } from '@/lib/catalogue';
+import { mediaKey, searchQuery, summaryMeta, titleLink } from '@/lib/catalogue';
 import { imageUrl, type MediaSummary, type PersonSummary } from '../../../shared/media.ts';
 import { StatusPill } from '../media/status-pill.tsx';
 import { QueryState } from '../query-state.tsx';
@@ -83,7 +83,7 @@ export function SearchPanel({
 
   const open = (item: MediaSummary) => {
     onNavigate();
-    void navigate({ to: '/titre/$type/$id', params: { type: item.type, id: String(item.tmdbId) } });
+    void navigate(titleLink(item));
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -143,8 +143,7 @@ export function SearchPanel({
                           role="option"
                           aria-selected={i === active}
                           tabIndex={-1}
-                          to="/titre/$type/$id"
-                          params={{ type: item.type, id: String(item.tmdbId) }}
+                          {...titleLink(item)}
                           onClick={onNavigate}
                           onMouseMove={() => setActive(i)}
                           className="flex items-center gap-3 rounded-xl px-3 py-2 outline-none aria-selected:bg-accent"
