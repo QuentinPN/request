@@ -125,6 +125,15 @@ describe('messages Discord des évènements', () => {
     const request = await requestMovie(await as('member'));
     await owner.post(`/api/requests/${request.id}/approve`);
     radarrState.movies.push({ id: 42, tmdbId: 603, hasFile: true });
+    // Nom du serveur multimédia lu à l'envoi (un Jellyfin vide : Radarr suffit au statut).
+    const jellyfin = await startServer({ 'GET /Items': { Items: [], TotalRecordCount: 0 } });
+    setSetting(data.db, data.cryptoKey, 'mediaServer', {
+      kind: 'jellyfin',
+      url: jellyfin.url,
+      apiKey: 'k',
+      libraryIds: [],
+      publicUrl: null,
+    });
     await createSync(data, { availability: app.availability }).handleWebhook('radarr', {
       eventType: 'Download',
       movie: { tmdbId: 603 },
@@ -132,7 +141,7 @@ describe('messages Discord des évènements', () => {
 
     // Les envois sont simultanés : l'ordre d'arrivée n'est pas garanti.
     const titles = (await sent()).map((m) => m.message.embeds[0]?.title);
-    expect(titles.sort()).toEqual(['Demande approuvée', 'Disponible dans Emby', 'Nouvelle demande à approuver']);
+    expect(titles.sort()).toEqual(['Demande approuvée', 'Disponible dans Jellyfin', 'Nouvelle demande à approuver']);
   });
 
   it('refusée avec son motif, puis échec d’envoi avec sa raison', async () => {

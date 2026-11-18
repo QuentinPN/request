@@ -37,7 +37,7 @@ export type SectionFrameProps<S extends SectionId = SectionId> = {
   section: S;
   open: boolean;
   onToggle: () => void;
-  /** Section inaccessible pour l'instant (amorçage : Emby seul tant qu'aucun propriétaire n'existe). */
+  /** Section inaccessible pour l'instant (amorçage : serveur multimédia seul tant qu'aucun propriétaire n'existe). */
   disabled?: boolean;
   /** Libellé de « Testé » pour une section sans test (règles). */
   doneLabel?: string;

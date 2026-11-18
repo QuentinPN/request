@@ -6,8 +6,8 @@ import type { SettingSection } from '@shared/setup.ts';
 import { TRAKT_SETTINGS_PATH } from '@shared/watchlist.ts';
 import { WEBHOOK_SETTINGS_PATH, type WebhookSettings } from '@shared/webhooks.ts';
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
-import { embyLinkQuery } from '@/lib/emby';
 import { ApiError, apiGet, apiSend } from '@/lib/http';
+import { watchLinkQuery } from '@/lib/media-server';
 import { setupStateQuery } from '@/lib/session';
 
 /** Réglage enregistré (secrets masqués), `null` s'il ne l'a jamais été. */
@@ -56,8 +56,8 @@ export function useSaveSetting<K extends SettingSection>(key: K, onSaved: () => 
     onSuccess: async (saved) => {
       queryClient.setQueryData(settingQuery(key).queryKey, saved);
       await queryClient.invalidateQueries({ queryKey: setupStateQuery.queryKey });
-      // L'adresse publique d'Emby se lit dans le lien « Regarder dans Emby » des affiches et des fiches.
-      if (key === 'emby') await queryClient.invalidateQueries({ queryKey: embyLinkQuery.queryKey });
+      // Type et adresse publique du serveur multimédia : le lien « Regarder dans… » des affiches et des fiches.
+      if (key === 'mediaServer') await queryClient.invalidateQueries({ queryKey: watchLinkQuery.queryKey });
       onSaved();
     },
   });

@@ -3,6 +3,7 @@ import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { API_KEY_HEADER } from '../../shared/api-keys.ts';
 import { CSRF_HEADER, CSRF_VALUE } from '../../shared/auth.ts';
+import { PLEX_PIN_CHECK_PATH, PLEX_PIN_PATH } from '../../shared/media-server.ts';
 import { type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
 import { webhookPath, webhookServices } from '../../shared/webhooks.ts';
 import { HttpError } from '../lib/api-errors.ts';
@@ -45,6 +46,8 @@ const COOKIE_OPTIONS = {
 const PUBLIC_ROUTES = new Set([
   'GET /api/health',
   'POST /api/auth/login',
+  `POST ${PLEX_PIN_PATH}`,
+  `POST ${PLEX_PIN_CHECK_PATH}`,
   'POST /api/auth/logout',
   'GET /api/setup/state',
 ]);
@@ -53,7 +56,7 @@ const PUBLIC_ROUTES = new Set([
  * sans session ni en-tête CSRF (Radarr et Sonarr ne peuvent envoyer ni l'un ni l'autre).
  */
 const WEBHOOK_ROUTES = new Set(webhookServices.map((service) => `POST ${webhookPath(service)}`));
-/** Amorçage (PRODUCT §1) : tant qu'aucun propriétaire n'existe, tester et enregistrer Emby est ouvert à tous. */
+/** Amorçage (PRODUCT §1) : tant qu'aucun propriétaire n'existe, tester et enregistrer le serveur multimédia est ouvert à tous. */
 const BOOTSTRAP_ROUTES = new Set(['POST /api/setup/:service/test', 'PUT /api/settings/:service']);
 
 const routeKey = (req: FastifyRequest) => `${req.method === 'HEAD' ? 'GET' : req.method} ${req.routeOptions.url ?? ''}`;
@@ -61,7 +64,7 @@ const routeKey = (req: FastifyRequest) => `${req.method === 'HEAD' ? 'GET' : req
 function isBootstrap(req: FastifyRequest): boolean {
   return (
     BOOTSTRAP_ROUTES.has(routeKey(req)) &&
-    (req.params as { service?: string }).service === 'emby' &&
+    (req.params as { service?: string }).service === 'mediaServer' &&
     !hasOwner(req.server.data.db)
   );
 }

@@ -1,7 +1,8 @@
 import { cn } from 'cn';
 import { Film } from 'lucide-react';
 import { imageUrl } from '../../../shared/media.ts';
-import { type RequestProgress, requestSteps, type StepState } from '../../lib/requests.ts';
+import { useMediaServerName } from '../../lib/media-server.ts';
+import { type RequestProgress, requestStepsOf, type StepState } from '../../lib/requests.ts';
 import { StatusPill } from '../media/status-pill.tsx';
 
 const segment: Record<StepState, string> = {
@@ -31,9 +32,10 @@ export function RequestStepBar({
   labels?: boolean;
   className?: string;
 }) {
+  const serverName = useMediaServerName();
   return (
     <ol aria-label="Progression de la demande" className={cn('grid grid-cols-4 gap-1', className)}>
-      {requestSteps.map((name, i) => {
+      {requestStepsOf(serverName).map((name, i) => {
         const state = progress.steps[i] ?? 'todo';
         const partial = state === 'current' && i === 2 && progress.percent !== undefined;
         return (

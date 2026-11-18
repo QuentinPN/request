@@ -9,9 +9,8 @@ import {
   settingSchemas,
 } from '../../shared/settings.ts';
 import { decrypt, encrypt } from '../crypto.ts';
-import type { Data, Db } from '../db/index.ts';
+import type { Db } from '../db/index.ts';
 import { settings } from '../db/schema.ts';
-import { HttpError } from '../lib/api-errors.ts';
 
 type Fields = Record<string, unknown>;
 
@@ -103,13 +102,6 @@ export function withStoredFields(
   );
   if (moved) return input;
   return mapEach(fields, input as Fields, (v, field) => (v === undefined || v === '' ? (stored as Fields)[field] : v));
-}
-
-/** Réglages d'Emby, indispensables à la connexion des membres. */
-export function requireEmby({ db, cryptoKey }: Data): Setting<'emby'> {
-  const emby = getSetting(db, cryptoKey, 'emby');
-  if (!emby) throw new HttpError(409, "Emby n'est pas encore configuré");
-  return emby;
 }
 
 /**

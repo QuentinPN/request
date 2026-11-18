@@ -59,6 +59,7 @@ import type { SessionViewer } from '../plugins/auth.ts';
 import { hasArrServer } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
 import { assertNotBlocked, assertTitleNotBlocked } from './blocklist.ts';
+import { mediaServerName } from './media-server.ts';
 import { notifyRequestEvent, notifyRequestedOnBehalf } from './notifications.ts';
 import { assertSendChoice, sendServer } from './send-options.ts';
 import { getSetting } from './settings.ts';
@@ -72,8 +73,9 @@ type Writer = Pick<Db, 'select' | 'insert' | 'update'>;
 /** Membre à qui une demande appartient, avec ses droits (quota, approbation automatique). */
 type Owner = Pick<SessionViewer, 'user' | 'capabilities'>;
 
-const ALREADY_AVAILABLE = 'Ce titre est déjà disponible dans Emby';
-const alreadyAvailable = (is4k: boolean) => (is4k ? 'Ce titre est déjà disponible en 4K' : ALREADY_AVAILABLE);
+/** « Déjà disponible » : en 4K, ou dans le serveur multimédia choisi (nom lu à l'appel). */
+const alreadyAvailable = (is4k: boolean, data: Pick<Data, 'db' | 'cryptoKey'>) =>
+  is4k ? 'Ce titre est déjà disponible en 4K' : `Ce titre est déjà disponible dans ${mediaServerName(data)}`;
 const NOT_FOUND = 'Demande introuvable';
 
 // --- Quotas ---
@@ -258,7 +260,13 @@ const statusIn = (item: Pick<MediaDetails | Season, 'status' | 'fourK'>, is4k: b
  * disponibles dans cette qualité. Une saison inconnue de TMDB, les spéciaux ou une saison pas encore diffusée → 400 ;
  * rien à demander → 409.
  */
-function wantedSeasons(details: MediaDetails, choice: number[] | 'all', today: string, is4k: boolean): number[] {
+function wantedSeasons(
+  details: MediaDetails,
+  choice: number[] | 'all',
+  today: string,
+  is4k: boolean,
+  data: Pick<Data, 'db' | 'cryptoKey'>,
+): number[] {
   const known = new Set(details.seasons.map((s) => s.seasonNumber));
   if (choice !== 'all' && choice.some((n) => !known.has(n))) throw new HttpError(400, 'Saison inconnue');
   const requestable = details.seasons.filter((s) => s.seasonNumber > 0 && isAiredSeason(s, today));
@@ -267,7 +275,7 @@ function wantedSeasons(details: MediaDetails, choice: number[] | 'all', today: s
     throw new HttpError(400, 'Les saisons spéciales et pas encore diffusées ne peuvent pas être demandées');
   const missing = chosen.filter((s) => statusIn(s, is4k) !== 'available').map((s) => s.seasonNumber);
   if (missing.length === 0)
-    throw new HttpError(409, chosen.length === 0 ? 'Aucune saison diffusée à demander' : alreadyAvailable(is4k));
+    throw new HttpError(409, chosen.length === 0 ? 'Aucune saison diffusée à demander' : alreadyAvailable(is4k, data));
   return missing.sort((a, b) => a - b);
 }
 
@@ -735,9 +743,9 @@ export function createRequests(
     assertNotBlocked(data, details);
     let wanted: number[] = [];
     if (input.type === 'movie') {
-      if (statusIn(details, is4k) === 'available') throw new HttpError(409, alreadyAvailable(is4k));
+      if (statusIn(details, is4k) === 'available') throw new HttpError(409, alreadyAvailable(is4k, data));
     } else {
-      wanted = wantedSeasons(details, input.seasons, isoDay(now()), is4k);
+      wanted = wantedSeasons(details, input.seasons, isoDay(now()), is4k, data);
     }
 
     const outcome = db.transaction(

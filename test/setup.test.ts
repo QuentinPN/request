@@ -37,7 +37,8 @@ describe('GET /api/setup/state', () => {
   it('décrit une installation neuve, puis complète', async () => {
     const app = await newApp();
     expect((await call(app, 'GET', '/api/setup/state')).json()).toEqual({
-      services: { emby: false, tmdb: false, radarr: false, sonarr: false, rules: false },
+      services: { mediaServer: false, tmdb: false, radarr: false, sonarr: false, rules: false },
+      mediaServerKind: null,
       hasOwner: false,
       complete: false,
     });
@@ -59,33 +60,48 @@ describe('amorçage', () => {
   it('Emby se teste et s’enregistre sans session tant qu’aucun propriétaire n’existe', async () => {
     const app = await newApp();
     const emby = await fakeEmby();
-    const test = await call(app, 'POST', '/api/setup/emby/test', { url: emby.url, apiKey: EMBY_KEY });
+    const test = await call(app, 'POST', '/api/setup/mediaServer/test', {
+      kind: 'emby',
+      url: emby.url,
+      apiKey: EMBY_KEY,
+    });
     expect(test.statusCode).toBe(200);
     expect(test.json()).toMatchObject({ serverName: 'Salon', version: '4.8.10.0' });
     expect(test.json().libraries).toContainEqual({ id: '10', name: 'Films', type: 'movies' });
 
-    const save = await call(app, 'PUT', '/api/settings/emby', { url: emby.url, apiKey: EMBY_KEY, libraryIds: ['10'] });
+    const save = await call(app, 'PUT', '/api/settings/mediaServer', {
+      kind: 'emby',
+      url: emby.url,
+      apiKey: EMBY_KEY,
+      libraryIds: ['10'],
+    });
     expect(save.statusCode).toBe(200);
-    expect(save.json()).toEqual({ url: emby.url, apiKey: { set: true }, libraryIds: ['10'], publicUrl: null });
+    expect(save.json()).toEqual({
+      kind: 'emby',
+      url: emby.url,
+      apiKey: { set: true },
+      libraryIds: ['10'],
+      publicUrl: null,
+    });
   });
 
   it('les autres services exigent une session même avant le propriétaire', async () => {
     const app = await newApp();
     expect((await call(app, 'POST', '/api/setup/radarr/test', { url: 'http://x', apiKey: 'k' })).statusCode).toBe(401);
     expect((await call(app, 'PUT', '/api/settings/rules', {})).statusCode).toBe(401);
-    expect((await call(app, 'GET', '/api/settings/emby')).statusCode).toBe(401);
+    expect((await call(app, 'GET', '/api/settings/mediaServer')).statusCode).toBe(401);
   });
 
   it('se ferme dès qu’un propriétaire existe : 401 sans session, 403 pour un membre', async () => {
     const app = await newApp();
     const emby = await fakeEmby();
-    const body = { url: emby.url, apiKey: EMBY_KEY };
+    const body = { kind: 'emby', url: emby.url, apiKey: EMBY_KEY };
     const owner = await loginAsOwner(app);
     const member = await loginAs(app, 'manager');
-    expect((await call(app, 'POST', '/api/setup/emby/test', body)).statusCode).toBe(401);
-    expect((await call(app, 'PUT', '/api/settings/emby', body)).statusCode).toBe(401);
-    expect((await call(app, 'POST', '/api/setup/emby/test', body, member.headers)).statusCode).toBe(403);
-    expect((await call(app, 'POST', '/api/setup/emby/test', body, owner.headers)).statusCode).toBe(200);
+    expect((await call(app, 'POST', '/api/setup/mediaServer/test', body)).statusCode).toBe(401);
+    expect((await call(app, 'PUT', '/api/settings/mediaServer', body)).statusCode).toBe(401);
+    expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, member.headers)).statusCode).toBe(403);
+    expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, owner.headers)).statusCode).toBe(200);
   });
 });
 
@@ -94,17 +110,17 @@ describe('adresse publique d’Emby', () => {
     const app = await newApp();
     const { headers } = await loginAsOwner(app);
     const emby = await fakeEmby();
-    const body = { url: emby.url, apiKey: EMBY_KEY, ...(publicUrl !== undefined && { publicUrl }) };
-    return { app, headers, res: await call(app, 'PUT', '/api/settings/emby', body, headers) };
+    const body = { kind: 'emby', url: emby.url, apiKey: EMBY_KEY, ...(publicUrl !== undefined && { publicUrl }) };
+    return { app, headers, res: await call(app, 'PUT', '/api/settings/mediaServer', body, headers) };
   };
 
   it('s’enregistre sans « / » final et se relit en clair (ce n’est pas un secret)', async () => {
     const { app, headers, res } = await put('https://tv.exemple.fr/emby/');
     expect(res.statusCode).toBe(200);
     expect(res.json().publicUrl).toBe('https://tv.exemple.fr/emby');
-    const read = await call(app, 'GET', '/api/settings/emby', undefined, headers);
+    const read = await call(app, 'GET', '/api/settings/mediaServer', undefined, headers);
     expect(read.json().publicUrl).toBe('https://tv.exemple.fr/emby');
-    expect(getSetting(app.data.db, app.data.cryptoKey, 'emby')?.publicUrl).toBe('https://tv.exemple.fr/emby');
+    expect(getSetting(app.data.db, app.data.cryptoKey, 'mediaServer')?.publicUrl).toBe('https://tv.exemple.fr/emby');
   });
 
   it('est facultative : absente ou nulle', async () => {
@@ -123,7 +139,13 @@ describe('POST /api/setup/:service/test', () => {
     const app = await newApp();
     const { headers } = await loginAsOwner(app);
     const emby = await fakeEmby();
-    const wrongKey = await call(app, 'POST', '/api/setup/emby/test', { url: emby.url, apiKey: 'faux' }, headers);
+    const wrongKey = await call(
+      app,
+      'POST',
+      '/api/setup/mediaServer/test',
+      { kind: 'emby', url: emby.url, apiKey: 'faux' },
+      headers,
+    );
     expect(wrongKey.statusCode).toBe(422);
     expect(wrongKey.json()).toEqual({ error: "Clé d'API refusée par Emby" });
   });
@@ -134,13 +156,25 @@ describe('POST /api/setup/:service/test', () => {
     const emby = await fakeEmby();
     setSetting(app.data.db, app.data.cryptoKey, 'emby', { url: emby.url, apiKey: EMBY_KEY });
 
-    const reused = await call(app, 'POST', '/api/setup/emby/test', { url: `${emby.url}/`, apiKey: '' }, headers);
+    const reused = await call(
+      app,
+      'POST',
+      '/api/setup/mediaServer/test',
+      { kind: 'emby', url: `${emby.url}/`, apiKey: '' },
+      headers,
+    );
     expect(reused.statusCode).toBe(200);
     expect(emby.requests.at(-1)?.headers['x-emby-token']).toBe(EMBY_KEY);
 
     // Autre adresse : la clé enregistrée n'est jamais envoyée ailleurs.
     const other = await fakeEmby();
-    const elsewhere = await call(app, 'POST', '/api/setup/emby/test', { url: other.url, apiKey: '' }, headers);
+    const elsewhere = await call(
+      app,
+      'POST',
+      '/api/setup/mediaServer/test',
+      { kind: 'emby', url: other.url, apiKey: '' },
+      headers,
+    );
     expect(elsewhere.statusCode).toBe(400);
     expect(other.requests).toHaveLength(0);
   });

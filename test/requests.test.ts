@@ -173,7 +173,7 @@ async function setup({
       post: (url, payload) => app.inject({ method: 'POST', url, headers, ...(payload && { payload }) }),
     };
   };
-  return { app, db, servers, as };
+  return { app, db, cryptoKey, servers, as };
 }
 
 const posted = (server: { requests: Array<{ method: string; path: string; body: unknown }> }, path: string) =>
@@ -263,12 +263,13 @@ describe('POST /api/requests', () => {
     const res = await (await as('member')).post('/api/requests', { type: 'movie', tmdbId: 603 });
 
     expect(res.statusCode).toBe(409);
-    expect(res.json()).toEqual({ error: 'Ce titre est déjà disponible dans Emby' });
+    // Aucun serveur multimédia configuré : nom générique.
+    expect(res.json()).toEqual({ error: 'Ce titre est déjà disponible dans le serveur multimédia' });
     expect(countRequests(db)).toBe(0);
   });
 
-  it('refuse une série dont les saisons demandées sont toutes disponibles (409)', async () => {
-    const { as } = await setup({
+  it('refuse une série dont les saisons demandées sont toutes disponibles (409), avec le nom du serveur', async () => {
+    const { as, db, cryptoKey } = await setup({
       sonarr: sonarrRoutes({
         'GET /api/v3/series': sonarrSeries([
           [1, 7, 7],
@@ -276,10 +277,19 @@ describe('POST /api/requests', () => {
         ]),
       }),
     });
+    // Un Jellyfin vide : Sonarr suffit au statut, le message nomme le serveur choisi.
+    const jellyfin = await startServer({ 'GET /Items': { Items: [], TotalRecordCount: 0 } });
+    setSetting(db, cryptoKey, 'mediaServer', {
+      kind: 'jellyfin',
+      url: jellyfin.url,
+      apiKey: 'k',
+      libraryIds: [],
+      publicUrl: null,
+    });
     const member = await as('member');
     const res = await member.post('/api/requests', { type: 'tv', tmdbId: 1396, seasons: 'all' });
     expect(res.statusCode).toBe(409);
-    expect(res.json()).toEqual({ error: 'Ce titre est déjà disponible dans Emby' });
+    expect(res.json()).toEqual({ error: 'Ce titre est déjà disponible dans Jellyfin' });
   });
 
   it('refuse une saison inconnue (400) et un titre inconnu de TMDB (404)', async () => {

@@ -17,6 +17,7 @@ import { useViewer } from '../../hooks/use-viewer.ts';
 import { blockLabel } from '../../lib/blocklist.ts';
 import { mediaQuery, plural, regularSeasons, seasonMeta, seasonTitle, summaryMeta } from '../../lib/catalogue.ts';
 import { errorMessage } from '../../lib/http.ts';
+import { useMediaServerName } from '../../lib/media-server.ts';
 import { arrName, membersQuery, requestProgress, requestQuotaQuery, useCreateRequest } from '../../lib/requests.ts';
 import { canRequest } from '../../lib/status.ts';
 import { StatusPill } from '../media/status-pill.tsx';
@@ -537,7 +538,7 @@ function RequestSent({
   media: MediaSummary;
   onClose: () => void;
 }) {
-  const progress = requestProgress(request);
+  const progress = requestProgress(request, useMediaServerName());
   return (
     <div className="grid gap-5">
       <Notice tone="ok" role="status">

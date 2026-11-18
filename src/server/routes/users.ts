@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { type Member, memberUpdateSchema } from '../../shared/auth.ts';
-import { listEmbyUsers } from '../integrations/emby.ts';
+import { ofMediaServer } from '../../shared/settings.ts';
+import { labelOf } from '../integrations/media-server.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
 import { requireCapability } from '../plugins/auth.ts';
-import { requireEmby } from '../services/settings.ts';
 import {
   getUser,
   importFromEmby,
@@ -31,9 +31,9 @@ export function usersRoutes(app: FastifyInstance) {
     async (): Promise<Member[]> => members(),
   );
 
-  /** Crée les comptes Emby actifs absents de l'appli ; jamais de promotion (voir importFromEmby). */
+  /** Crée les comptes actifs du serveur multimédia absents de l'appli ; jamais de promotion (voir importFromEmby). */
   app.post('/api/users/import', { preHandler: requireCapability('canManageUsers') }, async (): Promise<Member[]> => {
-    const embyUsers = await listEmbyUsers(requireEmby(app.data));
+    const embyUsers = await app.mediaServers.require().listUsers();
     db.transaction((tx) => {
       for (const u of embyUsers) {
         if (!u.isDisabled) importFromEmby(tx, { id: u.id, name: u.name, avatar: u.avatarUrl });
@@ -58,27 +58,30 @@ export function usersRoutes(app: FastifyInstance) {
   );
 
   /**
-   * Relais de la photo Emby (le navigateur ne voit ni l'adresse d'Emby ni sa clé). `fetch` direct plutôt que
-   * `httpRequest` : ce dernier ne sait lire que du JSON validé par un schéma, ici le corps est une image binaire.
+   * Relais de la photo du membre (le navigateur ne voit ni l'adresse du serveur ni sa clé ; Plex : photo plex.tv, sans
+   * jeton). `fetch` direct plutôt que `httpRequest` : ce dernier ne sait lire que du texte, ici le corps est une image.
    */
   app.get<IdParams>('/api/users/:id/avatar', async (req, reply) => {
     const user = getUser(db, req.params.id);
     if (!user?.avatar) throw new HttpError(404, 'Pas de photo');
-    const emby = requireEmby(app.data);
+    const server = app.mediaServers.require();
+    const label = labelOf(server);
+    const target = server.avatarRequest(user.avatar);
+    if (!target) throw new HttpError(404, 'Pas de photo');
     let res: Response;
     try {
-      res = await fetch(`${emby.url}${user.avatar}`, {
-        headers: { 'X-Emby-Token': emby.apiKey },
+      res = await fetch(target.url, {
+        headers: target.headers,
         redirect: 'manual',
         signal: AbortSignal.timeout(AVATAR_TIMEOUT_MS),
       });
     } catch {
-      throw new HttpError(502, 'Emby injoignable');
+      throw new HttpError(502, `${label} injoignable`);
     }
-    if (!res.ok) throw new HttpError(404, 'Photo introuvable chez Emby');
+    if (!res.ok) throw new HttpError(404, `Photo introuvable chez ${label}`);
     // Type normalisé (sans paramètres) : seul un type de la liste est relayé, et tel que nous l'écrivons.
     const type = (res.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
-    if (!AVATAR_TYPES.has(type)) throw new HttpError(502, 'Réponse inattendue de Emby');
+    if (!AVATAR_TYPES.has(type)) throw new HttpError(502, `Réponse inattendue ${ofMediaServer(server.kind)}`);
     return reply
       .header('content-type', type)
       .header('cache-control', `private, max-age=${AVATAR_MAX_AGE_S}`)

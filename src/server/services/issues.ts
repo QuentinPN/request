@@ -18,6 +18,7 @@ import type { TmdbClient } from '../integrations/tmdb.ts';
 import { HttpError } from '../lib/api-errors.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
 import { type AvailabilityService, selectCached } from './availability.ts';
+import { mediaServerName } from './media-server.ts';
 import { notifyIssueEvent } from './notifications.ts';
 import { toPerson } from './requests.ts';
 import { loadSummaries } from './tmdb.ts';
@@ -166,7 +167,10 @@ export function createIssues(
     await deps.availability.statusesFor([key]);
     const cached = selectCached(db, [key]).get();
     if (!cached?.status || !REPORTABLE.includes(cached.status as LibraryStatus))
-      throw new HttpError(409, 'Seul un titre disponible dans Emby peut faire l’objet d’un signalement');
+      throw new HttpError(
+        409,
+        `Seul un titre disponible dans ${mediaServerName(data)} peut faire l’objet d’un signalement`,
+      );
     const mediaId = cached.id;
     if (input.seasonNumber !== null) {
       // Saisons connues localement : si on en a, la saison signalée doit en faire partie.

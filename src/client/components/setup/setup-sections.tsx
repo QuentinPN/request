@@ -21,8 +21,8 @@ import { SmtpSection } from './smtp-section';
 import { TraktSection } from './trakt-section';
 import { WebhooksSection } from './webhooks-section';
 
-/** Amorçage : sans propriétaire, seule la section Emby est accessible. */
-const isReachable = (section: SetupSection, setup: SetupState) => setup.hasOwner || section === 'emby';
+/** Amorçage : sans propriétaire, seule la section du serveur multimédia est accessible. */
+const isReachable = (section: SetupSection, setup: SetupState) => setup.hasOwner || section === 'mediaServer';
 
 /** Première section accessible encore à faire, à partir de `from` (incluse), sinon depuis le début. */
 function nextTodo(setup: SetupState, from = 0): SetupSection | null {

@@ -4,7 +4,7 @@ import { embyTest, expect, expectNoAxeViolations, field, freshSetup, test } from
 const trending = fixtures.discover.rows.find((row) => row.id === 'trending')?.items ?? [];
 const [partial, available, downloading] = trending;
 
-const LINK = { publicUrl: 'https://emby.exemple.fr', serverId: 'srv-1' };
+const LINK = { kind: 'emby' as const, publicUrl: 'https://emby.exemple.fr', serverId: 'srv-1' };
 const watchHref = (itemId: string | undefined) =>
   `https://emby.exemple.fr/web/index.html#!/item?id=${itemId}&serverId=srv-1`;
 
@@ -93,19 +93,21 @@ test('Réglages : l’adresse publique d’Emby est facultative, validée, et en
   page,
   api,
 }) => {
-  api.state.settings.emby = {
+  api.state.settings.mediaServer = {
+    kind: 'emby',
     url: 'http://192.0.2.20:8096',
     apiKey: { set: true },
     libraryIds: ['lib-films'],
     publicUrl: null,
   };
-  await page.route('**/api/setup/emby/test', (route) => route.fulfill({ json: embyTest }));
+  await page.route('**/api/setup/mediaServer/test', (route) => route.fulfill({ json: embyTest }));
   let saved: unknown;
-  await page.route('**/api/settings/emby', (route) => {
+  await page.route('**/api/settings/mediaServer', (route) => {
     if (route.request().method() !== 'PUT') return route.fallback();
     saved = route.request().postDataJSON();
     return route.fulfill({
       json: {
+        kind: 'emby',
         url: 'http://192.0.2.20:8096',
         apiKey: { set: true },
         libraryIds: ['lib-films'],
@@ -114,7 +116,7 @@ test('Réglages : l’adresse publique d’Emby est facultative, validée, et en
     });
   });
   await page.goto('/reglages');
-  await page.getByRole('button', { name: /^Emby\b/ }).click();
+  await page.getByRole('button', { name: /^Serveur multimédia\b/ }).click();
   await expect(page.getByText('Connexion réussie')).toBeVisible();
 
   const publicUrl = field(page, 'Adresse publique d’Emby');
@@ -133,6 +135,7 @@ test('Réglages : l’adresse publique d’Emby est facultative, validée, et en
   await save.click();
   await expect(page.getByText('Réglages enregistrés')).toBeVisible();
   expect(saved).toEqual({
+    kind: 'emby',
     url: 'http://192.0.2.20:8096',
     apiKey: '',
     libraryIds: ['lib-films'],
@@ -144,6 +147,7 @@ test('l’assistant montre le même champ dans la section Emby', async ({ page, 
   api.state.setup = structuredClone(freshSetup);
   api.state.viewer = null;
   await page.goto('/assistant');
+  await page.getByRole('radio', { name: /^Emby/ }).check();
   await expect(field(page, 'Adresse publique d’Emby')).toBeVisible();
   await expect(page.getByText('Facultative.')).toBeVisible();
   await expectNoAxeViolations(page);

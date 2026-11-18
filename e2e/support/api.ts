@@ -19,7 +19,7 @@ import {
   KEYWORD_SEARCH_PATH,
 } from '../../src/shared/blocklist.ts';
 import { DISCOVER_SETTINGS_PATH } from '../../src/shared/catalogue.ts';
-import { EMBY_LINK_PATH, type EmbyLink } from '../../src/shared/emby.ts';
+import { WATCH_LINK_PATH, type WatchLink } from '../../src/shared/media-server.ts';
 import type { NotificationPage } from '../../src/shared/notifications.ts';
 import { capabilitiesOf, type Role } from '../../src/shared/roles.ts';
 import { type MaskedSetting, type Setting, settingSchemas } from '../../src/shared/settings.ts';
@@ -43,15 +43,21 @@ export const viewerAs = (role: Role, name = 'Quentin'): Viewer => ({
   avatarUrl: null,
 });
 
-const allSaved = { emby: true, tmdb: true, radarr: true, sonarr: true, rules: true };
-export const completeSetup: SetupState = { services: allSaved, hasOwner: true, complete: true };
+const allSaved = { mediaServer: true, tmdb: true, radarr: true, sonarr: true, rules: true };
+export const completeSetup: SetupState = {
+  services: allSaved,
+  mediaServerKind: 'emby',
+  hasOwner: true,
+  complete: true,
+};
 export const freshSetup: SetupState = {
-  services: { emby: false, tmdb: false, radarr: false, sonarr: false, rules: false },
+  services: { mediaServer: false, tmdb: false, radarr: false, sonarr: false, rules: false },
+  mediaServerKind: null,
   hasOwner: false,
   complete: false,
 };
 
-export const embyTest: TestResults['emby'] = {
+export const embyTest: TestResults['mediaServer'] = {
   serverName: 'Salon',
   version: '4.9.1',
   serverId: 'srv',
@@ -120,8 +126,8 @@ type MockState = {
   settings: { [K in SettingSection]?: MaskedSetting<K> };
   /** Serveurs Radarr/Sonarr ; ajouts, modifications et suppressions s'y appliquent (sans test de connexion). */
   arrServers: ArrServer[];
-  /** Adresse publique d'Emby et id du serveur : `null` tant qu'aucune adresse publique n'est réglée. */
-  embyLink: EmbyLink | null;
+  /** Type et id du serveur multimédia, adresse publique : `null` tant qu'aucun lien n'est possible. */
+  embyLink: WatchLink | null;
   webhooks: WebhookSettings;
   /** Clés d'API (Réglages › API), vide par défaut ; la création en ajoute une, la révocation la marque révoquée. */
   apiKeys: ApiKey[];
@@ -183,7 +189,7 @@ export class ApiMock {
     // Aucune notification par défaut (e2e/notifications.spec.ts en sert d'autres).
     if (method === 'GET' && pathname === '/api/notifications')
       return json(route, 200, { page: 1, totalPages: 0, unread: 0, results: [] } satisfies NotificationPage);
-    if (method === 'GET' && pathname === EMBY_LINK_PATH) return json(route, 200, { link: state.embyLink });
+    if (method === 'GET' && pathname === WATCH_LINK_PATH) return json(route, 200, { link: state.embyLink });
     if (method === 'GET' && pathname === WEBHOOK_SETTINGS_PATH) return json(route, 200, state.webhooks);
     if (method === 'POST' && pathname === WEBHOOK_TOKEN_PATH) {
       state.webhooks = webhookSettingsOf('jeton-regenere');

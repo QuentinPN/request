@@ -33,12 +33,31 @@ export type SeriesType = (typeof seriesTypes)[number];
 /** Type de série d'un serveur Sonarr (ou d'une demande) qui n'en précise pas. */
 export const DEFAULT_SERIES_TYPE: SeriesType = 'standard';
 
+/** Adresse et clé d'un service, une fois validées. */
+export type ServiceConnection = z.output<typeof service>;
+
+/** Serveur multimédia unique de l'appli : connexion des membres, disponibilité, « Regarder dans… ». */
+export const mediaServerKinds = ['emby', 'jellyfin', 'plex'] as const;
+export type MediaServerKind = (typeof mediaServerKinds)[number];
+/** Nom affiché du serveur choisi (« Regarder dans Jellyfin ») : la seule définition. */
+export const mediaServerKindLabels: Record<MediaServerKind, string> = {
+  emby: 'Emby',
+  jellyfin: 'Jellyfin',
+  plex: 'Plex',
+};
+/** Nom précédé de « de », élidé devant une voyelle : « d’Emby », « de Jellyfin », « de Plex ». */
+export const ofMediaServer = (kind: MediaServerKind) => {
+  const name = mediaServerKindLabels[kind];
+  return /^[aeiouy]/i.test(name) ? `d’${name}` : `de ${name}`;
+};
+const mediaServerKind = z.enum(mediaServerKinds);
+
 /**
  * Connexion seule (adresse et clé) : ce que le test de connexion de l'assistant vérifie. Radarr et Sonarr n'en font
  * pas partie : ce sont des serveurs (`shared/arr-servers.ts`), testés par leur propre route.
  */
 export const connectionSchemas = {
-  emby: service,
+  mediaServer: service.extend({ kind: mediaServerKind }),
   tmdb: z.object({ apiKey }),
 } as const;
 
@@ -47,15 +66,6 @@ export const integrationKeys = Object.keys(connectionSchemas) as IntegrationKey[
 export type Connection<K extends IntegrationKey> = z.output<(typeof connectionSchemas)[K]>;
 
 const defaultQuota = { limit: 10, days: 7 };
-
-/** Serveur multimédia unique de l'appli : connexion des membres, disponibilité, « Regarder dans… ». */
-export const mediaServerKinds = ['emby', 'jellyfin', 'plex'] as const;
-export type MediaServerKind = (typeof mediaServerKinds)[number];
-export const mediaServerKindLabels: Record<MediaServerKind, string> = {
-  emby: 'Emby',
-  jellyfin: 'Jellyfin',
-  plex: 'Plex',
-};
 
 /**
  * Connexion à un serveur multimédia (Emby, Jellyfin ou Plex). `apiKey` : clé d'API d'Emby ou de Jellyfin, jeton
@@ -74,7 +84,7 @@ export const smtpSecurities = ['none', 'starttls', 'tls'] as const;
 export const settingSchemas = {
   /** Ancien réglage d'Emby, relu comme `mediaServer` de type `emby` tant que celui-ci n'existe pas (`getMediaServer`). */
   emby: mediaServer,
-  mediaServer: mediaServer.extend({ kind: z.enum(mediaServerKinds) }),
+  mediaServer: mediaServer.extend({ kind: mediaServerKind }),
   tmdb: connectionSchemas.tmdb,
   /** Notifications Discord, facultatives : rien n'est envoyé tant que `enabled` est faux ou l'adresse absente. */
   discord: z

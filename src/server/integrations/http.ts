@@ -53,6 +53,8 @@ export interface RequestOptions {
   retryDelayMs?: number;
   /** Remplace le message par défaut d'un type d'erreur, ex. `{ unauthorized: 'Identifiants refusés par Emby' }`. */
   messages?: Partial<Record<IntegrationErrorKind, string>>;
+  /** `text` : corps brut (le XML de plex.tv), validé par `schema` comme une chaîne ; `json` par défaut. */
+  responseType?: 'json' | 'text';
 }
 
 export interface HttpRequest<T> extends RequestOptions {
@@ -67,7 +69,7 @@ export interface HttpRequest<T> extends RequestOptions {
 }
 
 const SECRET_PARAM =
-  /^(api[_-]?key|x-api-key|key|token|access[_-]?token|x-emby-token|secret|client[_-]?secret|password|passwd|pwd|pw|auth|authorization)$/i;
+  /^(api[_-]?key|x-api-key|key|token|access[_-]?token|x-emby-token|x-plex-token|secret|client[_-]?secret|password|passwd|pwd|pw|auth|authorization)$/i;
 const MAX_RETRY_AFTER_MS = 2000;
 
 /** Adresse sans identifiants ni valeur de paramètre sensible (`api_key`, `token`, `password`…), sûre pour un message ou un log. */
@@ -141,12 +143,13 @@ export async function httpRequest<T>(req: HttpRequest<T>): Promise<T> {
     }
 
     if (res.ok) {
-      let data: unknown;
-      try {
-        data = text.trim() === '' ? undefined : JSON.parse(text);
-      } catch {
-        throw fail('bad_response', url, res.status);
-      }
+      let data: unknown = text;
+      if (req.responseType !== 'text')
+        try {
+          data = text.trim() === '' ? undefined : JSON.parse(text);
+        } catch {
+          throw fail('bad_response', url, res.status);
+        }
       const parsed = schema.safeParse(data);
       if (!parsed.success) throw fail('bad_response', url, res.status);
       return parsed.data;

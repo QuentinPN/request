@@ -1,3 +1,4 @@
+import { mediaServerKindLabels } from '@shared/settings.ts';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { BarePage } from '@/components/bare-page';
@@ -9,7 +10,11 @@ import { setupStateQuery } from '@/lib/session';
 
 export function AssistantPage() {
   const { data: setup } = useSuspenseQuery(setupStateQuery);
-  const awaitingOwner = !setup.hasOwner && setup.services.emby;
+  const awaitingOwner = !setup.hasOwner && setup.services.mediaServer;
+  const name = setup.mediaServerKind ? mediaServerKindLabels[setup.mediaServerKind] : 'Le serveur multimédia';
+  // Plex : le premier propriétaire est le propriétaire du serveur ; Emby et Jellyfin : un administrateur.
+  const ownerAccount =
+    setup.mediaServerKind === 'plex' ? 'le compte Plex propriétaire du serveur' : `un compte administrateur ${name}`;
 
   return (
     <BarePage
@@ -20,7 +25,9 @@ export function AssistantPage() {
       {awaitingOwner && (
         <Notice tone="info" role="status">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p>Emby est relié. Connectez-vous avec un compte administrateur Emby pour continuer.</p>
+            <p>
+              {name} est relié. Connectez-vous avec {ownerAccount} pour continuer.
+            </p>
             <Link
               to="/connexion"
               search={{ retour: '/assistant' }}

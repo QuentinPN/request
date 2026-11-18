@@ -172,7 +172,9 @@ describe('POST /api/auth/login', () => {
 
   it('409 tant qu’Emby n’est pas configuré, 400 sur un corps invalide', async () => {
     const app = await newApp();
-    expect((await login(app, 'alice', 'bon')).json()).toEqual({ error: "Emby n'est pas encore configuré" });
+    expect((await login(app, 'alice', 'bon')).json()).toEqual({
+      error: "Aucun serveur multimédia n'est encore configuré",
+    });
     const bad = await app.inject({ method: 'POST', url: '/api/auth/login', headers: csrf, payload: { username: ' ' } });
     expect(bad.statusCode).toBe(400);
   });

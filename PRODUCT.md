@@ -7,7 +7,7 @@ Un portail de demandes de films et de séries pour les membres de mon serveur Em
 ## Utilisateurs
 
 - **Propriétaire (admin)** : configure l'appli, approuve ou refuse, gère les membres et leurs droits.
-- **Membres** : la famille et les amis qui ont un compte Emby. Ils se connectent avec ce compte, sans nouvel identifiant.
+- **Membres** : la famille et les amis qui ont un compte sur le serveur multimédia (Emby, Jellyfin ou Plex). Ils se connectent avec ce compte, sans nouvel identifiant.
 - Volume réel : une poignée à quelques dizaines de comptes, une seule instance.
 
 ## Principes
@@ -20,11 +20,11 @@ Un portail de demandes de films et de séries pour les membres de mon serveur Em
 
 ## Fonctions du MVP
 
-1. **Assistant de configuration** : connexion à Emby (URL et clé d'API, choix des bibliothèques à surveiller), Radarr et Sonarr (URL, clé, profil de qualité, dossier racine et, pour Sonarr, type de série par défaut, lus depuis leurs API), TMDB (clé ou jeton). Le premier compte Emby administrateur qui se connecte devient propriétaire.
-2. **Connexion** avec les identifiants Emby (l'appli vérifie auprès d'Emby, garde une session à elle, jamais le mot de passe). Import des utilisateurs Emby à la demande.
-3. **Découvrir** : rangées Tendances, Films populaires, Séries populaires, Prochainement, Ajoutés récemment dans Emby, par genre et par plateforme de streaming (TMDB). Affiches et fonds servis par l'appli avec un cache disque (chargement rapide, pas de dépendance directe du navigateur à TMDB).
+1. **Assistant de configuration** : connexion au serveur multimédia, Emby, Jellyfin ou Plex, un seul à la fois (type d'abord, puis URL et clé d'API, ou jeton du propriétaire pour Plex, et choix des bibliothèques à surveiller ; le type ne change plus une fois des membres inscrits), Radarr et Sonarr (URL, clé, profil de qualité, dossier racine et, pour Sonarr, type de série par défaut, lus depuis leurs API), TMDB (clé ou jeton). Le premier administrateur du serveur multimédia (propriétaire du serveur pour Plex) qui se connecte devient propriétaire.
+2. **Connexion** avec les identifiants Emby ou Jellyfin, ou avec le bouton « Se connecter avec Plex » (l'appli vérifie auprès du serveur ou de plex.tv, garde une session à elle, jamais le mot de passe ni le jeton Plex). Import des utilisateurs du serveur à la demande (pour Plex : le propriétaire et les amis qui ont accès au serveur).
+3. **Découvrir** : rangées Tendances, Films populaires, Séries populaires, Prochainement, Ajoutés récemment dans le serveur multimédia (« … dans Emby », « … dans Plex »), par genre et par plateforme de streaming (TMDB). Affiches et fonds servis par l'appli avec un cache disque (chargement rapide, pas de dépendance directe du navigateur à TMDB).
 4. **Recherche** globale (`Ctrl+K`) : films, séries et personnes, avec statut sur chaque résultat.
-5. **Fiche titre** : fond, affiche, synopsis, distribution, bande-annonce, où regarder, saisons et leur statut, recommandations et titres similaires. Bouton « Demander » ou « Regarder dans Emby » si disponible.
+5. **Fiche titre** : fond, affiche, synopsis, distribution, bande-annonce, où regarder, saisons et leur statut, recommandations et titres similaires. Bouton « Demander » ou « Regarder dans Emby » (Jellyfin, Plex) si disponible.
 6. **Demandes** : film ou saisons choisies ; approbation automatique par droit ; quotas par membre (N films et N saisons sur X jours) ; file d'approbation pour l'admin, avec modification du profil et du dossier avant envoi ; refus avec motif.
 7. **Envoi à Radarr / Sonarr** à l'approbation, avec lancement de la recherche.
 8. **Synchronisation de disponibilité** : webhooks Radarr/Sonarr (téléchargé), webhook ou balayage léger d'Emby (ajouté à la bibliothèque), et un balayage complet planifié en filet de sécurité. Progression du téléchargement lue dans la file de Radarr/Sonarr.

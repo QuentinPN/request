@@ -4,7 +4,6 @@ import type { WebhookResult, WebhookService } from '../../shared/webhooks.ts';
 import type { Data, Db } from '../db/index.ts';
 import { issues, media, requests } from '../db/schema.ts';
 import type { ArrWebhookEvent } from '../integrations/arr.ts';
-import { latestEmbyItems } from '../integrations/emby.ts';
 import { parseRadarrWebhook } from '../integrations/radarr.ts';
 import { parseSonarrWebhook } from '../integrations/sonarr.ts';
 import { one } from '../lib/sql.ts';
@@ -13,7 +12,6 @@ import { listArrServers } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
 import { lastFailureAt, lastSuccessAt, runJob } from './jobs.ts';
 import { NOTIFICATION_RETENTION_MS, purgeReadNotifications } from './notifications.ts';
-import { getSetting } from './settings.ts';
 
 /** Noms des balayages dans `job_runs` (verrou : une seule exécution `running` par nom). */
 export const SCAN_JOBS = { light: 'scan:light', full: 'scan:full' } as const;
@@ -68,7 +66,7 @@ export function purgeMedia(db: Db, before: Date): number {
  * statut (`availability.refresh`), qui fait aussi passer `available` les demandes envoyées arrivées.
  */
 export function createSync(data: Data, deps: { availability: AvailabilityService; now?: () => number }) {
-  const { db, cryptoKey } = data;
+  const { db } = data;
   const { availability } = deps;
   const now = deps.now ?? Date.now;
 
@@ -118,8 +116,7 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
   /** Balayage léger : derniers ajouts d'Emby, titres en téléchargement et titres des demandes envoyées. */
   const lightScan = () =>
     runJob(db, SCAN_JOBS.light, async () => {
-      const emby = getSetting(db, cryptoKey, 'emby');
-      const recent = emby ? await latestEmbyItems(emby, { libraryIds: emby.libraryIds, limit: RECENT_LIMIT }) : [];
+      const recent = await availability.latestOnServer(RECENT_LIMIT);
       const watched = keysWhere(
         or(
           eq(media.status, 'downloading'),

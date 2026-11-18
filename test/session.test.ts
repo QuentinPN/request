@@ -11,11 +11,21 @@ const viewer = (role: Role): Viewer => ({
   capabilities: capabilitiesOf(role),
   avatarUrl: null,
 });
-const services = (saved: boolean) => ({ emby: saved, tmdb: saved, radarr: saved, sonarr: saved, rules: saved });
-const fresh: SetupState = { services: services(false), hasOwner: false, complete: false };
-const embyOnly: SetupState = { services: { ...services(false), emby: true }, hasOwner: false, complete: false };
-const partial: SetupState = { services: { ...services(true), rules: false }, hasOwner: true, complete: false };
-const complete: SetupState = { services: services(true), hasOwner: true, complete: true };
+const services = (saved: boolean) => ({ mediaServer: saved, tmdb: saved, radarr: saved, sonarr: saved, rules: saved });
+const fresh: SetupState = { services: services(false), mediaServerKind: null, hasOwner: false, complete: false };
+const embyOnly: SetupState = {
+  services: { ...services(false), mediaServer: true },
+  mediaServerKind: 'emby',
+  hasOwner: false,
+  complete: false,
+};
+const partial: SetupState = {
+  services: { ...services(true), rules: false },
+  mediaServerKind: 'emby',
+  hasOwner: true,
+  complete: false,
+};
+const complete: SetupState = { services: services(true), mediaServerKind: 'emby', hasOwner: true, complete: true };
 
 describe('guardRedirect', () => {
   it('installation neuve : tout mène à l’assistant, connexion comprise tant qu’Emby manque', () => {

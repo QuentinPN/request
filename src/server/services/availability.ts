@@ -1,5 +1,4 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import type { EmbyLink } from '../../shared/emby.ts';
 import {
   keyOf,
   type MediaDetails,
@@ -8,7 +7,8 @@ import {
   type MediaType,
   type Season,
 } from '../../shared/media.ts';
-import type { Setting } from '../../shared/settings.ts';
+import type { WatchLink } from '../../shared/media-server.ts';
+import type { MediaServerKind } from '../../shared/settings.ts';
 import type {
   Availability,
   LibraryStatus,
@@ -20,22 +20,16 @@ import type { Data, Db } from '../db/index.ts';
 import { media, requestSeasons, requests, seasons } from '../db/schema.ts';
 import { seasonsTableOf } from '../db/seasons.ts';
 import { type ArrKind, arrKindOf, getQueue, type QueueItem } from '../integrations/arr.ts';
-import {
-  findEmbyItems,
-  getEmbySeasonAvailability,
-  getEmbyServerId,
-  latestEmbyItems,
-  listEmbyLibraries,
-} from '../integrations/emby.ts';
+import { type MediaItemQuery, type MediaServer, matchItems } from '../integrations/media-server.ts';
 import { type LibraryMovie, listMovies } from '../integrations/radarr.ts';
 import { type LibrarySeries, listSeries } from '../integrations/sonarr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { TtlLru } from '../lib/lru.ts';
 import { keyPairsIn } from '../lib/sql.ts';
 import { type ArrServerConfig, listArrServers, serversOf } from './arr-servers.ts';
+import { createMediaServers, type MediaServers } from './media-server.ts';
 import { notifyRequestEvent } from './notifications.ts';
 import { markAvailable } from './requests.ts';
-import { getSetting } from './settings.ts';
 
 // --- Durées ---
 
@@ -48,6 +42,9 @@ const QUEUE_TTL_MS = 30 * 1000;
 /** Après un échec, un service n'est plus interrogé pendant ce délai : une panne ne ralentit pas chaque page. */
 const BACKOFF_MS = 60 * 1000;
 const LATEST_TTL_MS = 5 * 60 * 1000;
+/** Balayage du serveur multimédia relu au plus une fois par fenêtre et par type, quelle que soit la rafale de webhooks. */
+export const RESCAN_MIN_INTERVAL_MS = 30 * 1000;
+type ScanType = MediaItemQuery['type'];
 /** L'id du serveur Emby ne change pas : une lecture par heure suffit. */
 const SERVER_ID_TTL_MS = 60 * 60 * 1000;
 /** Taille de la rangée « Ajoutés récemment dans Emby ». */
@@ -273,7 +270,7 @@ function writeUpdates(db: Db, updates: Update[], now: Date) {
 
 // --- Service ---
 
-type Service = 'emby' | ArrKind;
+type Service = MediaServerKind | ArrKind;
 
 /** Liste (films ou séries) et file d'un serveur, indexées pour la recherche d'un titre. */
 interface ArrSource<T> {
@@ -360,16 +357,40 @@ const progressOf = (items: readonly QueueItem[] | undefined) => (items ?? []).ma
  *
  * Un service non configuré ne compte pas ; un service en échec laisse le cache tel quel (jamais d'erreur pour la page).
  */
-export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; now?: () => number }) {
-  const { db, cryptoKey } = data;
+export function createAvailability(
+  data: Data,
+  deps: { tmdb: () => TmdbClient; mediaServers?: MediaServers; now?: () => number },
+) {
+  const { db } = data;
+  const mediaServers = deps.mediaServers ?? createMediaServers(data);
   const now = deps.now ?? Date.now;
   const lists = new TtlLru({ maxEntries: 32 });
   /** Listes « derniers ajouts » par membre : à part, pour ne pas évincer les listes de Radarr/Sonarr. */
   const latestLists = new TtlLru({ maxEntries: 256 });
+  /**
+   * Balayages du serveur multimédia (Jellyfin, Plex), à part et par type : un webhook Radarr les déclare périmés pour
+   * les films, un webhook Sonarr pour les séries ; ils sont alors relus, au plus une fois par `RESCAN_MIN_INTERVAL_MS`.
+   */
+  const scans: Record<ScanType, TtlLru> = {
+    movie: new TtlLru({ maxEntries: 4 }),
+    series: new TtlLru({ maxEntries: 4 }),
+  };
+  const staleScans = new Set<ScanType>();
+  const lastRescan = new Map<ScanType, number>();
+
+  /** Oublie le balayage de ce type s'il a été déclaré périmé, sauf s'il vient déjà d'être relu (rafale de webhooks). */
+  function freshenScan(type: ScanType) {
+    if (!staleScans.has(type)) return;
+    const last = lastRescan.get(type);
+    if (last !== undefined && now() - last < RESCAN_MIN_INTERVAL_MS) return;
+    staleScans.delete(type);
+    lastRescan.set(type, now());
+    scans[type].clear();
+  }
   /** Clé `service:url` : changer l'adresse d'un service (réglages) lève tout de suite sa mise à l'écart. */
   const backoff = new Map<string, number>();
 
-  const settingsOf = () => ({ emby: getSetting(db, cryptoKey, 'emby'), servers: listArrServers(data) });
+  const settingsOf = () => ({ media: mediaServers.current(), servers: listArrServers(data) });
   type Settings = ReturnType<typeof settingsOf>;
 
   /** Appel protégé : `undefined` en cas d'échec (le service est alors laissé de côté `BACKOFF_MS`). */
@@ -437,17 +458,35 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     return found;
   }
 
-  /** Recherche dans Emby, limitée aux bibliothèques suivies du bon type (films : pas les séries, et inversement). */
-  async function findInEmby(emby: Setting<'emby'>, query: Omit<Parameters<typeof findEmbyItems>[1], 'libraryIds'>) {
-    if (emby.libraryIds.length === 0) return attempt('emby', emby.url, () => findEmbyItems(emby, query));
-    const libraries = await cachedList('emby', emby.url, 'libraries', STATUS_TTL_MS, () => listEmbyLibraries(emby));
+  /**
+   * Titres trouvés sur le serveur multimédia : recherche ciblée (Emby), ou balayage des bibliothèques gardé
+   * `STATUS_TTL_MS` puis filtré (Jellyfin, Plex : un balayage par type et par lot de bibliothèques, pas par page).
+   */
+  function lookupOn(server: MediaServer, query: MediaItemQuery) {
+    const { kind, config, lookup } = server;
+    if (lookup.mode === 'search') return attempt(kind, config.url, () => lookup.find(query));
+    const libraryIds = query.libraryIds ?? [];
+    freshenScan(query.type);
+    return cachedList(
+      kind,
+      config.url,
+      `items:${query.type}:${libraryIds.join(',')}`,
+      STATUS_TTL_MS,
+      () => lookup.list({ type: query.type, libraryIds }),
+      scans[query.type],
+    ).then((items) => items && matchItems(items, query));
+  }
+
+  /** Recherche sur le serveur multimédia, limitée aux bibliothèques suivies du bon type (films : pas les séries, et inversement). */
+  async function findOnServer(server: MediaServer, query: Omit<MediaItemQuery, 'libraryIds'>) {
+    const { kind, config } = server;
+    if (config.libraryIds.length === 0) return lookupOn(server, query);
+    const libraries = await cachedList(kind, config.url, 'libraries', STATUS_TTL_MS, () => server.listLibraries());
     if (!libraries) return undefined;
     const other = query.type === 'movie' ? 'tvshows' : 'movies';
-    const libraryIds = emby.libraryIds.filter((id) => libraries.find((l) => l.id === id)?.type !== other);
+    const libraryIds = config.libraryIds.filter((id) => libraries.find((l) => l.id === id)?.type !== other);
     // Aucune bibliothèque suivie de ce type : rien à chercher (une liste vide chercherait dans tout le serveur).
-    return libraryIds.length === 0
-      ? []
-      : attempt('emby', emby.url, () => findEmbyItems(emby, { ...query, libraryIds }));
+    return libraryIds.length === 0 ? [] : lookupOn(server, { ...query, libraryIds });
   }
 
   /**
@@ -455,15 +494,15 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
    * ou en file), chacun calculé à part.
    */
   async function refreshMovies(keys: MediaKey[], settings: Settings): Promise<Update[] | undefined> {
-    const { emby } = settings;
+    const { media: server } = settings;
     const tmdbIds = keys.map((k) => k.tmdbId);
     const [found, normal, fourK] = await Promise.all([
-      emby ? findInEmby(emby, { type: 'movie', tmdbIds }) : [],
+      server ? findOnServer(server, { type: 'movie', tmdbIds }) : [],
       movieSources(settings, false),
       movieSources(settings, true),
     ]);
     if (!found || !normal) return undefined;
-    const inEmby = new Map(found.map((item) => [item.tmdbId, item.embyId]));
+    const inEmby = new Map(found.map((item) => [item.tmdbId, item.itemId]));
     const facts = (hit: ReturnType<typeof findMovie>) => ({
       hasFile: hit?.movie.hasFile ?? false,
       queue: hit ? progressOf(hit.source.queue.get(hit.movie.radarrId)) : [],
@@ -497,7 +536,7 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     cached: Map<string, MediaRow>,
     exact?: ExactSeries,
   ): Promise<Update[] | undefined> {
-    const { emby } = settings;
+    const { media: server } = settings;
     const [normal, fourK] = await Promise.all([seriesSources(settings, false), seriesSources(settings, true)]);
     if (!normal) return undefined;
     const allSeries = [...normal, ...(fourK ?? [])].flatMap((source) => source.items);
@@ -514,8 +553,12 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     const unresolved = keys.map((k) => k.tmdbId).filter((id) => !tvdb.has(id));
     if (sonarrLacksTmdb && unresolved.length > 0) for (const [k, v] of await tvdbIdsFor(unresolved)) tvdb.set(k, v);
 
-    const found = emby
-      ? await findInEmby(emby, { type: 'series', tmdbIds: keys.map((k) => k.tmdbId), tvdbIds: [...tvdb.values()] })
+    const found = server
+      ? await findOnServer(server, {
+          type: 'series',
+          tmdbIds: keys.map((k) => k.tmdbId),
+          tvdbIds: [...tvdb.values()],
+        })
       : [];
     if (!found) return undefined;
     const wanted = new Set(keys.map((k) => k.tmdbId));
@@ -530,14 +573,16 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
             ? tmdbOfTvdb.get(item.tvdbId)
             : undefined;
       if (tmdbId === undefined) continue;
-      embyOf.set(tmdbId, item.embyId);
+      embyOf.set(tmdbId, item.itemId);
       if (item.tvdbId !== undefined && !tvdb.has(tmdbId)) tvdb.set(tmdbId, item.tvdbId);
     }
 
-    // Fiche d'une série : épisodes présents par saison dans Emby (un appel, pour ce seul titre).
+    // Fiche d'une série : épisodes présents par saison sur le serveur multimédia (un appel, pour ce seul titre).
     const exactEmbyId = exact && embyOf.get(exact.key.tmdbId);
     const embySeasons =
-      emby && exactEmbyId ? await attempt('emby', emby.url, () => getEmbySeasonAvailability(emby, exactEmbyId)) : [];
+      server && exactEmbyId
+        ? await attempt(server.kind, server.config.url, () => server.seasonAvailability(exactEmbyId))
+        : [];
     if (!embySeasons) return undefined;
 
     const today = new Date(now()).toISOString().slice(0, 10);
@@ -623,7 +668,7 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
    */
   async function resolve(items: readonly MediaKey[], exact?: ExactSeries, force = false) {
     const settings = settingsOf();
-    if (!settings.emby && settings.servers.length === 0) return undefined;
+    if (!settings.media && settings.servers.length === 0) return undefined;
     const keys = [...new Map(items.map((k) => [keyOf(k), { type: k.type, tmdbId: k.tmdbId }])).values()];
     if (keys.length === 0) return { settings, rows: new Map<string, MediaRow>() };
     const read = () =>
@@ -796,21 +841,23 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
   }
 
   /**
-   * Rangée « Ajoutés récemment dans Emby » : derniers films et séries des bibliothèques suivies que ce membre peut
-   * voir dans Emby (accès aux bibliothèques et contrôle parental, admins compris), gardés par membre, résumés par TMDB
-   * (un appel en cache par titre). `null` (rangée omise) si Emby n'est pas configuré ou ne répond pas : comme pour les
-   * statuts, une panne n'est retentée qu'après `BACKOFF_MS`, Découvrir n'attend pas un Emby muet à chaque visite.
+   * Rangée « Ajoutés récemment dans … » : derniers films et séries des bibliothèques suivies que ce membre peut voir sur
+   * le serveur (Emby, Jellyfin : accès aux bibliothèques et contrôle parental, admins compris ; Plex : les mêmes pour
+   * tous, voir DECISIONS.md), gardés par membre, résumés par TMDB (un appel en cache par titre). `null` (rangée omise)
+   * si rien n'est configuré ou si le serveur ne répond pas : comme pour les statuts, une panne n'est retentée qu'après
+   * `BACKOFF_MS`, Découvrir n'attend pas un serveur muet à chaque visite.
    */
   async function recentlyAdded(userId: string): Promise<MediaSummary[] | null> {
-    const emby = getSetting(db, cryptoKey, 'emby');
-    if (!emby) return null;
+    const server = mediaServers.current();
+    if (!server) return null;
+    const { libraryIds, url } = server.config;
     const tmdb = deps.tmdb();
     const latest = await cachedList(
-      'emby',
-      emby.url,
-      `latest:${userId}:${emby.libraryIds.join(',')}`,
+      server.kind,
+      url,
+      `latest:${userId}:${libraryIds.join(',')}`,
       LATEST_TTL_MS,
-      () => latestEmbyItems(emby, { libraryIds: emby.libraryIds, limit: LATEST_LIMIT, userId }),
+      () => server.latestItems({ libraryIds, limit: LATEST_LIMIT, userId }),
       latestLists,
     );
     if (!latest) return null;
@@ -818,15 +865,24 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     return settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
   }
 
+  /** Derniers ajouts du serveur, toutes bibliothèques suivies (balayage léger) ; aucun sans serveur, erreur propagée. */
+  async function latestOnServer(limit: number) {
+    const server = mediaServers.current();
+    return server ? server.latestItems({ libraryIds: server.config.libraryIds, limit }) : [];
+  }
+
   /**
-   * De quoi bâtir « Regarder dans Emby » : adresse publique réglée et id du serveur (`/System/Info/Public`, gardé une
-   * heure). `null` sans adresse publique ou si Emby ne répond pas : pas de lien, jamais d'erreur.
+   * De quoi bâtir « Regarder dans … » : type et id du serveur (gardé une heure) et, pour Emby et Jellyfin, l'adresse
+   * publique réglée (Plex passe par app.plex.tv). `null` sans adresse publique (Emby, Jellyfin) ou si le serveur ne
+   * répond pas : pas de lien, jamais d'erreur.
    */
-  async function embyLink(): Promise<EmbyLink | null> {
-    const emby = getSetting(db, cryptoKey, 'emby');
-    if (!emby?.publicUrl) return null;
-    const serverId = await cachedList('emby', emby.url, 'server-id', SERVER_ID_TTL_MS, () => getEmbyServerId(emby));
-    return serverId ? { publicUrl: emby.publicUrl, serverId } : null;
+  async function watchLink(): Promise<WatchLink | null> {
+    const server = mediaServers.current();
+    if (!server) return null;
+    const { kind, config } = server;
+    if (kind !== 'plex' && !config.publicUrl) return null;
+    const serverId = await cachedList(kind, config.url, 'server-id', SERVER_ID_TTL_MS, () => server.serverId());
+    return serverId ? { kind, serverId, publicUrl: kind === 'plex' ? null : config.publicUrl } : null;
   }
 
   // --- Synchronisation (webhooks, balayages) ---
@@ -844,14 +900,18 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
 
   /**
    * Recalcule ces titres tout de suite, sans attendre la fin de vie de leur cache (webhook, balayage) ; `forget` :
-   * liste et file de ce type de serveur (de ce seul serveur avec `serverId`) relues d'abord. Seuls ces titres sont
-   * recalculés, rien d'autre.
+   * liste et file de ce type de serveur (de ce seul serveur avec `serverId`) relues d'abord, et balayage du serveur
+   * multimédia de ce type (films pour Radarr, séries pour Sonarr) déclaré périmé : le fichier annoncé vient d'y arriver.
+   * Seuls ces titres sont recalculés, rien d'autre.
    */
   async function refresh(
     items: readonly MediaKey[],
     { forget, serverId }: { forget?: ArrKind; serverId?: number } = {},
   ) {
-    if (forget) forgetLists(forget, serverId);
+    if (forget) {
+      forgetLists(forget, serverId);
+      staleScans.add(forget === 'radarr' ? 'movie' : 'series');
+    }
     await resolve(items, undefined, true);
   }
 
@@ -891,7 +951,16 @@ export function createAvailability(data: Data, deps: { tmdb: () => TmdbClient; n
     });
   }
 
-  return { statusesFor, withStatuses, withDetailsStatus, recentlyAdded, embyLink, refresh, markDownloading };
+  return {
+    statusesFor,
+    withStatuses,
+    withDetailsStatus,
+    recentlyAdded,
+    latestOnServer,
+    watchLink,
+    refresh,
+    markDownloading,
+  };
 }
 
 export type AvailabilityService = ReturnType<typeof createAvailability>;

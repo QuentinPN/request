@@ -10,6 +10,7 @@ import {
   typeParamsSchema,
 } from '../../shared/catalogue.ts';
 import { keyOf, type MediaSummary, mediaSearchResultsSchema } from '../../shared/media.ts';
+import { labelOf } from '../integrations/media-server.ts';
 import { parseRequest, parseUpstream } from '../lib/api-errors.ts';
 import { viewerOf } from '../plugins/auth.ts';
 import { withStatus } from '../services/availability.ts';
@@ -27,13 +28,19 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const tmdb = app.tmdb();
     const viewer = viewerOf(req);
     const { id: userId } = viewer.user;
-    // Ordre de PRODUCT.md ; « Ajoutés récemment dans Emby » est omise tant qu'Emby n'est pas configuré (`null`).
+    // Ordre de PRODUCT.md ; « Ajoutés récemment dans … » (nom du serveur multimédia) est omise tant qu'aucun n'est
+    // configuré (`null`). Son id `emby-recent` reste celui du contrat, quel que soit le serveur.
+    const server = app.mediaServers.current();
     const rows: Array<{ id: string; title: string; load: () => Promise<MediaSummary[] | null> }> = [
       { id: 'trending', title: 'Tendances', load: () => tmdb.trendingAll('week') },
       { id: 'popular-movies', title: 'Films populaires', load: () => tmdb.popular('movie') },
       { id: 'popular-tv', title: 'Séries populaires', load: () => tmdb.popular('tv') },
       { id: 'upcoming', title: 'Prochainement', load: () => tmdb.upcoming() },
-      { id: 'emby-recent', title: 'Ajoutés récemment dans Emby', load: () => app.availability.recentlyAdded(userId) },
+      {
+        id: 'emby-recent',
+        title: `Ajoutés récemment dans ${server ? labelOf(server) : 'la bibliothèque'}`,
+        load: () => app.availability.recentlyAdded(userId),
+      },
     ];
     const settled = await Promise.allSettled(
       rows.map(async ({ id, title, load }) => {

@@ -31,7 +31,7 @@ const DAY_MS = 24 * 3600 * 1000;
 // --- Texte des messages ---
 
 describe('notificationMessage', () => {
-  const full = { title: 'Dune', requesterName: 'Marie', detail: null };
+  const full = { title: 'Dune', requesterName: 'Marie', detail: null, serverName: 'Emby' };
 
   it.each<[NotificationKind, string | null, string, string]>([
     ['requested', null, 'Nouvelle demande à approuver', 'Marie a demandé « Dune ».'],
@@ -54,12 +54,12 @@ describe('notificationMessage', () => {
   });
 
   it('sans titre (TMDB en panne), sans demandeur ni détail (demande supprimée)', () => {
-    const none = { title: null, requesterName: null, detail: null };
+    const none = { title: null, requesterName: null, detail: null, serverName: 'Plex' };
     expect(notificationMessage('requested', none).body).toBe('Un membre a demandé un titre.');
     expect(notificationMessage('approved', none).body).toBe('Votre demande a été approuvée.');
     expect(notificationMessage('declined', none).body).toBe('Votre demande a été refusée.');
     expect(notificationMessage('available', none).body).toBe(
-      'Le titre que vous avez demandé est disponible dans Emby.',
+      'Le titre que vous avez demandé est disponible dans Plex.',
     );
     expect(notificationMessage('failed', none).body).toBe('L’envoi a échoué.');
   });
@@ -176,8 +176,20 @@ describe('notifications des demandes', () => {
 
     expect(kindsOf(db, member.user.id)).toEqual(['approved', 'available']);
     expect(kindsOf(db, manager.user.id)).toEqual(['requested']);
+    // Le nom du serveur multimédia est lu à l'affichage : celui du réglage courant.
+    setSetting(db, data.cryptoKey, 'mediaServer', {
+      kind: 'jellyfin',
+      url: 'http://jellyfin.local',
+      apiKey: 'k',
+      libraryIds: [],
+      publicUrl: null,
+    });
     const [available] = (await member.get('/api/notifications')).json<NotificationPage>().results;
-    expect(available).toMatchObject({ kind: 'available', body: '« Matrix » est disponible dans Emby.' });
+    expect(available).toMatchObject({
+      kind: 'available',
+      title: 'Disponible dans Jellyfin',
+      body: '« Matrix » est disponible dans Jellyfin.',
+    });
   });
 
   it('refusée : le demandeur est prévenu avec le motif', async () => {

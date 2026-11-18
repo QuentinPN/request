@@ -4,6 +4,7 @@ import type { MediaKey } from '../../../shared/media.ts';
 import type { RequestDetail, RequestEventView } from '../../../shared/requests.ts';
 import type { RequestEventType } from '../../../shared/status.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
+import { useMediaServerName } from '../../lib/media-server.ts';
 import {
   formatDateTime,
   isActiveRequest,
@@ -12,13 +13,15 @@ import {
   requestArrName,
   requestDetailQuery,
   requestProgress,
+  requestStepsOf,
   type StepState,
 } from '../../lib/requests.ts';
 import { SectionHeading } from '../media/rail.tsx';
 
 type Node = { key: string; title: string; detail?: string; state: StepState };
 
-const eventTitle = (type: RequestEventType, actor: string | undefined, arr: string): string => {
+/** `onServer` : « Dans Plex », dernière étape de la barre. */
+const eventTitle = (type: RequestEventType, actor: string | undefined, arr: string, onServer: string): string => {
   const by = actor ? ` par ${actor}` : '';
   const titles: Record<RequestEventType, string> = {
     requested: `Demandée${by}`,
@@ -28,16 +31,18 @@ const eventTitle = (type: RequestEventType, actor: string | undefined, arr: stri
     sent: `Envoyée à ${arr}`,
     failed: `Échec de l’envoi à ${arr}`,
     retried: `Relancée${by}`,
-    available: 'Dans Emby',
+    available: onServer,
   };
   return titles[type];
 };
 
-const eventNode = (event: RequestEventView, arr: string, onBehalf: string | null): Node => ({
+const eventNode = (event: RequestEventView, arr: string, onServer: string, onBehalf: string | null): Node => ({
   key: `event-${event.id}`,
   // La demande elle-même (sans détail : pas un ajout de saisons) faite à la place du membre : « Demandée par X pour Y ».
   title:
-    event.type === 'requested' && !event.detail && onBehalf ? onBehalf : eventTitle(event.type, event.actor?.name, arr),
+    event.type === 'requested' && !event.detail && onBehalf
+      ? onBehalf
+      : eventTitle(event.type, event.actor?.name, arr, onServer),
   detail: [formatDateTime(event.createdAt), event.detail].filter(Boolean).join(' · '),
   state: event.type === 'failed' || event.type === 'declined' ? 'failed' : 'done',
 });
@@ -46,11 +51,12 @@ const eventNode = (event: RequestEventView, arr: string, onBehalf: string | null
  * Frise : les faits passés, puis, tant que la demande est en cours, l'étape actuelle (mise en avant) et celles à venir,
  * tirées de la même traduction en étapes que la barre de Mes demandes.
  */
-function timelineNodes(request: RequestDetail, viewerId: string | undefined): Node[] {
+function timelineNodes(request: RequestDetail, serverName: string, viewerId: string | undefined): Node[] {
+  const onServer = requestStepsOf(serverName)[3];
   const arr = requestArrName(request);
   const onBehalf = onBehalfLabel(request, viewerId);
-  const nodes = request.events.map((event) => eventNode(event, arr, onBehalf));
-  const progress = requestProgress(request);
+  const nodes = request.events.map((event) => eventNode(event, arr, onServer, onBehalf));
+  const progress = requestProgress(request, serverName);
   if (!isActiveRequest(request.status) || progress.tone === 'available') return nodes;
   const current: Record<typeof request.status, string> = {
     pending: 'Approbation',
@@ -60,7 +66,7 @@ function timelineNodes(request: RequestDetail, viewerId: string | undefined): No
   };
   nodes.push({ key: 'current', title: current[request.status], detail: progress.detail, state: 'current' });
   if (progress.steps[2] === 'todo') nodes.push({ key: 'download', title: 'Téléchargement', state: 'todo' });
-  nodes.push({ key: 'emby', title: 'Dans Emby', state: 'todo' });
+  nodes.push({ key: 'emby', title: onServer, state: 'todo' });
   return nodes;
 }
 
@@ -72,10 +78,11 @@ const dot: Record<StepState, string> = {
 };
 
 export function RequestTimeline({ request }: { request: RequestDetail }) {
+  const serverName = useMediaServerName();
   const viewerId = useViewer()?.id;
   return (
     <ol className="relative space-y-5 pl-7 before:absolute before:top-1.5 before:bottom-1.5 before:left-[7px] before:w-0.5 before:bg-(--track)">
-      {timelineNodes(request, viewerId).map((node) => (
+      {timelineNodes(request, serverName, viewerId).map((node) => (
         <li key={node.key} aria-current={node.state === 'current' ? 'step' : undefined} className="relative">
           <span aria-hidden className={cn('absolute top-0.5 -left-7 size-4 rounded-full border-2', dot[node.state])} />
           <span

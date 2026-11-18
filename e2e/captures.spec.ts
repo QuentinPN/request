@@ -29,7 +29,8 @@ test('captures de la connexion et de l’assistant (2.2)', async ({ page, api },
   // Comme la maquette R-Assistant : Emby, TMDB et Radarr testés, Sonarr ouvert et testé.
   api.state.viewer = viewerAs('owner');
   api.state.setup = {
-    services: { emby: true, tmdb: true, radarr: true, sonarr: false, rules: false },
+    services: { mediaServer: true, tmdb: true, radarr: true, sonarr: false, rules: false },
+    mediaServerKind: 'emby',
     hasOwner: true,
     complete: false,
   };

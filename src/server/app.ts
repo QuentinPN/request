@@ -15,10 +15,10 @@ import { authRoutes } from './routes/auth.ts';
 import { blocklistRoutes } from './routes/blocklist.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
 import { discordRoutes } from './routes/discord.ts';
-import { embyRoutes } from './routes/emby.ts';
 import { imageRoutes } from './routes/images.ts';
 import { importRoutes } from './routes/import.ts';
 import { issuesRoutes } from './routes/issues.ts';
+import { mediaServerRoutes } from './routes/media-server.ts';
 import { notificationsRoutes } from './routes/notifications.ts';
 import { pushRoutes } from './routes/push.ts';
 import { requestsRoutes } from './routes/requests.ts';
@@ -37,6 +37,7 @@ import { createDiscord, type DiscordService } from './services/discord.ts';
 import { createEmail, type MailTransport, smtpTransport } from './services/email.ts';
 import { createImageCache, parseImageCacheMaxBytes } from './services/images.ts';
 import { failOrphanJobs } from './services/jobs.ts';
+import { createMediaServers, type MediaServers } from './services/media-server.ts';
 import { createNotifications, onNotificationsCreated, onRequestEvent } from './services/notifications.ts';
 import { createPush, type PushSender, vapidSubject, webPushSender } from './services/push.ts';
 import { failInterruptedSends } from './services/requests.ts';
@@ -48,7 +49,9 @@ declare module 'fastify' {
     data: Data;
     /** Client TMDB d'après le réglage courant ; lève `NotConfiguredError` tant que TMDB n'est pas configuré. */
     tmdb: () => TmdbClient;
-    /** Statut de disponibilité des titres (Emby, Radarr, Sonarr), en cache dans `media`. */
+    /** Serveur multimédia choisi (Emby, Jellyfin ou Plex), d'après le réglage courant. */
+    mediaServers: MediaServers;
+    /** Statut de disponibilité des titres (serveur multimédia, Radarr, Sonarr), en cache dans `media`. */
     availability: AvailabilityService;
     /** Notifications Discord (facultatives). */
     discord: DiscordService;
@@ -65,6 +68,8 @@ export interface Upstreams {
   discordUrl?: string;
   /** Remplace l'API publique de Trakt (import des listes de souhaits). */
   traktUrl?: string;
+  /** Remplace plex.tv (code PIN de connexion, comptes et amis du propriétaire d'un serveur Plex). */
+  plexTvUrl?: string;
   /** Faux transport SMTP (messages gardés pour les assertions). */
   mailTransport?: MailTransport;
   /** Faux envoi push (`web-push` simulé). */
@@ -116,7 +121,11 @@ export async function buildApp({
   const app = Fastify({ logger: false, trustProxy });
   app.decorate('data', data);
   app.decorate('tmdb', createTmdbProvider(data, upstreams.tmdbUrl));
-  app.decorate('availability', createAvailability(data, { tmdb: app.tmdb }));
+  app.decorate(
+    'mediaServers',
+    createMediaServers(data, { ...(upstreams.plexTvUrl && { plexTvUrl: upstreams.plexTvUrl }) }),
+  );
+  app.decorate('availability', createAvailability(data, { tmdb: app.tmdb, mediaServers: app.mediaServers }));
   // Démarrage : une tâche restée « en cours », ou un envoi de demande, a été interrompu par l'arrêt précédent.
   failOrphanJobs(data.db);
   failInterruptedSends(data.db);
@@ -176,7 +185,7 @@ export async function buildApp({
   statsRoutes(app);
   blocklistRoutes(app);
   await app.register(catalogueRoutes);
-  await app.register(embyRoutes);
+  await app.register(mediaServerRoutes);
   await app.register(
     imageRoutes(
       createImageCache({

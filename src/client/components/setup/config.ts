@@ -1,10 +1,26 @@
 import type { ArrKind } from '@shared/arr-servers.ts';
 import type { RequestNotificationKind } from '@shared/notifications.ts';
-import type { IntegrationKey, minimumAvailabilities, seriesTypes, smtpSecurities } from '@shared/settings.ts';
+import {
+  type IntegrationKey,
+  type MediaServerKind,
+  mediaServerKindLabels,
+  type minimumAvailabilities,
+  type seriesTypes,
+  type smtpSecurities,
+} from '@shared/settings.ts';
 import type { ArrTestResult, SetupSection, TestResults } from '@shared/setup.ts';
 
-/** Ordre des sections à l'écran (DESIGN.md, maquette R-Assistant) : Emby, TMDB, Radarr, Sonarr, Règles. */
-export const sectionOrder = ['emby', 'tmdb', 'radarr', 'sonarr', 'rules'] as const satisfies readonly SetupSection[];
+/**
+ * Ordre des sections à l'écran (DESIGN.md, maquette R-Assistant) : serveur multimédia (Emby, Jellyfin ou Plex), TMDB,
+ * Radarr, Sonarr, Règles.
+ */
+export const sectionOrder = [
+  'mediaServer',
+  'tmdb',
+  'radarr',
+  'sonarr',
+  'rules',
+] as const satisfies readonly SetupSection[];
 // Toute section du contrat partagé doit apparaître ici.
 const _complete: Exclude<SetupSection, (typeof sectionOrder)[number]> extends never ? true : never = true;
 void _complete;
@@ -25,17 +41,20 @@ export const settingsSectionOrder = [
   'blocklist',
 ] as const satisfies readonly SectionId[];
 
-/** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande. */
-export const discordEventLabels: Record<RequestNotificationKind, string> = {
+/** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande (au nom du serveur multimédia choisi). */
+export const discordEventLabels = (serverName: string): Record<RequestNotificationKind, string> => ({
   requested: 'Nouvelle demande à approuver',
   approved: 'Demande approuvée',
   declined: 'Demande refusée',
-  available: 'Titre disponible dans Emby',
+  available: `Titre disponible dans ${serverName}`,
   failed: 'Échec de l’envoi à Radarr ou Sonarr',
-};
+});
 
 export const sectionText: Record<SectionId, { title: string; description: string }> = {
-  emby: { title: 'Emby', description: 'Connexion des membres et détection de ce qui est déjà là' },
+  mediaServer: {
+    title: 'Serveur multimédia',
+    description: 'Emby, Jellyfin ou Plex : connexion des membres et détection de ce qui est déjà là',
+  },
   tmdb: { title: 'TMDB', description: 'Catalogue, affiches et tendances en français' },
   radarr: { title: 'Radarr', description: 'Films : serveurs, profil de qualité et dossier racine' },
   sonarr: { title: 'Sonarr', description: 'Séries : serveurs, profil de qualité, dossier racine et type' },
@@ -52,16 +71,28 @@ export const sectionText: Record<SectionId, { title: string; description: string
 /** Service qui se teste à la connexion : une intégration (réglage) ou un serveur Radarr/Sonarr. */
 export type ConnectionKey = IntegrationKey | ArrKind;
 
-/** Champs de connexion de chaque service ; `url: null` = clé seule (TMDB). */
-export const connectionText: Record<
-  ConnectionKey,
-  { url: { placeholder: string } | null; apiKeyLabel: string; apiKeyHint: string }
-> = {
+type ConnectionText = { url: { placeholder: string } | null; apiKeyLabel: string; apiKeyHint: string };
+
+/** Champs de connexion de chaque type de serveur multimédia. */
+const mediaServerText: Record<MediaServerKind, ConnectionText> = {
   emby: {
     url: { placeholder: 'http://192.0.2.20:8096' },
     apiKeyLabel: 'Clé d’API',
     apiKeyHint: 'Emby › Tableau de bord › Avancé › Clés d’API',
   },
+  jellyfin: {
+    url: { placeholder: 'http://192.0.2.20:8096' },
+    apiKeyLabel: 'Clé d’API',
+    apiKeyHint: 'Jellyfin › Tableau de bord › Clés API',
+  },
+  plex: {
+    url: { placeholder: 'http://192.0.2.20:32400' },
+    apiKeyLabel: 'Jeton Plex du propriétaire',
+    apiKeyHint: 'Plex Web › un titre › ⋯ › Infos multimédia › Afficher le XML : valeur de X-Plex-Token dans l’adresse',
+  },
+};
+
+const connectionText: Record<Exclude<ConnectionKey, 'mediaServer'>, ConnectionText> = {
   tmdb: {
     url: null,
     apiKeyLabel: 'Clé d’API ou jeton de lecture',
@@ -78,6 +109,10 @@ export const connectionText: Record<
     apiKeyHint: 'Sonarr › Paramètres › Général',
   },
 };
+
+/** Champs de connexion de chaque service ; `url: null` = clé seule (TMDB). Le serveur multimédia dépend de son type. */
+export const connectionTextOf = (key: ConnectionKey, kind: MediaServerKind | null): ConnectionText =>
+  key === 'mediaServer' ? mediaServerText[kind ?? 'emby'] : connectionText[key];
 
 /** Adresse saisie d'un service (vérification locale, avant l'appel au serveur). */
 export const isHttpUrl = (value: string) => /^https?:\/\/[^\s/]+/i.test(value.trim());
@@ -110,11 +145,16 @@ const arrSummary = (name: string, r: ArrTestResult) =>
   `${name} v${r.version} · ${plural(r.qualityProfiles.length, 'profil')}, ${plural(r.rootFolders.length, 'dossier')}`;
 
 /** Ligne affichée après un test réussi : « Connexion réussie · Sonarr v4.0.11 · 3 profils, 2 dossiers ». */
-export function testSummary<K extends ConnectionKey>(key: K, result: TestResults[K]): string {
+export function testSummary<K extends ConnectionKey>(
+  key: K,
+  result: TestResults[K],
+  kind: MediaServerKind | null,
+): string {
   const detail = {
-    emby: () => {
-      const r = result as TestResults['emby'];
-      return `${r.serverName} · Emby v${r.version} · ${plural(r.libraries.length, 'bibliothèque')}`;
+    mediaServer: () => {
+      const r = result as TestResults['mediaServer'];
+      const name = mediaServerKindLabels[kind ?? 'emby'];
+      return `${r.serverName} · ${name} v${r.version} · ${plural(r.libraries.length, 'bibliothèque')}`;
     },
     tmdb: () => 'TMDB',
     radarr: () => arrSummary('Radarr', result as TestResults['radarr']),

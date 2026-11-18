@@ -12,6 +12,7 @@ import { setSetting } from '../src/server/services/settings.ts';
 import { createTmdbProvider } from '../src/server/services/tmdb.ts';
 import { upsertFromEmby } from '../src/server/services/users.ts';
 import type { MediaKey } from '../src/shared/media.ts';
+import { WATCH_LINK_PATH } from '../src/shared/media-server.ts';
 import { type FakeRequest, type FakeRoutes, startFakeServer, status } from './fake-server.ts';
 import { addArrServer, loginAs, loginAsOwner, queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
@@ -450,31 +451,31 @@ describe('lien vers Emby', () => {
 
   it('adresse publique et id du serveur ; l’id n’est lu qu’une fois', async () => {
     const { availability, servers } = await setup(withPublicUrl());
-    const expected = { publicUrl: 'https://tv.exemple.fr', serverId: 'srv-1' };
-    expect(await availability.embyLink()).toEqual(expected);
-    expect(await availability.embyLink()).toEqual(expected);
+    const expected = { kind: 'emby', publicUrl: 'https://tv.exemple.fr', serverId: 'srv-1' };
+    expect(await availability.watchLink()).toEqual(expected);
+    expect(await availability.watchLink()).toEqual(expected);
     expect(servers.emby?.requests.filter((r) => r.path === '/System/Info/Public')).toHaveLength(1);
   });
 
   it('pas d’adresse publique : pas de lien, et Emby n’est pas appelé', async () => {
     const { availability, servers } = await setup({ emby: { 'GET /System/Info/Public': { Id: 'srv-1' } } });
-    expect(await availability.embyLink()).toBeNull();
+    expect(await availability.watchLink()).toBeNull();
     expect(servers.emby?.requests).toHaveLength(0);
   });
 
   it('Emby injoignable ou illisible : pas de lien, jamais d’erreur', async () => {
     const { availability } = await setup(withPublicUrl({ 'GET /System/Info/Public': status(500) }));
-    expect(await availability.embyLink()).toBeNull();
+    expect(await availability.watchLink()).toBeNull();
   });
 
-  it('GET /api/emby/link : lisible par un simple membre, 401 sans session', async () => {
+  it('GET /api/media-server/link : lisible par un simple membre, 401 sans session', async () => {
     const { app, servers } = await setupApp(withPublicUrl());
     const member = await loginAs(app, 'member');
-    const res = await app.inject({ method: 'GET', url: '/api/emby/link', headers: member.headers });
+    const res = await app.inject({ method: 'GET', url: WATCH_LINK_PATH, headers: member.headers });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ link: { publicUrl: 'https://tv.exemple.fr', serverId: 'srv-1' } });
+    expect(res.json()).toEqual({ link: { kind: 'emby', publicUrl: 'https://tv.exemple.fr', serverId: 'srv-1' } });
     expect(JSON.stringify(res.json())).not.toContain(servers.emby?.url ?? '?');
-    expect((await app.inject({ method: 'GET', url: '/api/emby/link' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: WATCH_LINK_PATH })).statusCode).toBe(401);
   });
 });
 

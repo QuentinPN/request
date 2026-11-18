@@ -7,6 +7,7 @@ import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
 import { CheckboxField, FieldHint, Input, Label } from '@/components/ui/field';
 import { apiSend } from '@/lib/http';
+import { useMediaServerName } from '@/lib/media-server';
 import { discordEventLabels } from './config';
 import { discordQuery } from './queries';
 import {
@@ -24,6 +25,7 @@ const URL_ERROR = 'Adresse attendue : https://discord.com/api/webhooks/…';
 function DiscordForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedSetting<'discord'> }) {
   const id = useId();
   const queryClient = useQueryClient();
+  const eventLabels = discordEventLabels(useMediaServerName());
   // Vide : garder l'adresse enregistrée (elle ne revient jamais du serveur).
   const [url, setUrl] = useState('');
   const [enabled, setEnabled] = useState(stored.enabled);
@@ -114,7 +116,7 @@ function DiscordForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedS
                 checked={events.includes(kind)}
                 onChange={(e) => toggleEvent(kind, e.target.checked)}
               >
-                {discordEventLabels[kind]}
+                {eventLabels[kind]}
               </CheckboxField>
             ))}
           </div>

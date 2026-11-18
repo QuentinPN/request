@@ -19,6 +19,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { plural } from '@/lib/catalogue';
 import { errorMessage } from '@/lib/http';
+import { useMediaServerName } from '@/lib/media-server';
 import {
   formatDay,
   myRequestsQuery,
@@ -109,7 +110,7 @@ const rowBox =
 const rowGrid = 'min-w-0 grow lg:grid lg:grid-cols-[minmax(0,1fr)_300px_170px] lg:items-center lg:gap-6';
 
 function RequestRow({ request }: { request: RequestView }) {
-  const progress = requestProgress(request);
+  const progress = requestProgress(request, useMediaServerName());
   const title = request.media?.title ?? 'Titre inconnu';
   return (
     <li className={rowBox}>

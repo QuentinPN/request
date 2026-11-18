@@ -58,10 +58,10 @@ export function guardRedirect(
   viewer: Viewer | null,
 ): GuardRedirect | null {
   const isOwner = viewer?.capabilities.isOwner === true;
-  // Avec un propriétaire, la connexion reste ouverte même sans Emby (le serveur répond 409) : sinon /assistant renverrait ici.
-  if (path === '/connexion') return setup.services.emby || setup.hasOwner ? null : { to: '/assistant' };
+  // Avec un propriétaire, la connexion reste ouverte même sans serveur multimédia (le serveur répond 409) : sinon /assistant renverrait ici.
+  if (path === '/connexion') return setup.services.mediaServer || setup.hasOwner ? null : { to: '/assistant' };
   if (path === '/assistant') {
-    // Amorçage : sans propriétaire, l'assistant (Emby seul) est ouvert à tous.
+    // Amorçage : sans propriétaire, l'assistant (serveur multimédia seul) est ouvert à tous.
     if (!setup.hasOwner) return null;
     if (!viewer) return { to: '/connexion', retour: href };
     return isOwner ? null : { to: '/' };

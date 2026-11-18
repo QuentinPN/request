@@ -145,11 +145,13 @@ export const requestStatusLabel: Record<RequestStatus, string> = {
 
 // --- Progression d'une demande (barre en quatre étapes, pastille, frise) ---
 
-export const requestSteps = ['Demandé', 'Approuvé', 'Téléchargé', 'Dans Emby'] as const;
+/** Étapes de la barre ; la dernière porte le nom du serveur multimédia choisi (« Dans Plex »). */
+export const requestStepsOf = (serverName: string) =>
+  ['Demandé', 'Approuvé', 'Téléchargé', `Dans ${serverName}`] as const;
 export type StepState = 'done' | 'current' | 'failed' | 'todo';
 
 export interface RequestProgress {
-  /** Une valeur par étape de `requestSteps`. */
+  /** Une valeur par étape de `requestStepsOf`. */
   steps: StepState[];
   /** Teinte de la pastille, empruntée aux statuts des titres. */
   tone: MediaStatus;
@@ -176,6 +178,7 @@ const F = 'failed';
  */
 export function requestProgress(
   request: Pick<RequestView, 'status' | 'media' | 'type' | 'is4k' | 'server'>,
+  serverName: string,
 ): RequestProgress {
   const arr = requestArrName(request);
   const media = request.media;
@@ -220,7 +223,7 @@ export function requestProgress(
         steps: [D, D, D, D],
         tone: 'available',
         label: requestStatusLabel.available,
-        detail: 'Disponible dans Emby',
+        detail: `Disponible dans ${serverName}`,
       };
     case 'sent': {
       if (media?.status === 'available')
@@ -228,7 +231,7 @@ export function requestProgress(
           steps: [D, D, D, D],
           tone: 'available',
           label: requestStatusLabel.available,
-          detail: 'Disponible dans Emby',
+          detail: `Disponible dans ${serverName}`,
         };
       if (media?.status === 'downloading') {
         const percent = media ? downloadPercent(media) : undefined;

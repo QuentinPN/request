@@ -19,6 +19,7 @@ import type { Data, Db } from '../db/index.ts';
 import { issueComments, issues, media, notifications, requests, users } from '../db/schema.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { DAY_MS } from '../lib/time.ts';
+import { mediaServerName } from './media-server.ts';
 import { loadSummaries } from './tmdb.ts';
 
 type ListQuery = z.output<typeof notificationListQuerySchema>;
@@ -33,6 +34,8 @@ export const NOTIFICATION_RETENTION_MS = 90 * DAY_MS;
 export interface MessageContext {
   title: string | null;
   requesterName: string | null;
+  /** Nom du serveur multimédia choisi (« Plex »), lu au moment de l'envoi ou de l'affichage. */
+  serverName: string;
   /** Motif du refus, raison de l'échec. */
   detail: string | null;
 }
@@ -40,7 +43,7 @@ export interface MessageContext {
 /** Texte d'une notification, en français : rendu à la lecture (rien de figé en base). */
 export function notificationMessage(
   kind: NotificationKind,
-  { title, requesterName, detail }: MessageContext,
+  { title, requesterName, detail, serverName }: MessageContext,
 ): { title: string; body: string } {
   const quoted = title ? `« ${title} »` : null;
   const ofTitle = quoted ? ` de ${quoted}` : '';
@@ -59,8 +62,8 @@ export function notificationMessage(
       };
     case 'available':
       return {
-        title: 'Disponible dans Emby',
-        body: `${quoted ?? 'Le titre que vous avez demandé'} est disponible dans Emby.`,
+        title: `Disponible dans ${serverName}`,
+        body: `${quoted ?? 'Le titre que vous avez demandé'} est disponible dans ${serverName}.`,
       };
     case 'failed':
       return {
@@ -315,6 +318,7 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
       deps.tmdb,
       keyed.flatMap((r) => (r.key ? [r.key] : [])),
     );
+    const serverName = mediaServerName(data);
     return keyed.map(({ notification: n, key, requesterName }) => ({
       userId: n.userId,
       view: {
@@ -324,6 +328,7 @@ export function createNotifications(data: Data, deps: { tmdb: () => TmdbClient; 
           title: key ? (titles.get(keyOf(key))?.title ?? null) : null,
           requesterName,
           detail: n.detail,
+          serverName,
         }),
         read: n.readAt !== null,
         createdAt: n.createdAt.toISOString(),

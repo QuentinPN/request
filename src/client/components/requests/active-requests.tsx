@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useViewer } from '../../hooks/use-viewer.ts';
+import { useMediaServerName } from '../../lib/media-server.ts';
 import { myActiveRequestsQuery, requestCountsQuery, requestProgress, requestShortTitle } from '../../lib/requests.ts';
 import { SectionHeading } from '../media/rail.tsx';
 import { RequestStatusPill, RequestStepBar, RequestThumb } from './request-progress.tsx';
@@ -17,6 +18,7 @@ export function ActiveRequestsStrip() {
   const counts = useQuery({ ...requestCountsQuery(), enabled: allowed });
   const mine = useQuery({ ...myActiveRequestsQuery(), enabled: allowed && (counts.data?.mineActive ?? 0) > 0 });
   const active = (mine.data?.results ?? []).slice(0, STRIP_MAX);
+  const serverName = useMediaServerName();
   if (!allowed || counts.data?.mineActive === 0 || active.length === 0) return null;
   return (
     <section aria-labelledby="demandes-en-cours">
@@ -32,7 +34,7 @@ export function ActiveRequestsStrip() {
       </SectionHeading>
       <ul className="-mx-(--space-page) flex gap-3 overflow-x-auto px-(--space-page) pb-1 [scrollbar-width:none] lg:mx-0 lg:grid lg:grid-cols-3 lg:gap-4 lg:overflow-visible lg:px-0">
         {active.map((request) => {
-          const progress = requestProgress(request);
+          const progress = requestProgress(request, serverName);
           return (
             <li key={request.id} className="glass flex w-[270px] shrink-0 gap-4 rounded-[16px] p-3 lg:w-auto lg:p-4">
               <RequestThumb posterPath={request.media?.posterPath} className="hidden w-14 lg:block" />

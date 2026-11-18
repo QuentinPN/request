@@ -5,26 +5,32 @@ import {
   arrKindLabels,
   isArrKind,
 } from '@shared/arr-servers.ts';
+import { loginMethodOf } from '@shared/media-server.ts';
 import {
   DEFAULT_MINIMUM_AVAILABILITY,
   DEFAULT_SERIES_TYPE,
   type IntegrationKey,
   type MaskedSetting,
+  type MediaServerKind,
   type MinimumAvailability,
+  mediaServerKindLabels,
+  mediaServerKinds,
   normalizeUrl,
+  ofMediaServer,
   type SeriesType,
   type SettingInput,
 } from '@shared/settings.ts';
 import type { TestResults } from '@shared/setup.ts';
-import { type UseMutationResult, useMutation } from '@tanstack/react-query';
+import { type UseMutationResult, useMutation, useQuery } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
 import { CheckboxRow, FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
 import { apiSend } from '@/lib/http';
+import { setupStateQuery } from '@/lib/session';
 import {
   type ConnectionKey,
-  connectionText,
+  connectionTextOf,
   formatBytes,
   isHttpUrl,
   libraryTypeLabels,
@@ -36,8 +42,10 @@ import {
 import { useSaveSetting } from './queries';
 import { actionClass, SectionActions, SectionFrame, type SectionFrameProps, sectionStatus } from './section-frame';
 
-/** Valeurs du formulaire, communes à Emby, TMDB et aux serveurs Radarr/Sonarr (chacun n'en lit qu'une partie). */
+/** Valeurs du formulaire, communes au serveur multimédia, à TMDB et aux serveurs Radarr/Sonarr (chacun n'en lit qu'une partie). */
 export type Values = {
+  /** Serveur multimédia : Emby, Jellyfin ou Plex, choisi d'abord ; `null` tant qu'aucun ne l'est. */
+  kind: MediaServerKind | null;
   /** Serveur Radarr/Sonarr : nom affiché, 4K, serveur par défaut de son couple (type, 4K). */
   name: string;
   is4k: boolean;
@@ -46,7 +54,7 @@ export type Values = {
   /** Vide : garder la clé enregistrée (même adresse seulement, voir withStoredSecrets côté serveur). */
   apiKey: string;
   libraryIds: string[];
-  /** Emby : adresse que les membres utilisent (« Regarder dans Emby »), vide = aucune. */
+  /** Emby, Jellyfin : adresse que les membres utilisent (« Regarder dans… »), vide = aucune. */
   publicUrl: string;
   qualityProfileId: string;
   rootFolderPath: string;
@@ -57,8 +65,12 @@ export type Values = {
 
 /** Vue à plat d'un réglage masqué ou d'un serveur Radarr/Sonarr enregistré. */
 export type StoredFields = Partial<
-  Omit<Values, 'apiKey' | 'publicUrl' | 'qualityProfileId' | 'languageProfileId' | 'minimumAvailability' | 'seriesType'>
+  Omit<
+    Values,
+    'kind' | 'apiKey' | 'publicUrl' | 'qualityProfileId' | 'languageProfileId' | 'minimumAvailability' | 'seriesType'
+  >
 > & {
+  kind?: MediaServerKind;
   /** Serveur Radarr/Sonarr déjà enregistré : sa clé est reprise au test si elle est laissée vide. */
   id?: number;
   apiKey?: { set: boolean };
@@ -71,6 +83,7 @@ export type StoredFields = Partial<
 };
 
 const initialValues = (s: StoredFields): Values => ({
+  kind: s.kind ?? null,
   name: s.name ?? '',
   is4k: s.is4k ?? false,
   isDefault: s.isDefault ?? false,
@@ -86,13 +99,22 @@ const initialValues = (s: StoredFields): Values => ({
 });
 
 const connectionOf = (key: ConnectionKey, v: Values) =>
-  key === 'tmdb' ? { apiKey: v.apiKey } : { url: v.url.trim(), apiKey: v.apiKey };
+  key === 'tmdb'
+    ? { apiKey: v.apiKey }
+    : { ...(key === 'mediaServer' && { kind: v.kind }), url: v.url.trim(), apiKey: v.apiKey };
 
-/** Corps du PUT d'Emby ou de TMDB, au format du schéma partagé de chaque intégration. */
+/** Plex n'a pas d'adresse publique : son lien « Regarder dans Plex » passe par app.plex.tv. */
+const hasPublicUrl = (key: ConnectionKey, v: Values) => key === 'mediaServer' && v.kind !== null && v.kind !== 'plex';
+
+/** Corps du PUT du serveur multimédia ou de TMDB, au format du schéma partagé de chaque intégration. */
 function settingPayloadOf(key: IntegrationKey, v: Values): SettingInput<IntegrationKey> {
   const connection = connectionOf(key, v);
-  return key === 'emby'
-    ? ({ ...connection, libraryIds: v.libraryIds, publicUrl: v.publicUrl.trim() || null } as SettingInput<'emby'>)
+  return key === 'mediaServer'
+    ? ({
+        ...connection,
+        libraryIds: v.libraryIds,
+        publicUrl: (hasPublicUrl(key, v) && v.publicUrl.trim()) || null,
+      } as SettingInput<'mediaServer'>)
     : (connection as SettingInput<'tmdb'>);
 }
 
@@ -124,8 +146,8 @@ const pick = (current: string, options: string[]) => (options.includes(current) 
 
 /** Choix par défaut après un test : valeurs enregistrées si elles existent encore, sinon la première option. */
 function prefill(key: ConnectionKey, v: Values, result: TestResults[ConnectionKey]): Values {
-  if (key === 'emby') {
-    const { libraries } = result as TestResults['emby'];
+  if (key === 'mediaServer') {
+    const { libraries } = result as TestResults['mediaServer'];
     const known = v.libraryIds.filter((id) => libraries.some((l) => l.id === id));
     const media = libraries.filter((l) => l.type !== 'other').map((l) => l.id);
     return { ...v, libraryIds: known.length > 0 ? known : media };
@@ -153,17 +175,25 @@ function prefill(key: ConnectionKey, v: Values, result: TestResults[ConnectionKe
   return v;
 }
 
-/** Adresse publique d'Emby : facultative, mais valide si elle est renseignée. */
+/** Adresse publique d'Emby ou de Jellyfin : facultative, mais valide si elle est renseignée. */
 const publicUrlError = (key: ConnectionKey, v: Values) =>
-  key === 'emby' && v.publicUrl.trim() !== '' && !isHttpUrl(v.publicUrl) ? URL_ERROR : null;
+  hasPublicUrl(key, v) && v.publicUrl.trim() !== '' && !isHttpUrl(v.publicUrl) ? URL_ERROR : null;
+
+/**
+ * La clé enregistrée vaut pour cette saisie : même adresse, et même type de serveur multimédia (le serveur ne reprend
+ * jamais la clé d'un autre type, voir routes/setup.ts).
+ */
+const keepsStoredKey = (key: ConnectionKey, v: Values, stored: StoredFields) =>
+  stored.apiKey?.set === true &&
+  (connectionTextOf(key, v.kind).url === null || normalizeUrl(v.url.trim()) === stored.url) &&
+  (stored.kind === undefined || stored.kind === v.kind);
 
 /** Vérification locale avant d'appeler le serveur ; `null` si rien à signaler. */
 function localError(key: ConnectionKey, v: Values, stored: StoredFields, named: boolean): string | null {
+  if (key === 'mediaServer' && !v.kind) return 'Choisissez d’abord le type de serveur';
   if (named && !v.name.trim()) return 'Nom requis';
-  const hasUrl = connectionText[key].url !== null;
-  if (hasUrl && !isHttpUrl(v.url)) return URL_ERROR;
-  const keepsKey = stored.apiKey?.set === true && (!hasUrl || normalizeUrl(v.url.trim()) === stored.url);
-  if (!v.apiKey.trim() && !keepsKey)
+  if (connectionTextOf(key, v.kind).url !== null && !isHttpUrl(v.url)) return URL_ERROR;
+  if (!v.apiKey.trim() && !keepsStoredKey(key, v, stored))
     return stored.apiKey?.set ? 'Nouvelle adresse : saisissez à nouveau la clé d’API' : 'Clé d’API requise';
   return null;
 }
@@ -186,12 +216,15 @@ type FormProps<P> = {
   toPayload: (values: Values) => P;
   /** Bouton en plus des actions (« Annuler » d'un serveur en cours d'édition). */
   extraAction?: ReactNode;
+  /** Serveur multimédia : son type ne peut plus changer (des membres existent ; le serveur refuse aussi, 409). */
+  kindLocked?: boolean;
   render: (state: FormState, form: ReactNode) => ReactNode;
 };
 
 /**
- * Formulaire unique d'Emby, de TMDB et des serveurs Radarr/Sonarr : connexion, test en direct, choix lus dans le
- * résultat, enregistrement. Le cadre (section d'accordéon, ligne de la liste des serveurs) vient de `render`.
+ * Formulaire unique du serveur multimédia (Emby, Jellyfin ou Plex, choisi d'abord), de TMDB et des serveurs
+ * Radarr/Sonarr : connexion, test en direct, choix lus dans le résultat, enregistrement. Le cadre (section
+ * d'accordéon, ligne de la liste des serveurs) vient de `render`.
  */
 export function IntegrationForm<P>({
   service,
@@ -203,12 +236,15 @@ export function IntegrationForm<P>({
   save,
   toPayload,
   extraAction,
+  kindLocked = false,
   render,
 }: FormProps<P>) {
   const stored = storedSetting ?? {};
-  const text = connectionText[service];
   const id = useId();
   const [values, setValues] = useState(() => ({ ...initialValues(stored), ...defaults }));
+  const text = connectionTextOf(service, values.kind);
+  const isMediaServer = service === 'mediaServer';
+  const serverName = values.kind ? mediaServerKindLabels[values.kind] : '';
   const [checkError, setCheckError] = useState<string | null>(null);
 
   const test = useMutation({
@@ -246,6 +282,13 @@ export function IntegrationForm<P>({
     setValues((v) => ({ ...v, ...patch }));
     save.reset();
   };
+  // Autre type de serveur : autre clé, autres bibliothèques ; la clé enregistrée ne vaut plus.
+  const setKind = (kind: MediaServerKind) => {
+    setValues((v) => ({ ...v, kind, apiKey: '', libraryIds: kind === stored.kind ? (stored.libraryIds ?? []) : [] }));
+    setCheckError(null);
+    test.reset();
+    save.reset();
+  };
 
   const result = test.data;
   const arr = result && isArrKind(service) ? (result as TestResults['sonarr']) : null;
@@ -268,7 +311,7 @@ export function IntegrationForm<P>({
     if (save.isSuccess && !wizard) return <Notice tone="ok">Réglages enregistrés</Notice>;
     if (checkError) return <Notice tone="error">{checkError}</Notice>;
     if (test.isError) return <Notice tone="error">{test.error.message}</Notice>;
-    if (result) return <Notice tone="ok">{testSummary(service, result)}</Notice>;
+    if (result) return <Notice tone="ok">{testSummary(service, result, values.kind)}</Notice>;
     return null;
   })();
 
@@ -276,13 +319,49 @@ export function IntegrationForm<P>({
     failed: Boolean(checkError) || test.isError || save.isError,
     testing: test.isPending || save.isPending,
   };
-  const keyPlaceholder =
-    stored.apiKey?.set && (!text.url || normalizeUrl(values.url.trim()) === stored.url) ? 'Clé enregistrée' : undefined;
+  const keyPlaceholder = keepsStoredKey(service, values, stored) ? 'Clé enregistrée' : undefined;
   const pairLabel = isArrKind(service) ? `${arrKindLabels[service]}${values.is4k ? ' 4K' : ''}` : '';
+  // Serveur multimédia : rien d'autre à remplir tant que son type n'est pas choisi.
+  const showConnection = !isMediaServer || values.kind !== null;
 
   return render(
     state,
     <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
+      {isMediaServer && (
+        <fieldset aria-describedby={kindLocked ? `${id}-kind-hint` : undefined}>
+          <legend className="mb-2 text-[13px] font-semibold">Type de serveur</legend>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {mediaServerKinds.map((kind) => (
+              <label
+                key={kind}
+                className="flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-60"
+              >
+                <input
+                  type="radio"
+                  name={`${id}-kind`}
+                  value={kind}
+                  className="size-4 shrink-0 accent-(--accent-play)"
+                  checked={values.kind === kind}
+                  disabled={kindLocked && kind !== values.kind}
+                  onChange={() => setKind(kind)}
+                />
+                <span className="flex flex-col">
+                  <span className="font-medium">{mediaServerKindLabels[kind]}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {loginMethodOf(kind) === 'plex' ? 'Connexion avec un compte Plex' : 'Identifiant et mot de passe'}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {kindLocked && (
+            <FieldHint id={`${id}-kind-hint`}>
+              Le type ne peut plus changer : vos membres sont inscrits avec leur compte {serverName}, et leurs demandes
+              en dépendent.
+            </FieldHint>
+          )}
+        </fieldset>
+      )}
       {serverFields && (
         <div>
           <Label htmlFor={`${id}-name`}>Nom</Label>
@@ -295,48 +374,50 @@ export function IntegrationForm<P>({
           />
         </div>
       )}
-      <div className="grid gap-4 sm:grid-cols-2">
-        {text.url && (
-          <div>
-            <Label htmlFor={`${id}-url`}>Adresse</Label>
+      {showConnection && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {text.url && (
+            <div>
+              <Label htmlFor={`${id}-url`}>Adresse</Label>
+              <Input
+                id={`${id}-url`}
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={text.url.placeholder}
+                value={values.url}
+                onChange={(e) => setConnection({ url: e.target.value })}
+              />
+            </div>
+          )}
+          <div className={text.url ? undefined : 'sm:col-span-2'}>
+            <Label htmlFor={`${id}-key`}>{text.apiKeyLabel}</Label>
             <Input
-              id={`${id}-url`}
-              type="url"
-              inputMode="url"
+              id={`${id}-key`}
+              type="password"
               autoComplete="off"
               spellCheck={false}
-              placeholder={text.url.placeholder}
-              value={values.url}
-              onChange={(e) => setConnection({ url: e.target.value })}
+              placeholder={keyPlaceholder}
+              aria-describedby={`${id}-key-hint`}
+              value={values.apiKey}
+              onChange={(e) => setConnection({ apiKey: e.target.value })}
             />
+            <FieldHint id={`${id}-key-hint`}>{text.apiKeyHint}</FieldHint>
           </div>
-        )}
-        <div className={text.url ? undefined : 'sm:col-span-2'}>
-          <Label htmlFor={`${id}-key`}>{text.apiKeyLabel}</Label>
-          <Input
-            id={`${id}-key`}
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={keyPlaceholder}
-            aria-describedby={`${id}-key-hint`}
-            value={values.apiKey}
-            onChange={(e) => setConnection({ apiKey: e.target.value })}
-          />
-          <FieldHint id={`${id}-key-hint`}>{text.apiKeyHint}</FieldHint>
         </div>
-      </div>
+      )}
 
-      {service === 'emby' && (
+      {hasPublicUrl(service, values) && (
         <div>
-          <Label htmlFor={`${id}-public-url`}>Adresse publique d’Emby</Label>
+          <Label htmlFor={`${id}-public-url`}>Adresse publique {values.kind && ofMediaServer(values.kind)}</Label>
           <Input
             id={`${id}-public-url`}
             type="url"
             inputMode="url"
             autoComplete="off"
             spellCheck={false}
-            placeholder="https://emby.exemple.fr"
+            placeholder={`https://${values.kind}.exemple.fr`}
             aria-describedby={`${id}-public-url-hint`}
             aria-invalid={publicError ? true : undefined}
             value={values.publicUrl}
@@ -344,16 +425,16 @@ export function IntegrationForm<P>({
           />
           <FieldHint id={`${id}-public-url-hint`} className={publicError ? 'text-(--text-danger)' : undefined}>
             {publicError ??
-              'Facultative. Celle que vos membres utilisent pour ouvrir Emby : elle active le lien « Regarder dans Emby ».'}
+              `Facultative. Celle que vos membres utilisent pour ouvrir ${serverName} : elle active le lien « Regarder dans ${serverName} ».`}
           </FieldHint>
         </div>
       )}
 
-      {result && service === 'emby' && (
+      {result && isMediaServer && (
         <fieldset>
           <legend className="mb-2 text-[13px] font-semibold">Bibliothèques à surveiller</legend>
           <div className="grid gap-2 sm:grid-cols-2">
-            {(result as TestResults['emby']).libraries.map((library) => (
+            {(result as TestResults['mediaServer']).libraries.map((library) => (
               <label
                 key={library.id}
                 className="flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm"
@@ -510,9 +591,11 @@ type SectionProps = SectionFrameProps & {
   onSaved: () => void;
 };
 
-/** Section d'accordéon d'Emby ou de TMDB : le formulaire, enregistré comme réglage. */
+/** Section d'accordéon du serveur multimédia ou de TMDB : le formulaire, enregistré comme réglage. */
 export function IntegrationSection({ service, stored, saved, wizard, onSaved, ...frame }: SectionProps) {
   const save = useSaveSetting(service, onSaved);
+  // Un propriétaire existe, donc des membres : le type du serveur multimédia enregistré est figé (le serveur le refuse).
+  const hasOwner = useQuery(setupStateQuery).data?.hasOwner === true;
   return (
     <IntegrationForm
       service={service}
@@ -520,6 +603,7 @@ export function IntegrationSection({ service, stored, saved, wizard, onSaved, ..
       wizard={wizard}
       open={frame.open}
       save={save}
+      kindLocked={service === 'mediaServer' && saved && hasOwner}
       toPayload={(v) => settingPayloadOf(service, v)}
       render={(state, form) => (
         <SectionFrame {...frame} status={sectionStatus({ saved, open: frame.open, ...state })}>

@@ -12,6 +12,7 @@ import {
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import type { AfterCommit } from './after-commit.ts';
 import { DEFAULT_UPSTREAM as TMDB_IMAGES_URL } from './images.ts';
+import { mediaServerName } from './media-server.ts';
 import { notificationMessage, type RequestEventFact } from './notifications.ts';
 import { getSetting } from './settings.ts';
 import { loadSummaries } from './tmdb.ts';
@@ -66,7 +67,12 @@ export function createDiscord(
       ...(label && row.detail ? [{ name: label, value: truncate(row.detail, DISCORD_FIELD_MAX) }] : []),
     ];
     await send(config.webhookUrl, {
-      title: notificationMessage(kind, { title, requesterName: row.requester, detail: row.detail }).title,
+      title: notificationMessage(kind, {
+        title,
+        requesterName: row.requester,
+        detail: row.detail,
+        serverName: mediaServerName(data),
+      }).title,
       description: truncate(
         title ? `**${title}**${summary?.year ? ` (${summary.year})` : ''}` : 'Titre inconnu',
         DISCORD_DESCRIPTION_MAX,

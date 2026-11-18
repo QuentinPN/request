@@ -4,7 +4,8 @@ import { capabilitiesOf, type Role } from '../src/shared/roles.ts';
 import type { SetupState } from '../src/shared/setup.ts';
 
 const setupOf = (hasOwner: boolean, emby: boolean, complete: boolean): SetupState => ({
-  services: { emby, tmdb: complete, radarr: complete, sonarr: complete, rules: complete },
+  services: { mediaServer: emby, tmdb: complete, radarr: complete, sonarr: complete, rules: complete },
+  mediaServerKind: emby ? 'emby' : null,
   hasOwner,
   complete,
 });
