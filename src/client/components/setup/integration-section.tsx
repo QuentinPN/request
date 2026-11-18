@@ -20,7 +20,7 @@ import {
   type SeriesType,
   type SettingInput,
 } from '@shared/settings.ts';
-import { setupTestPath, type TestResults } from '@shared/setup.ts';
+import { SETUP_TOKEN_HEADER, setupTestPath, type TestResults } from '@shared/setup.ts';
 import { type UseMutationResult, useMutation, useQuery } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Notice } from '@/components/notice';
@@ -218,8 +218,12 @@ type FormProps<P> = {
   extraAction?: ReactNode;
   /** Serveur multimédia : son type ne peut plus changer (des membres existent ; le serveur refuse aussi, 409). */
   kindLocked?: boolean;
+  /** Amorçage du serveur multimédia (aucun propriétaire) : jeton d'installation saisi, et ses en-têtes de requête. */
+  setupToken?: SetupTokenField;
   render: (state: FormState, form: ReactNode) => ReactNode;
 };
+
+type SetupTokenField = { value: string; onChange: (value: string) => void; headers: Record<string, string> };
 
 /**
  * Formulaire unique du serveur multimédia (Emby, Jellyfin ou Plex, choisi d'abord), de TMDB et des serveurs
@@ -237,6 +241,7 @@ export function IntegrationForm<P>({
   toPayload,
   extraAction,
   kindLocked = false,
+  setupToken,
   render,
 }: FormProps<P>) {
   const stored = storedSetting ?? {};
@@ -250,14 +255,17 @@ export function IntegrationForm<P>({
   const test = useMutation({
     mutationFn: (v: Values) => {
       const { path, body } = testRequest(service, v, stored);
-      return apiSend<TestResults[ConnectionKey]>('POST', path, body);
+      return apiSend<TestResults[ConnectionKey]>('POST', path, body, undefined, setupToken?.headers);
     },
     onSuccess: (result) => setValues((v) => prefill(service, v, result)),
   });
 
   const runTest = (v: Values) => {
     save.reset();
-    const error = localError(service, v, stored, serverFields);
+    const error =
+      setupToken && !setupToken.value.trim()
+        ? 'Saisissez le jeton d’installation'
+        : localError(service, v, stored, serverFields);
     setCheckError(error);
     if (error) test.reset();
     else test.mutate(v);
@@ -271,12 +279,15 @@ export function IntegrationForm<P>({
     runTest(values);
   });
 
-  // Toute modification de la connexion invalide le dernier test.
-  const setConnection = (patch: Partial<Pick<Values, 'url' | 'apiKey'>>) => {
-    setValues((v) => ({ ...v, ...patch }));
+  // Toute modification de la connexion (ou du jeton d'installation) invalide le dernier test.
+  const resetTest = () => {
     setCheckError(null);
     test.reset();
     save.reset();
+  };
+  const setConnection = (patch: Partial<Pick<Values, 'url' | 'apiKey'>>) => {
+    setValues((v) => ({ ...v, ...patch }));
+    resetTest();
   };
   const setChoice = (patch: Partial<Values>) => {
     setValues((v) => ({ ...v, ...patch }));
@@ -285,9 +296,7 @@ export function IntegrationForm<P>({
   // Autre type de serveur : autre clé, autres bibliothèques ; la clé enregistrée ne vaut plus.
   const setKind = (kind: MediaServerKind) => {
     setValues((v) => ({ ...v, kind, apiKey: '', libraryIds: kind === stored.kind ? (stored.libraryIds ?? []) : [] }));
-    setCheckError(null);
-    test.reset();
-    save.reset();
+    resetTest();
   };
 
   const result = test.data;
@@ -327,6 +336,29 @@ export function IntegrationForm<P>({
   return render(
     state,
     <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
+      {setupToken && (
+        <div>
+          <Label htmlFor={`${id}-setup-token`}>Jeton d’installation</Label>
+          <Input
+            id={`${id}-setup-token`}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            aria-describedby={`${id}-setup-token-hint`}
+            value={setupToken.value}
+            onChange={(e) => {
+              setupToken.onChange(e.target.value);
+              resetTest();
+            }}
+          />
+          <FieldHint id={`${id}-setup-token-hint`}>
+            Écrit dans les journaux du serveur à son démarrage, sur la ligne « Jeton d’installation » (
+            <code className="text-[13px] text-foreground">docker compose logs request</code>), sauf s’il est fixé
+            par la variable <code className="text-[13px] text-foreground">SETUP_TOKEN</code>. Il n’est plus demandé une
+            fois le propriétaire connecté.
+          </FieldHint>
+        </div>
+      )}
       {isMediaServer && (
         <fieldset aria-describedby={kindLocked ? `${id}-kind-hint` : undefined}>
           <legend className="mb-2 text-[13px] font-semibold">Type de serveur</legend>
@@ -593,9 +625,14 @@ type SectionProps = SectionFrameProps & {
 
 /** Section d'accordéon du serveur multimédia ou de TMDB : le formulaire, enregistré comme réglage. */
 export function IntegrationSection({ service, stored, saved, wizard, onSaved, ...frame }: SectionProps) {
-  const save = useSaveSetting(service, onSaved);
-  // Un propriétaire existe, donc des membres : le type du serveur multimédia enregistré est figé (le serveur le refuse).
-  const hasOwner = useQuery(setupStateQuery).data?.hasOwner === true;
+  const setup = useQuery(setupStateQuery).data;
+  // Amorçage : sans propriétaire, le serveur exige le jeton d'installation (gardé ici, en mémoire de la page seulement).
+  const bootstrap = service === 'mediaServer' && setup?.hasOwner === false;
+  const [token, setToken] = useState('');
+  const setupToken = bootstrap
+    ? { value: token, onChange: setToken, headers: { [SETUP_TOKEN_HEADER]: token.trim() } }
+    : undefined;
+  const save = useSaveSetting(service, onSaved, setupToken?.headers);
   return (
     <IntegrationForm
       service={service}
@@ -603,7 +640,9 @@ export function IntegrationSection({ service, stored, saved, wizard, onSaved, ..
       wizard={wizard}
       open={frame.open}
       save={save}
-      kindLocked={service === 'mediaServer' && saved && hasOwner}
+      // Des membres existent : le type du serveur multimédia enregistré est figé (le serveur le refuse, même règle).
+      kindLocked={service === 'mediaServer' && saved && setup?.hasMembers === true}
+      setupToken={setupToken}
       toPayload={(v) => settingPayloadOf(service, v)}
       render={(state, form) => (
         <SectionFrame {...frame} status={sectionStatus({ saved, open: frame.open, ...state })}>

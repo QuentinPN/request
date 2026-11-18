@@ -1,6 +1,6 @@
 import { fixtures, mockCatalogue, settleImages } from './catalogue-mocks.ts';
 import { mockPlexPin, plexTest, signedOutWith } from './media-server-mocks.ts';
-import { expect, field, freshSetup, test } from './support/api.ts';
+import { expect, field, fillSetupToken, freshSetup, test } from './support/api.ts';
 
 // Captures de docs/captures/7.3, hors `npm run verify` : `npm run captures` pour les régénérer.
 test.skip(process.env.npm_lifecycle_event !== 'captures', 'captures générées à la demande');
@@ -39,6 +39,7 @@ test('captures du choix du type de serveur (7.3)', async ({ page, api }, { proje
   await page.getByRole('radio', { name: /^Plex/ }).check();
   await field(page, 'Adresse').fill('http://192.0.2.20:32400');
   await field(page, 'Jeton Plex du propriétaire').fill('jeton-plex');
+  await fillSetupToken(page);
   await page.getByRole('button', { name: 'Tester', exact: true }).click();
   await expect(page.getByText('Connexion réussie')).toBeVisible();
   await page.screenshot({ path: `${dir}/assistant-plex-${width}.png`, fullPage: true });

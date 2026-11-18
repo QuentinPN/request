@@ -68,13 +68,15 @@ Créée → révoquée (terminal, idempotent). L'authentification refuse une cl�
 
 Aucun état stocké : dérivé à chaque appel (`server/routes/setup.ts`).
 
-| État      | Condition                                        | Effet                                             |
-| --------- | ------------------------------------------------ | ------------------------------------------------- |
-| Amorçage  | aucun propriétaire                               | réglage du serveur multimédia ouvert sans session |
-| Incomplet | propriétaire, une section manque                 | le propriétaire est redirigé vers `/assistant`    |
-| Complet   | serveur multimédia, TMDB, Radarr, Sonarr, règles | navigation normale                                |
+| État      | Condition                                        | Effet                                                                                                                                      |
+| --------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Amorçage  | aucun propriétaire                               | réglage du serveur multimédia ouvert sans session, avec le jeton d'installation (`X-Setup-Token`, 403 sinon, 429 après 10 échecs en 5 min) |
+| Incomplet | propriétaire, une section manque                 | le propriétaire est redirigé vers `/assistant`                                                                                             |
+| Complet   | serveur multimédia, TMDB, Radarr, Sonarr, règles | navigation normale                                                                                                                         |
 
-Invariants : le type de serveur multimédia est figé dès qu'un membre existe (`refuseKindChange`) ; le dernier serveur Radarr ou Sonarr non 4K ne peut pas être supprimé (409), sinon l'installation redeviendrait incomplète.
+Le jeton protège le réglage du serveur multimédia ; ensuite le premier administrateur du serveur réglé qui se connecte devient propriétaire (il faut ses identifiants administrateur). Passé 10 échecs en 5 min, même le bon jeton reçoit 429.
+
+Invariants : le jeton d'installation (`SETUP_TOKEN`, sinon tiré au hasard et écrit dans les journaux au démarrage) ne sert plus dès qu'un propriétaire existe : les routes reviennent au droit propriétaire ; une session sans ce droit ne remplace jamais le jeton. Le serveur multimédia est figé dès qu'un membre existe (`refuseServerChange`) : son type (l'assistant suit `hasMembers` de l'état) et son instance (`serverId` du réglage, lu au test de chaque enregistrement ; une autre adresse vers la même instance reste permise, une installation sans id l'enregistre au prochain enregistrement) ; le dernier serveur Radarr ou Sonarr non 4K ne peut pas être supprimé (409), sinon l'installation redeviendrait incomplète.
 
 ## 9. Session et connexion Plex
 
@@ -91,26 +93,27 @@ Verrou en base `job_runs_running` (une exécution par tâche), libéré au déma
 
 ## Défauts trouvés et corrigés (2026-11-18)
 
-| Défaut                                                                                         | Correctif                                                             |
-| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Demande `approved`/`failed` dont le titre arrive : bloquée à vie, empêche une nouvelle demande | `markAvailable` accepte ces statuts (non 4K)                          |
-| Série : demande passée `available` sans ses saisons demandées                                  | `markAvailable` exige chaque saison demandée                          |
-| Quota contourné : saisons ajoutées à une vieille demande en attente comptées à sa date         | `request_seasons.created_at` (migration 0011), quota par date d'ajout |
-| Erreur passagère de plex.tv : PIN perdu, connexion à recommencer                               | PIN remis sauf s'il a expiré                                          |
-| Sondage du PIN qui continue en boucle après une erreur définitive                              | arrêt sur erreur < 500                                                |
-| Double clic sur « Signaler » : deux signalements, notifications en double                      | 409 si un signalement ouvert identique existe                         |
-| Import Seerr relancé : demande fondue dans une autre recréée en double                         | évènement « Fusionnée depuis Seerr » cherché avant insertion          |
-| Import Seerr : saisons perdues quand le membre a déjà une demande envoyée                      | saisons non couvertes reprises dans une demande en attente            |
-| Suppression du dernier serveur Radarr/Sonarr : propriétaire renvoyé vers l'assistant           | 409 sur le dernier serveur non 4K d'un type                           |
-| Sessions expirées jamais purgées                                                               | purge au balayage complet                                             |
-| Membre désactivé ou retiré du serveur multimédia : session valide 30 jours                     | révoquée au balayage complet ; route « Déconnecter partout »          |
-| Notifications non lues jamais purgées : table non bornée                                       | non lues de plus de 365 jours purgées au balayage complet             |
+| Défaut                                                                                                                                  | Correctif                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Demande `approved`/`failed` dont le titre arrive : bloquée à vie, empêche une nouvelle demande                                          | `markAvailable` accepte ces statuts (non 4K)                          |
+| Série : demande passée `available` sans ses saisons demandées                                                                           | `markAvailable` exige chaque saison demandée                          |
+| Quota contourné : saisons ajoutées à une vieille demande en attente comptées à sa date                                                  | `request_seasons.created_at` (migration 0011), quota par date d'ajout |
+| Erreur passagère de plex.tv : PIN perdu, connexion à recommencer                                                                        | PIN remis sauf s'il a expiré                                          |
+| Sondage du PIN qui continue en boucle après une erreur définitive                                                                       | arrêt sur erreur < 500                                                |
+| Double clic sur « Signaler » : deux signalements, notifications en double                                                               | 409 si un signalement ouvert identique existe                         |
+| Import Seerr relancé : demande fondue dans une autre recréée en double                                                                  | évènement « Fusionnée depuis Seerr » cherché avant insertion          |
+| Import Seerr : saisons perdues quand le membre a déjà une demande envoyée                                                               | saisons non couvertes reprises dans une demande en attente            |
+| Suppression du dernier serveur Radarr/Sonarr : propriétaire renvoyé vers l'assistant                                                    | 409 sur le dernier serveur non 4K d'un type                           |
+| Sessions expirées jamais purgées                                                                                                        | purge au balayage complet                                             |
+| Membre désactivé ou retiré du serveur multimédia : session valide 30 jours                                                              | révoquée au balayage complet ; route « Déconnecter partout »          |
+| Notifications non lues jamais purgées : table non bornée                                                                                | non lues de plus de 365 jours purgées au balayage complet             |
+| Amorçage ouvert : sans propriétaire, n'importe qui réglait le serveur multimédia (puis s'en déclarait propriétaire via un faux serveur) | jeton d'installation exigé sans session (403, limite par IP)          |
+| Assistant : type verrouillé sur « propriétaire existe », serveur sur « membres existent »                                               | `hasMembers` dans l'état de l'installation, même règle des deux côtés |
+| Changement d'instance : une fois des membres inscrits, l'adresse pouvait mener à un autre serveur (comptes orphelins)                   | id de l'instance enregistré (`serverId`), autre id refusé (409)       |
 
 ## Défauts connus, non corrigés
 
 - **« Déconnecter partout » sans interface** : la route propriétaire existe (`DELETE /api/users/:id/sessions`), mais le client n'a aucune page de gestion des membres où placer l'action ; à décider avec la page.
 - **Dernier membre retiré du serveur** : le balayage ne révoque pas quand la liste du serveur ne contient plus que des administrateurs (réponse partielle indiscernable) ; « Déconnecter partout » le couvre.
-- **Amorçage ouvert** : tant qu'aucun propriétaire ne s'est connecté, n'importe qui peut régler le serveur multimédia ; installer et se connecter aussitôt après le démarrage.
-- **Changement d'instance** : seul le type de serveur multimédia est figé, pas son URL.
 - **Import Seerr** : les demandes importées refusées ou envoyées n'ont pas de `decided_by` ; des saisons Seerr sur un titre dont la demande est `approved`/`failed` ne sont pas reprises (comme le 409 du parcours normal).
 - **Distribution après annulation** : course théorique très étroite (id réutilisé dans la même seconde) pouvant doubler un courriel ou un push.

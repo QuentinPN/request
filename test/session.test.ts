@@ -12,20 +12,34 @@ const viewer = (role: Role): Viewer => ({
   avatarUrl: null,
 });
 const services = (saved: boolean) => ({ mediaServer: saved, tmdb: saved, radarr: saved, sonarr: saved, rules: saved });
-const fresh: SetupState = { services: services(false), mediaServerKind: null, hasOwner: false, complete: false };
+const fresh: SetupState = {
+  services: services(false),
+  mediaServerKind: null,
+  hasOwner: false,
+  hasMembers: false,
+  complete: false,
+};
 const embyOnly: SetupState = {
   services: { ...services(false), mediaServer: true },
   mediaServerKind: 'emby',
   hasOwner: false,
+  hasMembers: false,
   complete: false,
 };
 const partial: SetupState = {
   services: { ...services(true), rules: false },
   mediaServerKind: 'emby',
   hasOwner: true,
+  hasMembers: true,
   complete: false,
 };
-const complete: SetupState = { services: services(true), mediaServerKind: 'emby', hasOwner: true, complete: true };
+const complete: SetupState = {
+  services: services(true),
+  mediaServerKind: 'emby',
+  hasOwner: true,
+  hasMembers: true,
+  complete: true,
+};
 
 describe('guardRedirect', () => {
   it('installation neuve : tout mène à l’assistant, connexion comprise tant qu’Emby manque', () => {

@@ -84,7 +84,14 @@ export const smtpSecurities = ['none', 'starttls', 'tls'] as const;
 export const settingSchemas = {
   /** Ancien réglage d'Emby, relu comme `mediaServer` de type `emby` tant que celui-ci n'existe pas (`getMediaServer`). */
   emby: mediaServer,
-  mediaServer: mediaServer.extend({ kind: mediaServerKind }),
+  mediaServer: mediaServer.extend({
+    kind: mediaServerKind,
+    /**
+     * Id de l'instance (`Id` d'Emby/Jellyfin, `machineIdentifier` de Plex), lu par le serveur au test de chaque
+     * enregistrement, jamais repris du client : figé une fois des membres inscrits. Absent des anciennes installations.
+     */
+    serverId: z.string().min(1).optional(),
+  }),
   tmdb: connectionSchemas.tmdb,
   /** Notifications Discord, facultatives : rien n'est envoyé tant que `enabled` est faux ou l'adresse absente. */
   discord: z

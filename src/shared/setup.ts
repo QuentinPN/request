@@ -20,6 +20,11 @@ export const SETUP_STATE_PATH = '/api/setup/state';
 /** Réglage d'une section de l'assistant. */
 export const settingPath = (key: SettingSection | ':service') => settingsPathOf(key);
 export const setupTestPath = (key: IntegrationKey | ':service') => `/api/setup/${key}/test`;
+/**
+ * Jeton d'installation, exigé sans session sur le test et l'enregistrement du serveur multimédia tant qu'aucun
+ * propriétaire n'existe : écrit dans les journaux du serveur au démarrage (ou `SETUP_TOKEN`).
+ */
+export const SETUP_TOKEN_HEADER = 'x-setup-token';
 
 export interface SetupState {
   /** Section enregistrée au moins une fois. */
@@ -29,8 +34,10 @@ export interface SetupState {
    * connexion s'y adapte (identifiants ou bouton Plex) avant toute session.
    */
   mediaServerKind: MediaServerKind | null;
-  /** Un propriétaire existe : l'amorçage public du serveur multimédia est fermé. */
+  /** Un propriétaire existe : l'amorçage du serveur multimédia (avec le jeton d'installation) est fermé. */
   hasOwner: boolean;
+  /** Des membres existent : le type du serveur multimédia est figé (le serveur refuse de le changer, 409). */
+  hasMembers: boolean;
   /** Toutes les sections enregistrées et un propriétaire désigné. */
   complete: boolean;
 }

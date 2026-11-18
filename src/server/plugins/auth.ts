@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { API_KEY_HEADER } from '../../shared/api-keys.ts';
@@ -6,7 +6,7 @@ import { CSRF_HEADER, CSRF_VALUE, LOGIN_PATH, LOGOUT_PATH } from '../../shared/a
 import { HEALTH_PATH } from '../../shared/health.ts';
 import { PLEX_PIN_CHECK_PATH, PLEX_PIN_PATH } from '../../shared/media-server.ts';
 import { type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
-import { SETUP_STATE_PATH, settingPath, setupTestPath } from '../../shared/setup.ts';
+import { SETUP_STATE_PATH, SETUP_TOKEN_HEADER, settingPath, setupTestPath } from '../../shared/setup.ts';
 import { webhookPath, webhookServices } from '../../shared/webhooks.ts';
 import { HttpError } from '../lib/api-errors.ts';
 import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
@@ -25,6 +25,10 @@ declare module 'fastify' {
   interface FastifyRequest {
     /** Membre de la session, `null` sans cookie valide. Renseigné pour toute route `/api`. */
     viewer: SessionViewer | null;
+  }
+  interface FastifyInstance {
+    /** Jeton d'installation (`parseSetupToken`) : jamais envoyé au client, seulement écrit dans les journaux. */
+    setupToken: string;
   }
 }
 
@@ -58,18 +62,32 @@ const PUBLIC_ROUTES = new Set([
  * sans session ni en-tête CSRF (Radarr et Sonarr ne peuvent envoyer ni l'un ni l'autre).
  */
 const WEBHOOK_ROUTES = new Set(webhookServices.map((service) => `POST ${webhookPath(service)}`));
-/** Amorçage (PRODUCT §1) : tant qu'aucun propriétaire n'existe, tester et enregistrer le serveur multimédia est ouvert à tous. */
+/**
+ * Amorçage (PRODUCT §1) : tant qu'aucun propriétaire n'existe, tester et enregistrer le serveur multimédia est ouvert
+ * sans session à qui présente le jeton d'installation (`X-Setup-Token`), écrit dans les journaux du serveur.
+ */
 const BOOTSTRAP_ROUTES = new Set([`POST ${setupTestPath(':service')}`, `PUT ${settingPath(':service')}`]);
 
 const routeKey = (req: FastifyRequest) => `${req.method === 'HEAD' ? 'GET' : req.method} ${req.routeOptions.url ?? ''}`;
 
-function isBootstrap(req: FastifyRequest): boolean {
-  return (
-    BOOTSTRAP_ROUTES.has(routeKey(req)) &&
-    (req.params as { service?: string }).service === 'mediaServer' &&
-    !hasOwner(req.server.data.db)
-  );
+/** Route d'amorçage encore ouverte (aucun propriétaire), jeton présenté ou non. */
+const isBootstrapRoute = (req: FastifyRequest) =>
+  BOOTSTRAP_ROUTES.has(routeKey(req)) &&
+  (req.params as { service?: string }).service === 'mediaServer' &&
+  !hasOwner(req.server.data.db);
+
+/** Jeton d'installation : `SETUP_TOKEN` s'il est renseigné (non vide), sinon tiré au hasard à chaque démarrage. */
+export const parseSetupToken = (env: string | undefined) => env?.trim() || randomBytes(24).toString('base64url');
+
+const digest = (value: string) => createHash('sha256').update(value).digest();
+
+/** Jeton d'installation présenté, comparé à temps constant (empreintes de même longueur, quelle que soit la saisie). */
+function hasSetupToken(req: FastifyRequest): boolean {
+  const sent = req.headers[SETUP_TOKEN_HEADER];
+  return typeof sent === 'string' && timingSafeEqual(digest(sent), digest(req.server.setupToken));
 }
+
+const isBootstrap = (req: FastifyRequest) => isBootstrapRoute(req) && hasSetupToken(req);
 
 const isPublic = (req: FastifyRequest) => PUBLIC_ROUTES.has(routeKey(req)) || isBootstrap(req);
 
@@ -107,6 +125,27 @@ function readViewer(req: FastifyRequest): SessionViewer | null {
 
 /** Essais de clé d'API invalide par adresse IP ; au-delà, toute clé invalide de cette adresse reçoit 429. */
 export const API_KEY_LIMIT = { limit: 10, windowMs: 5 * 60_000 };
+/** Essais de jeton d'installation invalide par adresse IP : mêmes bornes. */
+export const SETUP_TOKEN_LIMIT = API_KEY_LIMIT;
+
+type RateLimiter = ReturnType<typeof createRateLimiter>;
+
+/** Essai refusé, compté pour l'IP : `refusal`, ou 429 (avec `Retry-After`) si la limite était déjà atteinte. */
+function refuseCounted(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  limiter: RateLimiter,
+  refusal: { code: number; error: string },
+  tooMany: string,
+): FastifyReply {
+  const blocked = limiter.peek(req.ip);
+  limiter.hit(req.ip);
+  if (blocked) {
+    setRetryAfter(reply, blocked);
+    return reply.code(429).send({ error: tooMany });
+  }
+  return reply.code(refusal.code).send({ error: refusal.error });
+}
 
 /**
  * Requête à clé d'API : la clé est le seul justificatif, jamais combiné à un cookie de session (refus 400, sans
@@ -117,7 +156,7 @@ export const API_KEY_LIMIT = { limit: 10, windowMs: 5 * 60_000 };
 function authenticateWithApiKey(
   req: FastifyRequest,
   reply: FastifyReply,
-  limiter: ReturnType<typeof createRateLimiter>,
+  limiter: RateLimiter,
 ): FastifyReply | undefined {
   if (req.cookies[SESSION_COOKIE] !== undefined)
     return reply
@@ -129,13 +168,13 @@ function authenticateWithApiKey(
     req.viewer = { user, capabilities: capabilitiesOf(user.role), via: 'apiKey' };
     return undefined;
   }
-  const blocked = limiter.peek(req.ip);
-  limiter.hit(req.ip);
-  if (blocked) {
-    setRetryAfter(reply, blocked);
-    return reply.code(429).send({ error: 'Trop de clés d’API invalides, réessayez dans quelques minutes' });
-  }
-  return reply.code(401).send({ error: 'Clé d’API invalide' });
+  return refuseCounted(
+    req,
+    reply,
+    limiter,
+    { code: 401, error: 'Clé d’API invalide' },
+    'Trop de clés d’API invalides, réessayez dans quelques minutes',
+  );
 }
 
 /** Ouvre une session pour ce membre et pose le cookie. */
@@ -167,7 +206,7 @@ export function viewerOf(req: FastifyRequest): SessionViewer {
   return req.viewer;
 }
 
-/** preHandler : 403 si le membre n'a pas ce droit (sauf route d'amorçage encore ouverte). */
+/** preHandler : 403 si le membre n'a pas ce droit (sauf route d'amorçage encore ouverte, avec le jeton d'installation). */
 export const requireCapability = (capability: keyof Capabilities) => async (req: FastifyRequest) => {
   if (isBootstrap(req)) return;
   if (!req.viewer?.capabilities[capability]) throw new HttpError(403, 'Accès refusé');
@@ -187,14 +226,16 @@ export const forbidApiKey = async (req: FastifyRequest) => {
  * contrôle CSRF (403).
  * Une adresse sans route garde son 404.
  */
-export async function registerAuth(app: FastifyInstance) {
+export async function registerAuth(app: FastifyInstance, { setupToken }: { setupToken: string }) {
   // Clé de signature dérivée de la clé de chiffrement : rien de plus à stocker.
   const secret = createHmac('sha256', app.data.cryptoKey).update('request:cookie').digest();
   await app.register(fastifyCookie, { secret });
   app.decorateRequest('viewer', null);
+  app.decorate('setupToken', setupToken);
 
-  // Par instance : chaque application (et chaque test) a son propre compteur.
+  // Par instance : chaque application (et chaque test) a ses propres compteurs.
   const apiKeyLimiter = createRateLimiter(API_KEY_LIMIT);
+  const setupTokenLimiter = createRateLimiter(SETUP_TOKEN_LIMIT);
 
   app.addHook('onRequest', async (req, reply) => {
     const url = req.routeOptions.url;
@@ -203,6 +244,29 @@ export async function registerAuth(app: FastifyInstance) {
     if (req.headers[API_KEY_HEADER] !== undefined) return authenticateWithApiKey(req, reply, apiKeyLimiter);
     if (!passesCsrf(req)) return reply.code(403).send({ error: 'Requête refusée' });
     req.viewer = readViewer(req);
-    if (!req.viewer && !isPublic(req)) return reply.code(401).send({ error: 'Connexion requise' });
+    if (req.viewer) return;
+    // Limite atteinte : même le bon jeton est refusé (429), sinon la limite ne freinerait pas un devinage.
+    if (isBootstrapRoute(req))
+      return hasSetupToken(req) && !setupTokenLimiter.peek(req.ip)
+        ? undefined
+        : refuseCounted(
+            req,
+            reply,
+            setupTokenLimiter,
+            { code: 403, error: SETUP_TOKEN_REFUSED },
+            'Trop de jetons d’installation invalides, réessayez dans quelques minutes',
+          );
+    if (isPublic(req)) return;
+    return reply.code(401).send({ error: 'Connexion requise' });
   });
+}
+
+const SETUP_TOKEN_REFUSED =
+  'Jeton d’installation manquant ou invalide. Il est écrit dans les journaux du serveur à son démarrage (docker compose logs request), ou fixé par la variable SETUP_TOKEN.';
+
+/** Démarrage sans propriétaire : le jeton d'installation, sur une ligne des journaux (serveur et `npm run dev`), sauf s'il vient de `SETUP_TOKEN` (déjà connu de l'administrateur, à ne pas copier dans les journaux). */
+export function announceSetupToken(app: FastifyInstance): void {
+  if (hasOwner(app.data.db)) return;
+  const shown = process.env.SETUP_TOKEN?.trim() ? 'celui de la variable SETUP_TOKEN.' : app.setupToken;
+  console.log(`Jeton d’installation : ${shown}`);
 }

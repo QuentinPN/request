@@ -8,7 +8,7 @@ import { normalizeUrl } from '../shared/settings.ts';
 import type { Data } from './db/index.ts';
 import type { TmdbClient } from './integrations/tmdb.ts';
 import { apiErrorHandler, HttpError } from './lib/api-errors.ts';
-import { registerAuth } from './plugins/auth.ts';
+import { parseSetupToken, registerAuth } from './plugins/auth.ts';
 import { apiKeysRoutes } from './routes/api-keys.ts';
 import { arrServersRoutes } from './routes/arr-servers.ts';
 import { authRoutes } from './routes/auth.ts';
@@ -109,12 +109,15 @@ export async function buildApp({
   upstreams = {},
   schedule = false,
   publicUrl = parsePublicUrl(process.env.PUBLIC_URL),
+  setupToken = parseSetupToken(process.env.SETUP_TOKEN),
 }: {
   clientDir?: string;
   data: Data;
   upstreams?: Upstreams;
   /** Lien des courriels et contact VAPID ; par défaut `PUBLIC_URL`. */
   publicUrl?: string | null;
+  /** Jeton d'installation exigé par l'amorçage ; par défaut `SETUP_TOKEN`, sinon tiré au hasard. */
+  setupToken?: string;
   /** Balayages planifiés (services/sync.ts) : le serveur seulement, jamais les tests. */
   schedule?: boolean;
 }) {
@@ -157,7 +160,7 @@ export async function buildApp({
   });
   app.setErrorHandler(apiErrorHandler);
   // Avant toute route : le garde de /api couvre aussi les plugins enregistrés ensuite (catalogue, images).
-  await registerAuth(app);
+  await registerAuth(app, { setupToken });
 
   // Santé : le processus répond et la base aussi (requête triviale), pour le HEALTHCHECK de l'image.
   app.get(HEALTH_PATH, async (): Promise<Health> => {

@@ -20,7 +20,7 @@ export const plexTest: TestResults['mediaServer'] = { ...embyTest, serverName: '
 export function signedOutWith(api: ApiMock, kind: MediaServerKind) {
   const setup = structuredClone(freshSetup);
   setup.services.mediaServer = true;
-  api.state.setup = { ...setup, mediaServerKind: kind, hasOwner: true };
+  api.state.setup = { ...setup, mediaServerKind: kind, hasOwner: true, hasMembers: true };
   api.state.viewer = null;
 }
 

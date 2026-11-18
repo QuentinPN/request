@@ -48,12 +48,14 @@ export const completeSetup: SetupState = {
   services: allSaved,
   mediaServerKind: 'emby',
   hasOwner: true,
+  hasMembers: true,
   complete: true,
 };
 export const freshSetup: SetupState = {
   services: { mediaServer: false, tmdb: false, radarr: false, sonarr: false, rules: false },
   mediaServerKind: null,
   hasOwner: false,
+  hasMembers: false,
   complete: false,
 };
 
@@ -315,6 +317,10 @@ export { expect };
 
 /** Champ visible par son libellé exact (les sections repliées gardent leurs champs, masqués). */
 export const field = (page: Page, label: string) => page.getByLabel(label, { exact: true }).filter({ visible: true });
+
+/** Jeton d'installation saisi dans l'assistant d'une installation neuve (envoyé en `X-Setup-Token`). */
+export const SETUP_TOKEN = 'jeton-installation-e2e';
+export const fillSetupToken = (page: Page) => field(page, 'Jeton d’installation').fill(SETUP_TOKEN);
 
 export async function expectNoAxeViolations(page: Page) {
   const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();

@@ -12,6 +12,7 @@ import { setRole, type User, upsertFromEmby } from '../src/server/services/users
 import { type ArrServerInput, arrKindLabels, arrServerInputSchema } from '../src/shared/arr-servers.ts';
 import { CSRF_HEADERS } from '../src/shared/auth.ts';
 import type { Role } from '../src/shared/roles.ts';
+import { SETUP_TOKEN_HEADER } from '../src/shared/setup.ts';
 import { type FakeRoutes, startFakeServer } from './fake-server.ts';
 
 /** Crée des dossiers temporaires, supprimés après chaque test du fichier appelant. */
@@ -76,6 +77,12 @@ export async function loginAs(app: FastifyInstance, role: Role, id = `membre-${r
 
 /** Session du propriétaire (crée le membre propriétaire au besoin). */
 export const loginAsOwner = (app: FastifyInstance) => loginAs(app, 'owner', 'proprietaire');
+
+/** En-têtes de l'amorçage sans session : CSRF et jeton d'installation de cette application. */
+export const bootstrapHeaders = (app: FastifyInstance): Record<string, string> => ({
+  ...CSRF_HEADERS,
+  [SETUP_TOKEN_HEADER]: app.setupToken,
+});
 
 /**
  * Serveur Radarr/Sonarr écrit en base sans test de connexion (défaut de son couple type/4K s'il est le premier). Nom par

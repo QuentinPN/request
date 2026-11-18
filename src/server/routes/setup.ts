@@ -77,15 +77,23 @@ export function setupRoutes(app: FastifyInstance) {
 
   /**
    * Un seul serveur multimédia, choisi à l'installation : les comptes des membres portent les ids de ses utilisateurs,
-   * et leurs demandes en dépendent. Passer à un autre type une fois des membres créés casserait tout (DECISIONS.md).
+   * et leurs demandes en dépendent. Une fois des membres créés, ni le type ni l'instance ne changent (DECISIONS.md) ;
+   * l'adresse peut changer si elle mène à la même instance. Le type est vérifié avant le test (rien n'est contacté),
+   * l'instance après : renvoie son id, lu par le test, à enregistrer. Sans id enregistré (ancienne installation),
+   * l'instance est acceptée.
    */
-  function refuseKindChange(next: Setting<'mediaServer'>) {
+  async function refuseServerChange(next: Setting<'mediaServer'>): Promise<string> {
     const stored = getMediaServer(db, cryptoKey);
-    if (stored && stored.kind !== next.kind && hasMembers(app.data))
+    const frozen = stored && hasMembers(app.data) ? stored : null;
+    if (frozen && frozen.kind !== next.kind)
       throw new HttpError(
         409,
-        `Impossible de passer ${ofMediaServer(stored.kind)} à ${mediaServerKindLabels[next.kind]} : des membres existent déjà et leurs comptes (avec leurs demandes) sont liés à ${mediaServerKindLabels[stored.kind]}.`,
+        `Impossible de passer ${ofMediaServer(frozen.kind)} à ${mediaServerKindLabels[next.kind]} : des membres existent déjà et leurs comptes (avec leurs demandes) sont liés à ${mediaServerKindLabels[frozen.kind]}.`,
       );
+    const { serverId } = await runTest('mediaServer', connectionSchemas.mediaServer.parse(next));
+    if (frozen?.serverId !== undefined && frozen.serverId !== serverId)
+      throw new HttpError(409, 'Ce serveur n’est pas le même que celui où vos membres sont inscrits.');
+    return serverId;
   }
 
   app.get(SETUP_STATE_PATH, async (): Promise<SetupState> => {
@@ -95,7 +103,13 @@ export function setupRoutes(app: FastifyInstance) {
     if (mediaServerKind) saved.add('mediaServer');
     const services = Object.fromEntries(setupSections.map((s) => [s, saved.has(s)])) as Record<SetupSection, boolean>;
     const owner = hasOwner(db);
-    return { services, mediaServerKind, hasOwner: owner, complete: owner && setupSections.every((s) => services[s]) };
+    return {
+      services,
+      mediaServerKind,
+      hasOwner: owner,
+      hasMembers: hasMembers(app.data),
+      complete: owner && setupSections.every((s) => services[s]),
+    };
   });
 
   app.post(setupTestPath(':service'), ownerOnly, async (req) => {
@@ -116,8 +130,10 @@ export function setupRoutes(app: FastifyInstance) {
     const key = serviceParam(req, settingSectionSchema);
     const input = withStoredSecrets(key, req.body, storedOf(key, req.body));
     const value = parseRequest(settingSchemas[key] as z.ZodType<Setting<typeof key>>, input);
-    if (key === 'mediaServer') refuseKindChange(value as Setting<'mediaServer'>);
-    if (isIntegration(key)) await runTest(key, connectionSchemas[key].parse(value) as Connection<typeof key>);
+    if (key === 'mediaServer') {
+      const mediaServer = value as Setting<'mediaServer'>;
+      mediaServer.serverId = await refuseServerChange(mediaServer);
+    } else if (isIntegration(key)) await runTest(key, connectionSchemas[key].parse(value) as Connection<typeof key>);
     return maskSetting(key, setSetting(db, cryptoKey, key, value));
   });
 }

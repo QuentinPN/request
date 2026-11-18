@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { mockPlexPin, PLEX_AUTH_URL, plexTest, signedOutWith } from './media-server-mocks.ts';
-import { expect, expectNoAxeViolations, field, freshSetup, test } from './support/api.ts';
+import { expect, expectNoAxeViolations, field, fillSetupToken, freshSetup, test } from './support/api.ts';
 
 // Serveur multimédia Emby, Jellyfin ou Plex (7.3) : choix du type dans l'assistant, connexion par code PIN Plex.
 
@@ -86,6 +86,7 @@ test('assistant : le type d’abord, puis les champs de ce type', async ({ page,
   await expect(field(page, 'Adresse publique de Plex')).toHaveCount(0);
   await field(page, 'Adresse').fill('http://192.0.2.20:32400');
   await field(page, 'Jeton Plex du propriétaire').fill('jeton-plex');
+  await fillSetupToken(page);
   await page.getByRole('button', { name: 'Tester', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: /\S/ })).toHaveText(
     'Connexion réussie · Salon · Plex v1.41.3 · 3 bibliothèques',

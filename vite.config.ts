@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { buildApp, dataDir, isApiPath } from './src/server/app.ts';
 import { openDataDir } from './src/server/db/index.ts';
+import { announceSetupToken } from './src/server/plugins/auth.ts';
 
 const root = import.meta.dirname;
 
@@ -15,6 +16,7 @@ function api(): Plugin {
     async configureServer(server) {
       const app = await buildApp({ data: openDataDir(dataDir) });
       await app.ready();
+      announceSetupToken(app);
       server.middlewares.use((req, res, next) => (req.url && isApiPath(req.url) ? app.routing(req, res) : next()));
     },
   };

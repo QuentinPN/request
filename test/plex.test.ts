@@ -17,7 +17,7 @@ import {
 } from '../src/shared/media-server.ts';
 import { ofMediaServer, type Setting } from '../src/shared/settings.ts';
 import { type FakeHandler, type FakeRequest, status } from './fake-server.ts';
-import { loginAs, loginAsOwner, trackFakeServers, trackTempDirs } from './helpers.ts';
+import { bootstrapHeaders, loginAs, loginAsOwner, trackFakeServers, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const apps: FastifyInstance[] = [];
@@ -516,7 +516,7 @@ describe('Plex : membres, réglages et lien', () => {
     const test = await app.inject({
       method: 'POST',
       url: '/api/setup/mediaServer/test',
-      headers: CSRF_HEADERS,
+      headers: bootstrapHeaders(app),
       payload: body,
     });
     expect(test.statusCode).toBe(200);
@@ -526,7 +526,7 @@ describe('Plex : membres, réglages et lien', () => {
     const save = await app.inject({
       method: 'PUT',
       url: '/api/settings/mediaServer',
-      headers: CSRF_HEADERS,
+      headers: bootstrapHeaders(app),
       payload: { ...body, libraryIds: ['1', '2'] },
     });
     expect(save.statusCode).toBe(200);
@@ -536,6 +536,7 @@ describe('Plex : membres, réglages et lien', () => {
       apiKey: { set: true },
       libraryIds: ['1', '2'],
       publicUrl: null,
+      serverId: MACHINE,
     });
     expect(JSON.stringify(save.json())).not.toContain(OWNER_TOKEN);
     const state = await app.inject({ method: 'GET', url: '/api/setup/state' });
@@ -550,7 +551,7 @@ describe('Plex : membres, réglages et lien', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/setup/mediaServer/test',
-      headers: CSRF_HEADERS,
+      headers: bootstrapHeaders(app),
       payload: { kind: 'plex', url: pms.url, apiKey: OWNER_TOKEN },
     });
     expect(res.statusCode).toBe(422);
@@ -587,6 +588,19 @@ describe('changement de type de serveur multimédia', () => {
     expect(getMediaServer(app.data.db, app.data.cryptoKey)?.kind).toBe('plex');
   });
 
+  it('Plex : un autre serveur (`machineIdentifier`) refusé (409) une fois des membres inscrits', async () => {
+    const { app, pms } = await plexApp();
+    const owner = await loginAsOwner(app);
+    const body = { kind: 'plex', url: pms.url, apiKey: OWNER_TOKEN };
+    // Installation sans id enregistré : acceptée, l'id est enregistré.
+    expect((await put(app, body, owner.headers)).statusCode).toBe(200);
+    expect(getMediaServer(app.data.db, app.data.cryptoKey)?.serverId).toBe(MACHINE);
+    setSetting(app.data.db, app.data.cryptoKey, 'mediaServer', { ...configOf(pms.url), serverId: 'autre-machine' });
+    const res = await put(app, body, owner.headers);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('Ce serveur n’est pas le même que celui où vos membres sont inscrits.');
+  });
+
   it('possible tant qu’aucun membre n’existe ; le jeton d’un autre type n’est jamais repris', async () => {
     const plexTv = await fakePlexTv();
     const pms = await fakePms();
@@ -596,13 +610,35 @@ describe('changement de type de serveur multimédia', () => {
     });
     const app = await buildApp({ data: openDataDir(tempDir()), upstreams: { plexTvUrl: plexTv.url } });
     apps.push(app);
-    expect((await put(app, { kind: 'plex', url: pms.url, apiKey: OWNER_TOKEN }, CSRF_HEADERS)).statusCode).toBe(200);
+    expect(
+      (await put(app, { kind: 'plex', url: pms.url, apiKey: OWNER_TOKEN }, bootstrapHeaders(app))).statusCode,
+    ).toBe(200);
     // Clé laissée vide : celle de Plex ne vaut pas pour Jellyfin, même à la même adresse.
-    const reused = await put(app, { kind: 'jellyfin', url: pms.url, apiKey: '' }, CSRF_HEADERS);
+    const reused = await put(app, { kind: 'jellyfin', url: pms.url, apiKey: '' }, bootstrapHeaders(app));
     expect(reused.statusCode).toBe(400);
-    const changed = await put(app, { kind: 'jellyfin', url: jellyfin.url, apiKey: 'cle-jf' }, CSRF_HEADERS);
+    const changed = await put(app, { kind: 'jellyfin', url: jellyfin.url, apiKey: 'cle-jf' }, bootstrapHeaders(app));
     expect(changed.statusCode).toBe(200);
     expect(getMediaServer(app.data.db, app.data.cryptoKey)).toMatchObject({ kind: 'jellyfin', apiKey: 'cle-jf' });
+  });
+
+  it('Jellyfin : l’id de l’instance est enregistré, une autre instance refusée (409)', async () => {
+    const fakeJellyfin = (id: string) =>
+      serve({
+        'GET /System/Info': { ServerName: 'JF', Version: '10.10.7', Id: id },
+        'GET /Library/VirtualFolders': [],
+      });
+    const app = await buildApp({ data: openDataDir(tempDir()) });
+    apps.push(app);
+    const owner = await loginAsOwner(app);
+    const first = await fakeJellyfin('jf');
+    expect((await put(app, { kind: 'jellyfin', url: first.url, apiKey: 'cle-jf' }, owner.headers)).statusCode).toBe(
+      200,
+    );
+    expect(getMediaServer(app.data.db, app.data.cryptoKey)?.serverId).toBe('jf');
+    const other = await fakeJellyfin('autre-jf');
+    const res = await put(app, { kind: 'jellyfin', url: other.url, apiKey: 'cle-jf' }, owner.headers);
+    expect(res.statusCode).toBe(409);
+    expect(getMediaServer(app.data.db, app.data.cryptoKey)?.url).toBe(first.url);
   });
 });
 

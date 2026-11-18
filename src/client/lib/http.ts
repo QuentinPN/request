@@ -47,8 +47,9 @@ async function request<T>(
   body: unknown,
   schema?: ResponseParser<T>,
   signal?: AbortSignal,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
-  const headers: Record<string, string> = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept: 'application/json', ...extraHeaders };
   if (method !== 'GET') Object.assign(headers, CSRF_HEADERS);
   if (body !== undefined) headers['content-type'] = 'application/json';
   let res: Response;
@@ -81,9 +82,11 @@ async function request<T>(
 export const apiGet = <T>(path: string, schema?: ResponseParser<T>, signal?: AbortSignal) =>
   request('GET', path, undefined, schema, signal);
 
+/** `headers` : en-têtes en plus (le jeton d'installation de l'amorçage). */
 export const apiSend = <T>(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   schema?: ResponseParser<T>,
-) => request(method, path, body, schema);
+  headers?: Record<string, string>,
+) => request(method, path, body, schema, undefined, headers);

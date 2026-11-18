@@ -7,6 +7,7 @@ const setupOf = (hasOwner: boolean, emby: boolean, complete: boolean): SetupStat
   services: { mediaServer: emby, tmdb: complete, radarr: complete, sonarr: complete, rules: complete },
   mediaServerKind: emby ? 'emby' : null,
   hasOwner,
+  hasMembers: hasOwner,
   complete,
 });
 const viewerAs = (role: Role) => ({

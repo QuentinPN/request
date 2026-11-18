@@ -55,11 +55,19 @@ export const apiKeysQuery = queryOptions({
   queryFn: ({ signal }) => apiGet<ApiKey[]>(API_KEYS_PATH, undefined, signal),
 });
 
-/** Enregistre une section (le serveur refait le test de connexion), puis rafraîchit l'état de l'installation. */
-export function useSaveSetting<K extends SettingSection>(key: K, onSaved: () => void) {
+/**
+ * Enregistre une section (le serveur refait le test de connexion), puis rafraîchit l'état de l'installation.
+ * `headers` : le jeton d'installation, pendant l'amorçage du serveur multimédia.
+ */
+export function useSaveSetting<K extends SettingSection>(
+  key: K,
+  onSaved: () => void,
+  headers?: Record<string, string>,
+) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (value: SettingInput<K>) => apiSend<MaskedSetting<K>>('PUT', settingPath(key), value),
+    mutationFn: (value: SettingInput<K>) =>
+      apiSend<MaskedSetting<K>>('PUT', settingPath(key), value, undefined, headers),
     onSuccess: async (saved) => {
       queryClient.setQueryData(settingQuery(key).queryKey, saved);
       await queryClient.invalidateQueries({ queryKey: setupStateQuery.queryKey });
