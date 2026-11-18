@@ -17,6 +17,7 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 - **Statuts** calculés côté serveur (disponible, partiel, en téléchargement, 4K à part), épisodes présents/attendus par saison, lien « Regarder dans » le serveur choisi.
 - **Demandes** : feuille de demande (film, saisons, 4K, pour un autre membre, hors quota), Mes demandes, bande « Vos demandes en cours », frise ; Approbations (tableau + panneau, cartes sur mobile) avec choix du serveur, du profil et du dossier, refus motivé, relance des échecs ; envoi à Radarr/Sonarr ; blocage de titres et de mots-clés.
 - **Autour des demandes** : signalements avec commentaires, liste de souhaits « Ma liste » avec import Trakt et Letterboxd, statistiques, clés d'API (`X-Api-Key`, docs/API.md).
+- **Membres** : Réglages › Membres (propriétaire) liste les membres et offre « Déconnecter partout » (révoque toutes leurs sessions, confirmation, captures `docs/captures/7.11`).
 - **Synchronisation** : webhooks Radarr/Sonarr (par serveur), balayage léger (10 min) et complet (24 h, purges), passage automatique des demandes à « disponible ».
 - **Notifications** : cloche, Discord, courriel et push web (distribution unique après validation) ; application installable (PWA).
 - **Navigation** : pilule avec menu « Plus » (ordinateur), cinq onglets au plus (mobile).

@@ -148,21 +148,37 @@ describe.each(['emby', 'jellyfin', 'plex'] as const)('balayage complet : membres
     expect(app.data.db.select().from(jobRuns).get()?.status).toBe('success');
   });
 
-  it('liste vide, réduite au propriétaire ou sans membre actif : aucune session révoquée', async () => {
+  it('liste réduite au propriétaire : le dernier membre retiré est déconnecté, le propriétaire reste', async () => {
     const { app, state, sync } = await setup();
-    const [owner] = state.accounts;
+    state.accounts = state.accounts.filter((a) => a.id === '1');
+    await sync.fullScan();
+    expect(sessionsOf(app, '1')).toBe(1);
+    for (const id of ['bob', 'carol']) expect(sessionsOf(app, id), id).toBe(0);
+  });
+
+  it.skipIf(kind === 'plex')(
+    'liste réduite au propriétaire et aux membres désactivés : ils sont déconnectés',
+    async () => {
+      const { app, state, sync } = await setup();
+      state.accounts = state.accounts.map((a) => (a.id === '1' ? a : { ...a, disabled: true }));
+      await sync.fullScan();
+      expect(sessionsOf(app, '1')).toBe(1);
+      for (const id of ['bob', 'carol']) expect(sessionsOf(app, id), id).toBe(0);
+    },
+  );
+
+  // Plex y met toujours son propriétaire (compte connu) : une liste vide ou sans compte connu n'existe pas de son côté.
+  it.skipIf(kind === 'plex')('liste vide : aucune session révoquée', async () => {
+    const { app, state, sync } = await setup();
     state.accounts = [];
     await sync.fullScan();
-    state.accounts = owner ? [owner] : []; // Plex liste toujours son propriétaire, même sans ami
+    for (const id of ['1', 'bob', 'carol']) expect(sessionsOf(app, id), id).toBe(1);
+  });
+
+  it.skipIf(kind === 'plex')('liste ne nommant aucun compte connu de l’appli : aucune session révoquée', async () => {
+    const { app, state, sync } = await setup();
+    state.accounts = [{ id: 'inconnu', name: 'Zoé' }];
     await sync.fullScan();
-    if (kind !== 'plex') {
-      state.accounts = [
-        owner,
-        { id: 'bob', name: 'Bob', disabled: true },
-        { id: 'carol', name: 'Carol', disabled: true },
-      ].filter((a) => a !== undefined);
-      await sync.fullScan();
-    }
     for (const id of ['1', 'bob', 'carol']) expect(sessionsOf(app, id), id).toBe(1);
   });
 

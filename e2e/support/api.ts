@@ -8,7 +8,7 @@ import {
   type ArrServer,
   type ArrServerInput,
 } from '../../src/shared/arr-servers.ts';
-import type { Member, Viewer } from '../../src/shared/auth.ts';
+import { type Member, userPath, type Viewer } from '../../src/shared/auth.ts';
 import {
   BLOCKED_KEYWORDS_PATH,
   BLOCKED_TITLES_PATH,
@@ -135,6 +135,8 @@ type MockState = {
   apiKeys: ApiKey[];
   /** Membres (`/api/users`) : sélecteur de la feuille de demande pour autrui. */
   members: Member[];
+  /** Ids des membres déconnectés partout (Réglages › Membres : `DELETE /api/users/:id/sessions`). */
+  signedOut: string[];
   /** Titres et mots-clés bloqués (Réglages › Blocages) ; blocage, déblocage et mots-clés s'y appliquent. */
   blocklist: Blocklist;
   /** Mots-clés TMDB que trouve la recherche (filtrés par nom). */
@@ -159,6 +161,7 @@ export class ApiMock {
     webhooks: webhookSettingsOf('jeton-initial'),
     apiKeys: [],
     members: [],
+    signedOut: [],
     blocklist: { titles: [], keywords: [] },
     keywordResults: [],
     discover: { hideAvailable: false, hideRequested: false },
@@ -219,6 +222,11 @@ export class ApiMock {
       return json(route, 204);
     }
     if (method === 'GET' && pathname === '/api/users') return json(route, 200, state.members);
+    const signedOut = state.members.find((m) => userPath(m.id, 'sessions') === pathname);
+    if (method === 'DELETE' && signedOut) {
+      state.signedOut.push(signedOut.id);
+      return json(route, 204);
+    }
     if (pathname.startsWith(BLOCKLIST_PATH)) return this.blocklist(route, method, pathname);
     if (pathname === DISCOVER_SETTINGS_PATH) {
       if (method === 'PUT') state.discover = route.request().postDataJSON() as Setting<'discover'>;

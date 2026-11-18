@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { eq, lte } from 'drizzle-orm';
+import { eq, inArray, lte } from 'drizzle-orm';
 import { sha256Hex } from '../crypto.ts';
 import type { Db } from '../db/index.ts';
 import { sessions, users } from '../db/schema.ts';
@@ -59,19 +59,32 @@ export function revokeAllForUser(db: Pick<Db, 'delete'>, userId: string): void {
 
 /**
  * Révoque les sessions des membres dont le compte du serveur multimédia (`accounts`, sa liste complète) n'existe plus
- * ou est désactivé : sans cela, leur session survivrait jusqu'à 30 jours d'inactivité. Une liste sans aucun membre
- * actif non administrateur n'est pas crue (réponse vide ou partielle, et Plex y met toujours son propriétaire : rien
- * n'est révoqué). Un propriétaire absent de la liste n'est déconnecté que si un autre propriétaire y figure encore :
- * l'appli ne s'enferme jamais dehors. Renvoie les nombres de membres déconnectés et de propriétaires épargnés.
+ * ou est désactivé : sans cela, leur session survivrait jusqu'à 30 jours d'inactivité. La liste n'est crue que si elle
+ * nomme au moins un compte déjà connu de l'appli (actif ou désactivé, même le seul propriétaire) : une liste vide ou
+ * sans aucun compte connu est une réponse fantaisiste, rien n'est révoqué. Un propriétaire absent de la liste n'est
+ * déconnecté que si un autre propriétaire y figure encore : l'appli ne s'enferme jamais dehors. Renvoie les nombres de
+ * membres déconnectés et de propriétaires épargnés.
  */
 export function revokeDepartedMembers(
   db: Db,
   accounts: ReadonlyArray<{ id: string; isAdmin: boolean; isDisabled: boolean }>,
 ): { revoked: number; sparedOwners: number } {
-  const enabled = accounts.filter((a) => !a.isDisabled);
-  if (!enabled.some((a) => !a.isAdmin)) return { revoked: 0, sparedOwners: 0 };
-  const active = new Set(enabled.map((a) => a.id));
+  const active = new Set(accounts.filter((a) => !a.isDisabled).map((a) => a.id));
   return db.transaction((tx) => {
+    const knownAccount =
+      accounts.length > 0 &&
+      tx
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          inArray(
+            users.id,
+            accounts.map((a) => a.id),
+          ),
+        )
+        .limit(1)
+        .get();
+    if (!knownAccount) return { revoked: 0, sparedOwners: 0 };
     const departed = tx
       .selectDistinct({ id: users.id, role: users.role })
       .from(sessions)

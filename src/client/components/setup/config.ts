@@ -27,12 +27,22 @@ const _complete: Exclude<SetupSection, (typeof sectionOrder)[number]> extends ne
 void _complete;
 
 /**
- * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord, le courriel, Trakt, l'import facultatif des
+ * Sections de Réglages : celles de l'assistant, plus les membres, les webhooks, Discord, le courriel, Trakt, l'import facultatif des
  * demandes de Seerr et les clés d'API (propriétaire, hors assistant : rien à tester ou facultatif).
  */
-export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord' | 'smtp' | 'trakt' | 'api' | 'blocklist';
+export type SectionId =
+  | SetupSection
+  | 'members'
+  | 'webhooks'
+  | 'seerr'
+  | 'discord'
+  | 'smtp'
+  | 'trakt'
+  | 'api'
+  | 'blocklist';
 export const settingsSectionOrder = [
   ...sectionOrder,
+  'members',
   'webhooks',
   'seerr',
   'discord',
@@ -60,6 +70,7 @@ export const sectionText: Record<SectionId, { title: string; description: string
   radarr: { title: 'Radarr', description: 'Films : serveurs, profil de qualité et dossier racine' },
   sonarr: { title: 'Sonarr', description: 'Séries : serveurs, profil de qualité, dossier racine et type' },
   rules: { title: 'Règles et quotas', description: 'Quotas de demandes par défaut des membres' },
+  members: { title: 'Membres', description: 'Déconnecter un membre de tous ses appareils' },
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
   seerr: { title: 'Importer depuis Seerr', description: 'Reprendre une fois les demandes de Jellyseerr ou Overseerr' },
   discord: { title: 'Notifications Discord', description: 'Facultatif : les évènements des demandes dans un salon' },

@@ -13,6 +13,7 @@ import { BlocklistSection } from './blocklist-section';
 import { type SectionId, sectionOrder } from './config';
 import { DiscordSection } from './discord-section';
 import { IntegrationSection } from './integration-section';
+import { MembersSection } from './members-section';
 import { arrServersQuery, settingQuery } from './queries';
 import { RulesSection } from './rules-section';
 import { SectionFrame, type SectionFrameProps, SectionLoadError } from './section-frame';
@@ -64,6 +65,7 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
       ))}
       {!wizard && viewer?.capabilities.isOwner && (
         <>
+          <MembersSection section="members" open={open === 'members'} onToggle={() => toggle('members')} />
           <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
           <SeerrImportSection section="seerr" open={open === 'seerr'} onToggle={() => toggle('seerr')} />
           <DiscordSection section="discord" open={open === 'discord'} onToggle={() => toggle('discord')} />

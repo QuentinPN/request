@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { arrKindOf, arrLabel } from '../../shared/arr-servers.ts';
-import { type Member, USERS_PATH } from '../../shared/auth.ts';
+import { type Member, USERS_PATH, userPath } from '../../shared/auth.ts';
 import type { MediaKey, MediaType } from '../../shared/media.ts';
 import {
   type CreateRequestInput,
@@ -93,6 +93,10 @@ export const membersQuery = queryOptions({
   queryKey: ['users'],
   queryFn: ({ signal }) => apiGet<Member[]>(USERS_PATH, undefined, signal),
 });
+
+/** « Déconnecter partout » (propriétaire) : ferme toutes les sessions du membre, sur tous ses appareils. */
+export const signOutMemberEverywhere = (memberId: string) =>
+  apiSend<void>('DELETE', userPath(encodeURIComponent(memberId), 'sessions'));
 
 /** Compteurs (navigation, bande de Découvrir) : relus au retour sur l'onglet, l'approbateur peut avoir attendu longtemps. */
 export const requestCountsQuery = () =>

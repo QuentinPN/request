@@ -80,7 +80,7 @@ Invariants : le jeton d'installation (`SETUP_TOKEN`, sinon tiré au hasard et é
 
 ## 9. Session et connexion Plex
 
-- **Session** : créée à la connexion, expiration glissante de 30 jours, révoquée à la déconnexion ; les sessions expirées sont purgées par la synchro. Le rôle est relu à chaque requête. Le balayage complet lit les comptes du serveur multimédia et révoque les sessions des membres dont le compte a disparu ou est désactivé (Emby, Jellyfin : compte supprimé ou `Policy.IsDisabled` ; Plex : plus d'accès partagé) ; serveur injoignable, ou liste sans membre actif non administrateur : rien n'est révoqué ; un propriétaire absent n'est déconnecté que si un autre figure encore dans la liste. Le propriétaire peut aussi déconnecter un membre partout (`DELETE /api/users/:id/sessions`). Un compte désactivé ne peut pas se reconnecter : le serveur multimédia refuse l'authentification.
+- **Session** : créée à la connexion, expiration glissante de 30 jours, révoquée à la déconnexion ; les sessions expirées sont purgées par la synchro. Le rôle est relu à chaque requête. Le balayage complet lit les comptes du serveur multimédia et révoque les sessions des membres dont le compte a disparu ou est désactivé (Emby, Jellyfin : compte supprimé ou `Policy.IsDisabled` ; Plex : plus d'accès partagé) ; serveur injoignable, liste vide ou sans compte connu de l'appli (actif ou désactivé) : rien n'est révoqué ; la liste est crue dès qu'elle nomme un compte connu ; un propriétaire absent n'est déconnecté que si un autre figure encore dans la liste. Le propriétaire peut aussi déconnecter un membre partout (`DELETE /api/users/:id/sessions`). Un compte désactivé ne peut pas se reconnecter : le serveur multimédia refuse l'authentification.
 - **PIN Plex** (`server/routes/auth.ts`) : `pending` (en mémoire, lié à un cookie signé) → `checking` (échange exclusif) → consommé (`authorized`) ou supprimé (expiré, 410). Sur erreur passagère de plex.tv, le PIN est remis et le sondage suivant peut aboutir. Côté client (`client/pages/connexion.tsx`), le sondage s'arrête sur une erreur définitive (< 500) et continue sur une erreur passagère.
 
 ## 10. Serveurs Radarr/Sonarr
@@ -105,15 +105,14 @@ Verrou en base `job_runs_running` (une exécution par tâche), libéré au déma
 | Import Seerr : saisons perdues quand le membre a déjà une demande envoyée                                                               | saisons non couvertes reprises dans une demande en attente            |
 | Suppression du dernier serveur Radarr/Sonarr : propriétaire renvoyé vers l'assistant                                                    | 409 sur le dernier serveur non 4K d'un type                           |
 | Sessions expirées jamais purgées                                                                                                        | purge au balayage complet                                             |
-| Membre désactivé ou retiré du serveur multimédia : session valide 30 jours                                                              | révoquée au balayage complet ; route « Déconnecter partout »          |
+| Membre désactivé ou retiré du serveur multimédia : session valide 30 jours                                                              | révoquée au balayage ; Réglages › Membres › « Déconnecter partout »   |
 | Notifications non lues jamais purgées : table non bornée                                                                                | non lues de plus de 365 jours purgées au balayage complet             |
 | Amorçage ouvert : sans propriétaire, n'importe qui réglait le serveur multimédia (puis s'en déclarait propriétaire via un faux serveur) | jeton d'installation exigé sans session (403, limite par IP)          |
 | Assistant : type verrouillé sur « propriétaire existe », serveur sur « membres existent »                                               | `hasMembers` dans l'état de l'installation, même règle des deux côtés |
 | Changement d'instance : une fois des membres inscrits, l'adresse pouvait mener à un autre serveur (comptes orphelins)                   | id de l'instance enregistré (`serverId`), autre id refusé (409)       |
+| Dernier membre retiré du serveur : sa session survivait (balayage sans effet)                                                           | liste crue dès qu'elle nomme un compte connu (actif ou désactivé)     |
 
 ## Défauts connus, non corrigés
 
-- **« Déconnecter partout » sans interface** : la route propriétaire existe (`DELETE /api/users/:id/sessions`), mais le client n'a aucune page de gestion des membres où placer l'action ; à décider avec la page.
-- **Dernier membre retiré du serveur** : le balayage ne révoque pas quand la liste du serveur ne contient plus que des administrateurs (réponse partielle indiscernable) ; « Déconnecter partout » le couvre.
 - **Import Seerr** : les demandes importées refusées ou envoyées n'ont pas de `decided_by` ; des saisons Seerr sur un titre dont la demande est `approved`/`failed` ne sont pas reprises (comme le 409 du parcours normal).
 - **Distribution après annulation** : course théorique très étroite (id réutilisé dans la même seconde) pouvant doubler un courriel ou un push.
