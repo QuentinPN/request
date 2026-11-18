@@ -4,7 +4,7 @@ import { cn } from 'cn';
 import { Film, Search, User } from 'lucide-react';
 import { type KeyboardEvent, type RefObject, useEffect, useId, useState } from 'react';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { mediaKey, searchQuery, summaryMeta, titleLink } from '@/lib/catalogue';
+import { mediaKey, personLink, searchQuery, summaryMeta, titleLink } from '@/lib/catalogue';
 import { imageUrl, type MediaSummary, type PersonSummary } from '../../../shared/media.ts';
 import { StatusPill } from '../media/status-pill.tsx';
 import { QueryState } from '../query-state.tsx';
@@ -164,7 +164,7 @@ export function SearchPanel({
                     <SectionTitle id={`${baseId}-personnes`}>Personnes</SectionTitle>
                     <ul>
                       {data.people.map((person) => (
-                        <PersonRow key={person.id} person={person} />
+                        <PersonRow key={person.id} person={person} onNavigate={onNavigate} />
                       ))}
                     </ul>
                   </section>
@@ -178,16 +178,25 @@ export function SearchPanel({
   );
 }
 
-function PersonRow({ person }: { person: PersonSummary }) {
+/** Hors de la liste ↑ ↓ (réservée aux titres) : un lien qu'on atteint avec Tab. */
+function PersonRow({ person, onNavigate }: { person: PersonSummary; onNavigate: () => void }) {
   return (
-    <li className="flex items-center gap-3 px-3 py-2">
-      <Thumbnail src={imageUrl(person.profilePath, 'profile')} round />
-      <span className="min-w-0">
-        <span className="block truncate font-medium">{person.name}</span>
-        {person.knownFor.length > 0 && (
-          <span className="block truncate text-xs text-muted-foreground">Connu pour {person.knownFor.join(', ')}</span>
-        )}
-      </span>
+    <li>
+      <Link
+        {...personLink(person)}
+        onClick={onNavigate}
+        className="flex items-center gap-3 rounded-xl px-3 py-2 outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-3 focus-visible:ring-ring"
+      >
+        <Thumbnail src={imageUrl(person.profilePath, 'profile')} round />
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{person.name}</span>
+          {person.knownFor.length > 0 && (
+            <span className="block truncate text-xs text-muted-foreground">
+              Connu pour {person.knownFor.join(', ')}
+            </span>
+          )}
+        </span>
+      </Link>
     </li>
   );
 }

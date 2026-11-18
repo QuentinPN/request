@@ -22,6 +22,20 @@ export function PosterGridSkeleton({ count = 18 }: { count?: number }) {
   );
 }
 
+/** Grille d'affiches d'une liste déjà chargée (doublons retirés) ; `footer` ajoute une action sous l'affiche. */
+export function PosterList({ items, footer }: { items: MediaSummary[]; footer?: (media: MediaSummary) => ReactNode }) {
+  return (
+    <ul className={grid}>
+      {uniqueMedia(items).map((media) => (
+        <li key={mediaKey(media)}>
+          <MediaPoster media={media} layout="grid" />
+          {footer?.(media)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * Grille d'affiches paginée, avec « Charger plus » tant que TMDB a d'autres pages. `footer` ajoute une action sous
  * l'affiche (« Retirer » de Ma liste).
@@ -46,14 +60,7 @@ export function PosterGrid({
     >
       {(data) => (
         <div className="space-y-10">
-          <ul className={grid}>
-            {uniqueMedia(data.pages.flatMap((page) => page.results)).map((media) => (
-              <li key={mediaKey(media)}>
-                <MediaPoster media={media} layout="grid" />
-                {footer?.(media)}
-              </li>
-            ))}
-          </ul>
+          <PosterList items={data.pages.flatMap((page) => page.results)} footer={footer} />
           {isFetchNextPageError ? (
             <ErrorState message="La page suivante n’a pas pu se charger." onRetry={() => void fetchNextPage()} />
           ) : (

@@ -3,6 +3,7 @@ import {
   type BrowseFilters,
   browseFilterShape,
   browsePath,
+  collectionPath,
   DEFAULT_BROWSE_SORT,
   DISCOVER_PATH,
   discoverListPath,
@@ -12,17 +13,23 @@ import {
   invertedRanges,
   mediaPath,
   pagedMediaSchema,
+  personPath,
   providersPath,
   providersResponseSchema,
   SEARCH_PATH,
 } from '../../shared/catalogue.ts';
 import {
+  type CreditRole,
+  type CrewJob,
+  collectionDetailsSchema,
   type MediaDetails,
   type MediaKey,
   type MediaSummary,
   type MediaType,
   mediaDetailsSchema,
   mediaSearchResultsSchema,
+  type PersonDetails,
+  personDetailsSchema,
   type Season,
 } from '../../shared/media.ts';
 import { plural } from '../../shared/text.ts';
@@ -73,6 +80,27 @@ export const discoverListQuery = (type: MediaType, id: number) =>
     initialPageParam: 1,
     getNextPageParam: nextPageParam,
   });
+
+export const personQuery = (id: number) =>
+  queryOptions({
+    queryKey: ['person', id],
+    queryFn: ({ signal }) => apiGet(personPath(id), personDetailsSchema, signal),
+  });
+
+export const collectionQuery = (id: number) =>
+  queryOptions({
+    queryKey: ['collection', id],
+    queryFn: ({ signal }) => apiGet(collectionPath(id), collectionDetailsSchema, signal),
+  });
+
+/** Page d'une personne : `<Link {...personLink(person)}>`. */
+export const personLink = ({ id }: { id: number }) => ({ to: '/personne/$id' as const, params: { id: String(id) } });
+
+/** Page d'une saga : `<Link {...collectionLink(collection)}>`. */
+export const collectionLink = ({ id }: { id: number }) => ({
+  to: '/collection/$id' as const,
+  params: { id: String(id) },
+});
 
 /** Fiche d'un titre : `<Link {...titleLink(media)}>` ou `navigate(titleLink(media))`. */
 export const titleLink = ({ type, tmdbId }: MediaKey) => ({
@@ -172,6 +200,54 @@ const present = (parts: (string | number | null | false | undefined)[]) =>
 /** Année et type (« 2024 », « Film ») : sous une affiche, dans le hero, dans la recherche. */
 export const summaryMeta = (media: Pick<MediaSummary, 'year' | 'type'>) =>
   present([media.year, mediaTypeLabel[media.type]]);
+
+// --- Personnes ---
+
+/** Services de TMDB (en anglais) → français ; un service inconnu s'affiche tel quel. */
+const departmentLabels: Record<string, string> = {
+  Acting: 'Interprétation',
+  Directing: 'Réalisation',
+  Writing: 'Scénario',
+  Production: 'Production',
+  Creator: 'Création',
+  Sound: 'Musique et son',
+  Camera: 'Image',
+  Editing: 'Montage',
+  Art: 'Direction artistique',
+  'Visual Effects': 'Effets visuels',
+};
+
+export const crewJobLabel: Record<CrewJob, string> = {
+  director: 'Réalisation',
+  writer: 'Scénario',
+  creator: 'Création',
+};
+
+export const creditRoleLabel: Record<CreditRole, string> = { actor: 'Acteur', crew: 'Équipe' };
+
+const longDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** « 2 septembre 1964 » depuis `1964-09-02` (jour TMDB, sans fuseau). */
+const formatLongDate = (day: string) => longDate.format(new Date(`${day}T00:00:00Z`));
+
+/** Âge au jour `until` (`YYYY-MM-DD`, aujourd'hui par défaut) d'une personne née le `birthday`. */
+export function ageOn(birthday: string, until = new Date().toISOString().slice(0, 10)): number {
+  const [by = 0, bm = 0, bd = 0] = birthday.split('-').map(Number);
+  const [uy = 0, um = 0, ud = 0] = until.split('-').map(Number);
+  return uy - by - (um < bm || (um === bm && ud < bd) ? 1 : 0);
+}
+
+/** Lignes « libellé : valeur » de l'en-tête d'une page personne (celles que TMDB ne renseigne pas sont omises). */
+export function personFacts(person: PersonDetails): Array<{ label: string; value: string }> {
+  const { birthday, deathday, placeOfBirth, knownForDepartment } = person;
+  const age = birthday && plural(ageOn(birthday, deathday ?? undefined), 'an', 'ans');
+  return [
+    knownForDepartment && { label: 'Connu pour', value: departmentLabels[knownForDepartment] ?? knownForDepartment },
+    birthday && { label: 'Naissance', value: `${formatLongDate(birthday)}${deathday ? '' : ` (${age})`}` },
+    deathday && { label: 'Décès', value: `${formatLongDate(deathday)}${age ? ` (${age})` : ''}` },
+    placeOfBirth && { label: 'Lieu de naissance', value: placeOfBirth },
+  ].filter((fact) => !!fact);
+}
 
 /** Ligne de métadonnées d'une fiche : année, type et durée (film) ou nombre de saisons (série). */
 export function detailsMeta(media: MediaDetails): string[] {

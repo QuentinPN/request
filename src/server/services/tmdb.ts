@@ -12,12 +12,12 @@ import { createTmdb, type TmdbClient } from '../integrations/tmdb.ts';
 import { HttpError, NotConfiguredError, parseUpstream } from '../lib/api-errors.ts';
 import { getSetting } from './settings.ts';
 
-/** Lecture TMDB d'un titre : un titre inconnu de TMDB → 404 « Titre introuvable », les autres erreurs passent. */
-export async function orTitleNotFound<T>(read: () => Promise<T>): Promise<T> {
+/** Lecture TMDB d'un titre (ou d'une personne, d'une saga : `message`) : inconnu de TMDB → 404, les autres erreurs passent. */
+export async function orTitleNotFound<T>(read: () => Promise<T>, message = 'Titre introuvable'): Promise<T> {
   try {
     return await read();
   } catch (err) {
-    if (err instanceof IntegrationError && err.kind === 'not_found') throw new HttpError(404, 'Titre introuvable');
+    if (err instanceof IntegrationError && err.kind === 'not_found') throw new HttpError(404, message);
     throw err;
   }
 }

@@ -20,6 +20,7 @@ export const searchQuerySchema = pageQuerySchema.extend({ q: z.string().trim().m
 
 export const typeParamsSchema = z.object({ type: mediaTypeSchema });
 export const typeIdParamsSchema = typeParamsSchema.extend({ id: positiveInt });
+export const idParamsSchema = z.object({ id: positiveInt });
 
 // --- Filtres de Films et Séries (adresse de la page et requête de l'API : mêmes noms, mêmes formats) ---
 
@@ -96,6 +97,8 @@ export const genresPath = (type: TypeParam) => `/api/genres/${type}`;
 export const providersPath = (type: TypeParam) => `/api/providers/${type}`;
 export const SEARCH_PATH = '/api/search';
 export const mediaPath = (type: TypeParam, id: IdParam) => `/api/media/${type}/${id}`;
+export const personPath = (id: IdParam) => `/api/person/${id}`;
+export const collectionPath = (id: IdParam) => `/api/collection/${id}`;
 
 /** Réglage `discover` (masquer disponibles / déjà demandés), propriétaire seulement. */
 export const DISCOVER_SETTINGS_PATH = settingsPathOf('discover');

@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { type BrowseFilters, type BrowseSort, DEFAULT_BROWSE_SORT } from '../../shared/catalogue.ts';
 import {
   type CastMember,
+  type CollectionDetails,
+  type CollectionRef,
+  type Credit,
+  type CreditRole,
+  type CrewJob,
+  type CrewMember,
   type Genre,
   genreSchema,
   type MediaDetails,
@@ -9,6 +15,7 @@ import {
   type MediaSummary,
   type MediaType,
   type Paged,
+  type PersonDetails,
   type PersonSummary,
   type WatchProvider,
 } from '../../shared/media.ts';
@@ -29,6 +36,9 @@ const LANGUAGE = 'fr-FR';
 const FALLBACK_LANGUAGE = 'en-US';
 const REGION = 'FR';
 const CAST_LIMIT = 15;
+const CREW_LIMIT = 8;
+/** Titres gardés par type dans la filmographie d'une personne (les plus populaires). */
+const CREDITS_LIMIT = 60;
 const LIST_TTL_MS = 60 * 60 * 1000;
 const DETAILS_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 1000;
@@ -93,6 +103,18 @@ const rawCast = z.object({
   character: optionalString,
   profile_path: optionalString,
 });
+const rawCrew = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  job: optionalString,
+  profile_path: optionalString,
+});
+const rawCollectionRef = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  poster_path: optionalString,
+  backdrop_path: optionalString,
+});
 const rawVideo = z.object({ key: z.string(), site: optionalString, type: optionalString, iso_639_1: optionalString });
 /** Mot-clé TMDB : `{ id, name }` (fiche, `/search/keyword`). */
 const rawKeyword = z.object({ id: z.number().int(), name: z.string() });
@@ -104,7 +126,9 @@ const rawDetails = rawMedia.extend({
     .array(z.object({ season_number: z.number().int(), episode_count: z.number().int(), air_date: optionalString }))
     .nullish(),
   last_episode_to_air: z.object({ season_number: z.number().int(), episode_number: z.number().int() }).nullish(),
-  credits: z.object({ cast: z.array(rawCast) }).nullish(),
+  credits: z.object({ cast: z.array(rawCast), crew: z.array(rawCrew).nullish() }).nullish(),
+  created_by: z.array(rawCrew).nullish(),
+  belongs_to_collection: rawCollectionRef.nullish(),
   videos: z.object({ results: z.array(rawVideo) }).nullish(),
   recommendations: mediaPage.nullish(),
   similar: mediaPage.nullish(),
@@ -114,6 +138,33 @@ const rawDetails = rawMedia.extend({
   keywords: z.object({ keywords: z.array(rawKeyword).nullish(), results: z.array(rawKeyword).nullish() }).nullish(),
 });
 type RawDetails = z.infer<typeof rawDetails>;
+
+const rawCredit = rawMedia.extend({
+  media_type: optionalString,
+  popularity: z.number().nullish(),
+  adult: z.boolean().nullish(),
+});
+const rawPerson = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  profile_path: optionalString,
+  known_for_department: optionalString,
+  birthday: optionalString,
+  deathday: optionalString,
+  place_of_birth: optionalString,
+  biography: optionalString,
+  combined_credits: z.object({ cast: z.array(rawCredit), crew: z.array(rawCredit) }).nullish(),
+});
+const rawCollection = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  overview: optionalString,
+  poster_path: optionalString,
+  backdrop_path: optionalString,
+  parts: z.array(rawMedia),
+});
+/** Texte lu seul, pour compléter en anglais un champ vide en français. */
+const rawEnglishText = z.object({ biography: optionalString, overview: optionalString });
 
 // --- Normalisation ---
 
@@ -144,6 +195,70 @@ const toCast = (c: z.infer<typeof rawCast>): CastMember => ({
   profilePath: c.profile_path || null,
 });
 
+/** Métiers d'équipe mis en avant ; les autres (décors, montage…) sont ignorés. */
+const CREW_JOBS: Record<string, CrewJob> = { Director: 'director', Screenplay: 'writer', Writer: 'writer' };
+
+/** Réalisation et scénario (`credits.crew`), création (`created_by`, séries) : une entrée par personne, métiers réunis. */
+function toCrew(raw: RawDetails): CrewMember[] {
+  const byId = new Map<number, CrewMember>();
+  const add = (person: z.infer<typeof rawCrew>, job: CrewJob | undefined) => {
+    if (!job) return;
+    const known = byId.get(person.id);
+    if (!known)
+      byId.set(person.id, { id: person.id, name: person.name, jobs: [job], profilePath: person.profile_path || null });
+    else if (!known.jobs.includes(job)) known.jobs.push(job);
+  };
+  for (const person of raw.created_by ?? []) add(person, 'creator');
+  for (const person of raw.credits?.crew ?? []) add(person, CREW_JOBS[person.job ?? '']);
+  return [...byId.values()].slice(0, CREW_LIMIT);
+}
+
+const toCollectionRef = (raw: z.infer<typeof rawCollectionRef>): CollectionRef => ({
+  id: raw.id,
+  name: raw.name,
+  posterPath: raw.poster_path || null,
+  backdropPath: raw.backdrop_path || null,
+});
+
+/**
+ * Filmographie : films et séries de `combined_credits`, une entrée par titre (rôle d'acteur et métiers d'équipe
+ * réunis dans `roles`), les plus populaires d'abord, `CREDITS_LIMIT` par type.
+ */
+function toCredits(credits: NonNullable<z.infer<typeof rawPerson>['combined_credits']>) {
+  const byKey = new Map<string, { raw: z.infer<typeof rawCredit>; type: MediaType; roles: Set<CreditRole> }>();
+  for (const [list, role] of [
+    [credits.cast, 'actor'],
+    [credits.crew, 'crew'],
+  ] as const) {
+    for (const raw of list) {
+      if (raw.adult || (raw.media_type !== 'movie' && raw.media_type !== 'tv')) continue;
+      const key = `${raw.media_type}:${raw.id}`;
+      const known = byKey.get(key) ?? { raw, type: raw.media_type, roles: new Set<CreditRole>() };
+      known.roles.add(role);
+      byKey.set(key, known);
+    }
+  }
+  const popular = [...byKey.values()].sort((a, b) => (b.raw.popularity ?? 0) - (a.raw.popularity ?? 0));
+  const ofType = (type: MediaType): Credit[] =>
+    popular
+      .filter((credit) => credit.type === type)
+      .slice(0, CREDITS_LIMIT)
+      .map(({ raw, roles }) => ({ ...toSummary(raw, type), roles: [...roles].sort() }));
+  return { movies: ofType('movie'), shows: ofType('tv') };
+}
+
+const toPerson = (raw: z.infer<typeof rawPerson>, biography: string): PersonDetails => ({
+  id: raw.id,
+  name: raw.name,
+  profilePath: raw.profile_path || null,
+  knownForDepartment: raw.known_for_department || null,
+  birthday: raw.birthday || null,
+  deathday: raw.deathday || null,
+  placeOfBirth: raw.place_of_birth || null,
+  biography,
+  ...toCredits(raw.combined_credits ?? { cast: [], crew: [] }),
+});
+
 /** Bande-annonce YouTube : française d'abord, puis anglaise, puis la première disponible. */
 function pickTrailerKey(videos: z.infer<typeof rawVideo>[] = []): string | null {
   const trailers = videos.filter((v) => v.site === 'YouTube' && v.type === 'Trailer');
@@ -163,6 +278,8 @@ function toDetails(raw: RawDetails, type: MediaType): MediaDetails {
       airDate: s.air_date || null,
     })),
     cast: (raw.credits?.cast ?? []).slice(0, CAST_LIMIT).map(toCast),
+    crew: toCrew(raw),
+    collection: raw.belongs_to_collection ? toCollectionRef(raw.belongs_to_collection) : null,
     trailerKey: pickTrailerKey(raw.videos?.results),
     watchProviders: {
       flatrate: toProviders(providers?.flatrate),
@@ -284,6 +401,15 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
     return cache.getOrLoad(`${baseUrl}${path}?${search}`, ttlMs, () => client.get(path, schema, { query: params }));
   };
 
+  /** Biographie ou synopsis vide en français, relu en anglais ; au mieux : un échec laisse le texte vide. */
+  const englishText = async (path: string, field: 'biography' | 'overview'): Promise<string> => {
+    try {
+      return (await get(path, rawEnglishText, { language: FALLBACK_LANGUAGE }, DETAILS_TTL_MS))[field] ?? '';
+    } catch {
+      return '';
+    }
+  };
+
   const list = async (type: MediaType, path: string, query: Query = {}) =>
     toPaged(await get(path, mediaPage, query, LIST_TTL_MS), type);
 
@@ -361,6 +487,28 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
       } catch {
         return details; // repli au mieux : la fiche française reste valable
       }
+    },
+
+    /** Personne et sa filmographie. */
+    person: async (id: number): Promise<PersonDetails> => {
+      const path = `/person/${id}`;
+      const raw = await get(path, rawPerson, { append_to_response: 'combined_credits' }, DETAILS_TTL_MS);
+      return toPerson(raw, raw.biography || (await englishText(path, 'biography')));
+    },
+
+    /** Saga et ses films, du plus ancien au plus récent (sans date : à la fin). */
+    collection: async (id: number): Promise<CollectionDetails> => {
+      const path = `/collection/${id}`;
+      const raw = await get(path, rawCollection, {}, DETAILS_TTL_MS);
+      const date = (part: z.infer<typeof rawMedia>) => part.release_date || '9999';
+      return {
+        id: raw.id,
+        name: raw.name,
+        overview: raw.overview || (await englishText(path, 'overview')),
+        posterPath: raw.poster_path || null,
+        backdropPath: raw.backdrop_path || null,
+        parts: [...raw.parts].sort((a, b) => date(a).localeCompare(date(b))).map((part) => toSummary(part, 'movie')),
+      };
     },
 
     /** Résumé d'un titre (affiche, année, synopsis), sans le reste de la fiche. */

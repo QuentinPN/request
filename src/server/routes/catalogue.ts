@@ -2,14 +2,17 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import {
   browsePath,
   browseQuerySchema,
+  collectionPath,
   DISCOVER_PATH,
   discoverListPath,
   discoverRowSchema,
   genresPath,
   genresResponseSchema,
+  idParamsSchema,
   mediaPath,
   pagedMediaSchema,
   pageQuerySchema,
+  personPath,
   providersPath,
   providersResponseSchema,
   SEARCH_PATH,
@@ -17,14 +20,20 @@ import {
   typeIdParamsSchema,
   typeParamsSchema,
 } from '../../shared/catalogue.ts';
-import { keyOf, type MediaSummary, mediaSearchResultsSchema } from '../../shared/media.ts';
+import {
+  collectionDetailsSchema,
+  keyOf,
+  type MediaSummary,
+  mediaSearchResultsSchema,
+  personDetailsSchema,
+} from '../../shared/media.ts';
 import { labelOf } from '../integrations/media-server.ts';
 import { parseRequest, parseUpstream } from '../lib/api-errors.ts';
 import { viewerOf } from '../plugins/auth.ts';
 import { withStatus } from '../services/availability.ts';
 import { blockOf, excludedKeywordIds, forViewer } from '../services/blocklist.ts';
 import { hiddenInDiscover, recentRequestKeys } from '../services/discover.ts';
-import { loadDetails, loadSummaries } from '../services/tmdb.ts';
+import { loadDetails, loadSummaries, orTitleNotFound } from '../services/tmdb.ts';
 
 const SERVICE = 'TMDB';
 /** Rangée de titres déjà dans la bibliothèque : « Masquer les disponibles » la viderait, elle n'y est pas soumise. */
@@ -123,6 +132,35 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const found = parseUpstream(SERVICE, mediaSearchResultsSchema, await app.tmdb().searchMulti(q, page));
     const results = forViewer(app.data.db, viewerOf(req), found.results);
     return { ...found, results: await app.availability.withStatuses(results) };
+  });
+
+  app.get(personPath(':id'), async (req) => {
+    const { id } = parseRequest(idParamsSchema, req.params);
+    const person = parseUpstream(
+      SERVICE,
+      personDetailsSchema,
+      await orTitleNotFound(() => app.tmdb().person(id), 'Personne introuvable'),
+    );
+    // Titres bloqués retirés (membres) ou marqués (gestionnaires), puis statuts des deux listes en un seul lot.
+    const credits = await app.availability.withStatuses(
+      forViewer(app.data.db, viewerOf(req), [...person.movies, ...person.shows]),
+    );
+    return {
+      ...person,
+      movies: credits.filter((credit) => credit.type === 'movie'),
+      shows: credits.filter((credit) => credit.type === 'tv'),
+    };
+  });
+
+  app.get(collectionPath(':id'), async (req) => {
+    const { id } = parseRequest(idParamsSchema, req.params);
+    const collection = parseUpstream(
+      SERVICE,
+      collectionDetailsSchema,
+      await orTitleNotFound(() => app.tmdb().collection(id), 'Saga introuvable'),
+    );
+    const parts = forViewer(app.data.db, viewerOf(req), collection.parts);
+    return { ...collection, parts: await app.availability.withStatuses(parts) };
   });
 
   app.get(mediaPath(':type', ':id'), async (req) => {

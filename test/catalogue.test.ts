@@ -355,6 +355,8 @@ describe('erreurs de TMDB', () => {
     '/api/providers/tv',
     '/api/search?q=matrix',
     '/api/media/movie/603',
+    '/api/person/6384',
+    '/api/collection/2344',
   ];
 
   it.each(urls)('%s → 503 tant que TMDB n’est pas configuré', async (url) => {

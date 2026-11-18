@@ -98,6 +98,8 @@ const routeTree = rootRoute.addChildren([
     createRoute({ ...page('/series', () => import('@/pages/series'), 'SeriesPage'), validateSearch: browseSearch }),
     createRoute(page('/titre/$type/$id', () => import('@/pages/fiche'), 'FichePage')),
     createRoute(page('/plateforme/$type/$id', () => import('@/pages/plateforme'), 'PlateformePage')),
+    createRoute(page('/personne/$id', () => import('@/pages/personne'), 'PersonnePage')),
+    createRoute(page('/collection/$id', () => import('@/pages/collection'), 'CollectionPage')),
     // `?membre=` : un gestionnaire lit les demandes d'un membre (lien de Réglages › Membres).
     createRoute({
       ...page('/demandes', () => import('@/pages/demandes'), 'DemandesPage'),
