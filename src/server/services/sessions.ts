@@ -52,8 +52,48 @@ export function revokeSession(db: Db, token: string): void {
     .run();
 }
 
-export function revokeAllForUser(db: Db, userId: string): void {
+/** Révoque toutes les sessions d'un membre (« Déconnecter partout », ou compte disparu du serveur multimédia). */
+export function revokeAllForUser(db: Pick<Db, 'delete'>, userId: string): void {
   db.delete(sessions).where(eq(sessions.userId, userId)).run();
+}
+
+/**
+ * Révoque les sessions des membres dont le compte du serveur multimédia (`accounts`, sa liste complète) n'existe plus
+ * ou est désactivé : sans cela, leur session survivrait jusqu'à 30 jours d'inactivité. Une liste sans aucun membre
+ * actif non administrateur n'est pas crue (réponse vide ou partielle, et Plex y met toujours son propriétaire : rien
+ * n'est révoqué). Un propriétaire absent de la liste n'est déconnecté que si un autre propriétaire y figure encore :
+ * l'appli ne s'enferme jamais dehors. Renvoie les nombres de membres déconnectés et de propriétaires épargnés.
+ */
+export function revokeDepartedMembers(
+  db: Db,
+  accounts: ReadonlyArray<{ id: string; isAdmin: boolean; isDisabled: boolean }>,
+): { revoked: number; sparedOwners: number } {
+  const enabled = accounts.filter((a) => !a.isDisabled);
+  if (!enabled.some((a) => !a.isAdmin)) return { revoked: 0, sparedOwners: 0 };
+  const active = new Set(enabled.map((a) => a.id));
+  return db.transaction((tx) => {
+    const departed = tx
+      .selectDistinct({ id: users.id, role: users.role })
+      .from(sessions)
+      .innerJoin(users, eq(users.id, sessions.userId))
+      .all()
+      .filter((member) => !active.has(member.id));
+    const ownerRemains = tx
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.role, 'owner'))
+      .all()
+      .some((owner) => active.has(owner.id));
+    const result = { revoked: 0, sparedOwners: 0 };
+    for (const member of departed) {
+      if (member.role === 'owner' && !ownerRemains) result.sparedOwners++;
+      else {
+        revokeAllForUser(tx, member.id);
+        result.revoked++;
+      }
+    }
+    return result;
+  });
 }
 
 /** Supprime les sessions expirées ; renvoie leur nombre. */

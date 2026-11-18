@@ -90,7 +90,7 @@ async function setup() {
   addArrServer({ db, cryptoKey }, { type: 'sonarr', url: sonarr.url, ...arr });
   const app = await buildApp({ data });
   cleanups.push(() => app.close());
-  const sync = createSync(data, { availability: app.availability });
+  const sync = createSync(data, { availability: app.availability, mediaServers: app.mediaServers });
   const token = webhookToken(data);
   const hook = (service: 'radarr' | 'sonarr', payload: object) =>
     app.inject({ method: 'POST', url: `/api/webhooks/${service}?token=${token}`, payload });

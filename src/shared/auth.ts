@@ -16,8 +16,8 @@ export const VIEWER_PATH = '/api/auth/me';
 
 export const USERS_PATH = '/api/users';
 export const USERS_IMPORT_PATH = `${USERS_PATH}/import`;
-/** Un membre (id déjà encodé pour une adresse), ou sa photo relayée. */
-export const userPath = (id: string, part?: 'avatar') => `${USERS_PATH}/${id}${part ? `/${part}` : ''}`;
+/** Un membre (id déjà encodé pour une adresse), sa photo relayée ou ses sessions. */
+export const userPath = (id: string, part?: 'avatar' | 'sessions') => `${USERS_PATH}/${id}${part ? `/${part}` : ''}`;
 
 export const loginSchema = z.object({
   username: z.string().trim().min(1, 'Identifiant requis'),

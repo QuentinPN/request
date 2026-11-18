@@ -3,7 +3,8 @@ import { type Member, memberUpdateSchema, USERS_IMPORT_PATH, USERS_PATH, userPat
 import { ofMediaServer } from '../../shared/settings.ts';
 import { labelOf } from '../integrations/media-server.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
-import { requireCapability } from '../plugins/auth.ts';
+import { ownerOnly, requireCapability } from '../plugins/auth.ts';
+import { revokeAllForUser } from '../services/sessions.ts';
 import {
   getUser,
   importFromEmby,
@@ -52,6 +53,13 @@ export function usersRoutes(app: FastifyInstance) {
       return toMember(user);
     },
   );
+
+  /** « Déconnecter partout » : révoque toutes les sessions du membre (propriétaire seulement). */
+  app.delete<IdParams>(userPath(':id', 'sessions'), ownerOnly, async (req, reply) => {
+    if (!getUser(db, req.params.id)) throw new UsersError('not_found', 'Membre introuvable');
+    revokeAllForUser(db, req.params.id);
+    return reply.code(204).send();
+  });
 
   /**
    * Relais de la photo du membre (le navigateur ne voit ni l'adresse du serveur ni sa clé ; Plex : photo plex.tv, sans

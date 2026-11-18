@@ -169,7 +169,7 @@ describe('notifications des demandes', () => {
     expect(kindsOf(db, member.user.id)).toEqual(['approved']);
 
     radarrState.movies.push({ id: 42, tmdbId: 603, hasFile: true });
-    const sync = createSync(data, { availability: app.availability });
+    const sync = createSync(data, { availability: app.availability, mediaServers: app.mediaServers });
     const webhook = { eventType: 'Download', movie: { tmdbId: 603 } };
     await sync.handleWebhook('radarr', webhook);
     await sync.handleWebhook('radarr', webhook);
@@ -351,7 +351,7 @@ describe('notifications en base', () => {
     const old = new Date(Date.now() - READ_NOTIFICATION_RETENTION_MS - DAY_MS);
     seedNotification(db, member.user.id, { createdAt: old, readAt: old });
 
-    await createSync(data, { availability: app.availability }).fullScan();
+    await createSync(data, { availability: app.availability, mediaServers: app.mediaServers }).fullScan();
     expect(db.select().from(notifications).all()).toEqual([]);
   });
 

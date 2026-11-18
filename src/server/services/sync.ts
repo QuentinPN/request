@@ -1,9 +1,11 @@
 import { and, eq, exists, isNotNull, isNull, lt, not, or, type SQL } from 'drizzle-orm';
 import type { MediaKey } from '../../shared/media.ts';
+import { plural } from '../../shared/text.ts';
 import type { WebhookResult, WebhookService } from '../../shared/webhooks.ts';
 import type { Data, Db } from '../db/index.ts';
 import { issues, media, requests } from '../db/schema.ts';
 import type { ArrWebhookEvent } from '../integrations/arr.ts';
+import { labelOf, type MediaServer } from '../integrations/media-server.ts';
 import { parseRadarrWebhook } from '../integrations/radarr.ts';
 import { parseSonarrWebhook } from '../integrations/sonarr.ts';
 import { startPeriodic } from '../lib/periodic.ts';
@@ -12,8 +14,9 @@ import { DAY_MS, HOUR_MS, MINUTE_MS } from '../lib/time.ts';
 import { listArrServers } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
 import { lastFailureAt, lastSuccessAt, runJob } from './jobs.ts';
+import type { MediaServers } from './media-server.ts';
 import { purgeOldNotifications } from './notifications.ts';
-import { purgeExpired } from './sessions.ts';
+import { purgeExpired, revokeDepartedMembers } from './sessions.ts';
 
 /** Noms des balayages dans `job_runs` (verrou : une seule exécution `running` par nom). */
 export const SCAN_JOBS = { light: 'scan:light', full: 'scan:full' } as const;
@@ -67,9 +70,12 @@ export function purgeMedia(db: Db, before: Date): number {
  * Synchronisation avec Radarr, Sonarr et Emby : webhooks entrants et balayages. Tout passe par le calcul unique du
  * statut (`availability.refresh`), qui fait aussi passer `available` les demandes envoyées arrivées.
  */
-export function createSync(data: Data, deps: { availability: AvailabilityService; now?: () => number }) {
+export function createSync(
+  data: Data,
+  deps: { availability: AvailabilityService; mediaServers: MediaServers; now?: () => number },
+) {
   const { db } = data;
-  const { availability } = deps;
+  const { availability, mediaServers } = deps;
   const now = deps.now ?? Date.now;
 
   /** Titre concerné par un webhook, s'il est connu de l'appli (un titre inconnu n'a ni cache ni demande). */
@@ -115,6 +121,30 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
   const keysWhere = (where: SQL | undefined) =>
     db.select({ type: media.type, tmdbId: media.tmdbId }).from(media).where(where).all();
 
+  /**
+   * Déconnecte les membres dont le compte a disparu du serveur multimédia ou y est désactivé (voir
+   * `revokeDepartedMembers`). Serveur absent, injoignable ou en erreur : rien n'est révoqué. Renvoie ce qu'il faut
+   * ajouter au résumé du balayage (`job_runs.detail`), qui garde la trace.
+   */
+  async function revokeDeparted(): Promise<string> {
+    let server: MediaServer | null | undefined;
+    let accounts: Awaited<ReturnType<MediaServer['listUsers']>>;
+    try {
+      server = mediaServers.current();
+      if (!server) return '';
+      accounts = await server.listUsers();
+    } catch {
+      return `, membres non vérifiés (${server ? labelOf(server) : 'serveur multimédia'} indisponible)`;
+    }
+    const { revoked, sparedOwners } = revokeDepartedMembers(db, accounts);
+    return [
+      revoked > 0 && `, ${plural(revoked, 'membre déconnecté', 'membres déconnectés')}`,
+      sparedOwners > 0 && ', propriétaire conservé (absent du serveur, mais le dernier)',
+    ]
+      .filter(Boolean)
+      .join('');
+  }
+
   /** Balayage léger : derniers ajouts d'Emby, titres en téléchargement et titres des demandes envoyées. */
   const lightScan = () =>
     runJob(db, SCAN_JOBS.light, async () => {
@@ -140,9 +170,11 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
       const purged = purgeMedia(db, new Date(now() - PURGE_AFTER_MS));
       purgeOldNotifications(db, new Date(now()));
       purgeExpired(db, new Date(now()));
+      // Avant le recalcul des titres : une panne du serveur multimédia ne doit pas le sauter (il est alors seulement noté).
+      const members = await revokeDeparted();
       const keys = keysWhere(or(isNotNull(media.status), isNotNull(media.status4k), hasRequest(db)));
       await refreshAll(keys);
-      return `${keys.length} titres recalculés, ${purged} supprimés`;
+      return `${keys.length} titres recalculés, ${purged} supprimés${members}`;
     });
 
   return { handleWebhook, lightScan, fullScan };

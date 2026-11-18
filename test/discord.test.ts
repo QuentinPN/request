@@ -134,7 +134,7 @@ describe('messages Discord des évènements', () => {
       libraryIds: [],
       publicUrl: null,
     });
-    await createSync(data, { availability: app.availability }).handleWebhook('radarr', {
+    await createSync(data, { availability: app.availability, mediaServers: app.mediaServers }).handleWebhook('radarr', {
       eventType: 'Download',
       movie: { tmdbId: 603 },
     });

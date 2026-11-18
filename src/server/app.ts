@@ -130,7 +130,7 @@ export async function buildApp({
   failOrphanJobs(data.db);
   failInterruptedSends(data.db);
   adoptLegacyArrSettings(data.db);
-  const sync = createSync(data, { availability: app.availability });
+  const sync = createSync(data, { availability: app.availability, mediaServers: app.mediaServers });
   const scheduler = schedule ? startScheduler(sync, data.db) : null;
   const backups = schedule ? startBackups(data.db.$client, data.dir, parseBackupKeep(process.env.BACKUP_KEEP)) : null;
   // Canaux de notification : l'appli (`notify`), puis Discord, courriel et push après la validation de la transaction.

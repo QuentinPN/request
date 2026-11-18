@@ -35,8 +35,8 @@ export function trackApps() {
   afterEach(async () => {
     for (const app of apps.splice(0)) await app.close();
   });
-  return async () => {
-    const app = await buildApp({ data: openDataDir(tempDir()) });
+  return async (options: Pick<Parameters<typeof buildApp>[0], 'upstreams'> = {}) => {
+    const app = await buildApp({ data: openDataDir(tempDir()), ...options });
     apps.push(app);
     return app;
   };
