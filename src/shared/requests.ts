@@ -249,18 +249,25 @@ export interface SendOptions {
   serverId: number;
   qualityProfiles: ArrTestResult['qualityProfiles'];
   rootFolders: ArrTestResult['rootFolders'];
+  /** Profil et dossier par défaut : ceux de l'anime si `anime`. */
   defaultProfileId: number;
   defaultFolder: string;
+  /** Série d'animation d'un serveur qui route les animes : ses valeurs par défaut sont celles de l'anime. */
+  anime: boolean;
 }
 
 /** `?userId=` : quota d'un autre membre (droit « Demander pour un autre »), pour la feuille de demande. */
 export const quotaQuerySchema = z.object({ userId: z.string().min(1).optional() });
 
 export const sendOptionsParamsSchema = z.object({ type: mediaTypeSchema });
-/** `?is4k=true&serverId=` : serveurs 4K, et profils/dossiers d'un serveur choisi plutôt que du serveur par défaut. */
+/**
+ * `?is4k=true&serverId=&tmdbId=` : serveurs 4K, profils/dossiers d'un serveur choisi plutôt que du serveur par défaut, et
+ * valeurs par défaut du titre (une série d'animation prend les réglages anime du serveur).
+ */
 export const sendOptionsQuerySchema = z.object({
   is4k: z.stringbool().default(false),
   serverId: z.coerce.number().int().positive().optional(),
+  tmdbId: z.coerce.number().int().positive().optional(),
 });
 
 export interface QuotaUsage {

@@ -6,6 +6,7 @@ import {
   arrClient,
   createOrRecover,
   lenient,
+  mergeTags,
   notFound,
   parseArrWebhook,
   profileSchema,
@@ -28,6 +29,7 @@ const seriesSchema = z.looseObject({
   id: z.number().catch(0),
   monitored: z.boolean().catch(false),
   seasons: z.array(seasonSchema),
+  tags: z.array(z.number()).catch([]),
 });
 type Series = z.infer<typeof seriesSchema>;
 
@@ -40,6 +42,8 @@ export interface AddSeriesInput {
   seasons: number[];
   /** Lance la recherche des épisodes manquants (ou des saisons ajoutées, pour une série existante). */
   search: boolean;
+  /** Ids des étiquettes posées sur la série ; ajoutées à celles d'une série existante, jamais à leur place. */
+  tags: number[];
   /** Sonarr v3 seulement (liste `languageProfiles` du test de connexion) ; ne pas renseigner en v4. */
   languageProfileId?: number;
 }
@@ -73,8 +77,15 @@ export async function lookupSeries(config: ArrConfig, tvdbId: number) {
 const post = (config: ArrConfig, path: string, body: unknown) =>
   arrClient('sonarr', config).post(path, z.unknown(), body);
 
-/** Série existante : ajoute les saisons demandées à celles déjà suivies (jamais l'inverse), puis les cherche. */
-async function addSeasonsToSeries(config: ArrConfig, sonarrId: number, seasons: number[], search: boolean) {
+/**
+ * Série existante : ajoute les saisons demandées à celles déjà suivies (jamais l'inverse) et les étiquettes à celles
+ * qu'elle porte, puis cherche les saisons si `search`.
+ */
+async function addSeasonsToSeries(
+  config: ArrConfig,
+  sonarrId: number,
+  { seasons, search, tags }: Pick<AddSeriesInput, 'seasons' | 'search' | 'tags'>,
+) {
   const client = arrClient('sonarr', config);
   const series = await client.get(`/series/${sonarrId}`, seriesSchema);
   const requested = new Set(seasons);
@@ -82,6 +93,7 @@ async function addSeasonsToSeries(config: ArrConfig, sonarrId: number, seasons: 
   await client.put(`/series/${sonarrId}`, z.unknown(), {
     ...series,
     monitored: true,
+    tags: mergeTags(series.tags, tags),
     seasons: [
       ...series.seasons.map((s) => (requested.has(s.seasonNumber) ? { ...s, monitored: true } : s)),
       ...seasons.filter((n) => !known.has(n)).map((seasonNumber) => ({ seasonNumber, monitored: true })),
@@ -100,8 +112,7 @@ async function addSeasonsToSeries(config: ArrConfig, sonarrId: number, seasons: 
  */
 export async function addSeries(config: ArrConfig, input: AddSeriesInput): Promise<{ sonarrId: number }> {
   const lookup = await lookupSeries(config, input.tvdbId);
-  const existing = (id: number) =>
-    addSeasonsToSeries(config, id, input.seasons, input.search).then(() => ({ sonarrId: id }));
+  const existing = (id: number) => addSeasonsToSeries(config, id, input).then(() => ({ sonarrId: id }));
   if (lookup.id > 0) return existing(lookup.id);
 
   const requested = new Set(input.seasons);
@@ -114,6 +125,7 @@ export async function addSeries(config: ArrConfig, input: AddSeriesInput): Promi
         qualityProfileId: input.qualityProfileId,
         rootFolderPath: input.rootFolderPath,
         seriesType: input.seriesType,
+        tags: input.tags,
         monitored: true, // requis : Sonarr ne télécharge aucun épisode d'une série non suivie
         seasonFolder: true,
         seasons: lookup.seasons.map((s) => ({ ...s, monitored: requested.has(s.seasonNumber) })),

@@ -194,7 +194,7 @@ export const jobRuns = sqliteTable(
  * Serveurs Radarr et Sonarr (plusieurs par type, 4K ou non). `apiKey` : chiffrée comme les secrets des réglages
  * (`crypto.ts`). Au plus un serveur par défaut par couple (type, 4K). Profil, dossier, disponibilité minimale
  * (Radarr), type de série et profil de langue (Sonarr) : valeurs par défaut de l'approbation. `tags` : JSON, ids
- * d'étiquettes.
+ * d'étiquettes. Lot 8.3 : étiquette du membre, recherche à l'ajout, adresse externe et réglages anime (Sonarr).
  */
 export const arrServers = sqliteTable(
   'arr_servers',
@@ -212,6 +212,14 @@ export const arrServers = sqliteTable(
     seriesType: text({ enum: seriesTypes }),
     languageProfileId: integer(),
     tags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
+    tagRequester: integer({ mode: 'boolean' }).notNull().default(false),
+    searchOnAdd: integer({ mode: 'boolean' }).notNull().default(true),
+    externalUrl: text(),
+    animeQualityProfileId: integer(),
+    animeRootFolderPath: text(),
+    animeSeriesType: text({ enum: seriesTypes }),
+    animeLanguageProfileId: integer(),
+    animeTags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
     createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
     updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   },
@@ -219,7 +227,12 @@ export const arrServers = sqliteTable(
     enumCheck('arr_servers_type_check', table.type, arrKinds),
     enumCheck('arr_servers_minimum_availability_check', table.minimumAvailability, minimumAvailabilities),
     enumCheck('arr_servers_series_type_check', table.seriesType, seriesTypes),
+    enumCheck('arr_servers_anime_series_type_check', table.animeSeriesType, seriesTypes),
     check('arr_servers_tags_json_check', sql`json_valid(${table.tags}) AND json_type(${table.tags}) = 'array'`),
+    check(
+      'arr_servers_anime_tags_json_check',
+      sql`json_valid(${table.animeTags}) AND json_type(${table.animeTags}) = 'array'`,
+    ),
     // Serveur par défaut de chaque couple (type, 4K) : en changer = retirer l'ancien et poser le nouveau, même transaction.
     uniqueIndex('arr_servers_default_unique').on(table.type, table.is4k).where(sql`${table.isDefault} = 1`),
   ],

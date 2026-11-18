@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import type { MediaType } from './media.ts';
-import { minimumAvailabilities, profileId, rootFolderPath, seriesTypes, serviceConnectionSchema } from './settings.ts';
+import {
+  httpUrlSchema,
+  minimumAvailabilities,
+  profileId,
+  rootFolderPath,
+  seriesTypes,
+  serviceConnectionSchema,
+} from './settings.ts';
 
 /** Gestionnaires de téléchargement : Radarr pour les films, Sonarr pour les séries. */
 export const arrKinds = ['radarr', 'sonarr'] as const;
@@ -19,7 +26,7 @@ export const arrLabel = (kind: ArrKind, is4k = false) => `${arrKindLabels[kind]}
 /**
  * Serveur Radarr ou Sonarr (table `arr_servers`). Au plus un serveur par défaut par couple (type, 4K) ; les réglages
  * de destination servent de valeurs par défaut à l'approbation. `minimumAvailability` ne concerne que Radarr,
- * `seriesType` et `languageProfileId` (Sonarr v3) que Sonarr.
+ * `seriesType`, `languageProfileId` (Sonarr v3) et les réglages `anime*` que Sonarr.
  */
 const arrServerFields = {
   type: arrKindSchema,
@@ -33,6 +40,21 @@ const arrServerFields = {
   languageProfileId: profileId.nullable().default(null),
   /** Ids des étiquettes Radarr/Sonarr posées sur les titres envoyés. */
   tags: z.array(z.number().int().nonnegative()).default([]),
+  /** Pose sur chaque titre l'étiquette du membre qui l'a demandé (`<id>-<nom>`, créée chez Radarr/Sonarr au besoin). */
+  tagRequester: z.boolean().default(false),
+  /** Lance la recherche dès l'ajout ; sinon le titre est ajouté suivi, sans recherche. */
+  searchOnAdd: z.boolean().default(true),
+  /** Adresse du serveur pour s'y rendre (lien « Ouvrir dans Radarr »), vue par le propriétaire et les approbateurs. */
+  externalUrl: httpUrlSchema.nullable().default(null),
+  /**
+   * Séries d'animation (Sonarr, mot-clé TMDB « anime », comme Seerr) : profil, dossier, type de série, profil de langue
+   * et étiquettes propres. `null` : même valeur que les autres séries ; les étiquettes anime remplacent celles du serveur.
+   */
+  animeQualityProfileId: profileId.nullable().default(null),
+  animeRootFolderPath: rootFolderPath.nullable().default(null),
+  animeSeriesType: z.enum(seriesTypes).nullable().default(null),
+  animeLanguageProfileId: profileId.nullable().default(null),
+  animeTags: z.array(z.number().int().nonnegative()).default([]),
 };
 
 /** Création ou modification d'un serveur (la clé, chiffrée en base, ne revient jamais au navigateur). */
@@ -63,5 +85,21 @@ export const arrServerTestSchema = serviceConnectionSchema.extend({
 
 export const arrServerIdParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 
-/** Serveur tel que le voit un approbateur : ni adresse ni clé. */
-export type ArrServerSummary = Pick<ArrServer, 'id' | 'name' | 'is4k' | 'isDefault'>;
+/** Ce serveur route-t-il les animes à part ? Un seul réglage anime suffit (le formulaire les vide tous pour l'arrêter). */
+export const hasAnimeRoute = (
+  s: Pick<
+    ArrServer,
+    'animeQualityProfileId' | 'animeRootFolderPath' | 'animeSeriesType' | 'animeLanguageProfileId' | 'animeTags'
+  >,
+) =>
+  s.animeQualityProfileId !== null ||
+  s.animeRootFolderPath !== null ||
+  s.animeSeriesType !== null ||
+  s.animeLanguageProfileId !== null ||
+  s.animeTags.length > 0;
+
+/**
+ * Serveur tel que le voit un approbateur : ni clé, ni adresse de connexion. L'adresse externe, que le propriétaire
+ * renseigne pour qu'on s'y rende, est seule montrée (lien « Ouvrir dans Radarr »).
+ */
+export type ArrServerSummary = Pick<ArrServer, 'id' | 'name' | 'is4k' | 'isDefault' | 'externalUrl'>;

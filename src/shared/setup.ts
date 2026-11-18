@@ -60,6 +60,8 @@ export interface ArrTestResult {
   version: string;
   qualityProfiles: Array<{ id: number; name: string }>;
   rootFolders: Array<{ id: number; path: string; freeSpace: number }>;
+  /** Étiquettes du serveur ; absentes si la liste n'a pas pu être lue. */
+  tags?: Array<{ id: number; label: string }>;
 }
 
 export interface SonarrTestResult extends ArrTestResult {

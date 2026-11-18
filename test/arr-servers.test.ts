@@ -6,6 +6,7 @@ import { adoptLegacyArrSettings, listArrServers } from '../src/server/services/a
 import { ARR_SERVERS_PATH, ARR_SERVERS_TEST_PATH, type ArrServer } from '../src/shared/arr-servers.ts';
 import { CSRF_HEADERS } from '../src/shared/auth.ts';
 import { closedPortUrl, type FakeHandler, status } from './fake-server.ts';
+import { fakeTagRoutes } from './fake-tags.ts';
 import { addArrServer, loginAs, loginAsOwner, trackApps, trackFakeServers, trackTempDirs } from './helpers.ts';
 
 const newApp = trackApps();
@@ -116,6 +117,14 @@ describe('serveurs Radarr/Sonarr', () => {
       seriesType: null,
       languageProfileId: null,
       tags: [],
+      tagRequester: false,
+      searchOnAdd: true,
+      externalUrl: null,
+      animeQualityProfileId: null,
+      animeRootFolderPath: null,
+      animeSeriesType: null,
+      animeLanguageProfileId: null,
+      animeTags: [],
     } satisfies ArrServer);
     const list = await send('GET', ARR_SERVERS_PATH);
     expect(list.body).not.toContain(KEY);
@@ -185,6 +194,77 @@ describe('serveurs Radarr/Sonarr', () => {
       body({ type: 'sonarr', name: 'Séries', minimumAvailability: 'announced', languageProfileId: 2 }),
     );
     expect(sonarr.json()).toMatchObject({ minimumAvailability: null, seriesType: 'standard', languageProfileId: 2 });
+  });
+
+  it('options d’envoi : étiquette du membre, recherche, adresse externe normalisée, réglages anime (Sonarr seulement)', async () => {
+    const { send, body } = await setup();
+    const options = {
+      tagRequester: true,
+      searchOnAdd: false,
+      externalUrl: 'https://radarr.exemple.fr/',
+      tags: [3],
+      animeQualityProfileId: 7,
+      animeRootFolderPath: '/anime',
+      animeSeriesType: 'anime',
+      animeLanguageProfileId: 2,
+      animeTags: [4],
+    };
+    const radarr = await send('POST', ARR_SERVERS_PATH, body(options));
+    expect(radarr.statusCode).toBe(201);
+    // Radarr n'a pas de réglages anime (comme chez Seerr) : ils sont vidés ; le reste est gardé.
+    expect(radarr.json()).toMatchObject({
+      tagRequester: true,
+      searchOnAdd: false,
+      externalUrl: 'https://radarr.exemple.fr',
+      tags: [3],
+      animeQualityProfileId: null,
+      animeRootFolderPath: null,
+      animeSeriesType: null,
+      animeLanguageProfileId: null,
+      animeTags: [],
+    });
+    const sonarr = await send('POST', ARR_SERVERS_PATH, body({ ...options, type: 'sonarr', name: 'Séries' }));
+    expect(sonarr.json()).toMatchObject({
+      animeQualityProfileId: 7,
+      animeRootFolderPath: '/anime',
+      animeSeriesType: 'anime',
+      animeLanguageProfileId: 2,
+      animeTags: [4],
+    });
+    // Les réglages se relisent tels quels, et un `PUT` sans eux revient aux valeurs par défaut.
+    const { id } = sonarr.json<ArrServer>();
+    const cleared = await send(
+      'PUT',
+      `${ARR_SERVERS_PATH}/${id}`,
+      body({ type: 'sonarr', name: 'Séries', apiKey: '' }),
+    );
+    expect(cleared.json()).toMatchObject({
+      tagRequester: false,
+      searchOnAdd: true,
+      externalUrl: null,
+      animeQualityProfileId: null,
+      animeSeriesType: null,
+      animeTags: [],
+    });
+  });
+
+  it('adresse externe invalide : 400, rien n’est enregistré', async () => {
+    const { send, body } = await setup();
+    expect((await send('POST', ARR_SERVERS_PATH, body({ externalUrl: 'pas une adresse' }))).statusCode).toBe(400);
+    expect((await send('GET', ARR_SERVERS_PATH)).json()).toEqual([]);
+  });
+
+  it('test en direct : les étiquettes du serveur sont renvoyées quand il les donne', async () => {
+    const { routes } = fakeTagRoutes([{ id: 3, label: 'films' }]);
+    const arr = await serve({
+      'GET /api/v3/system/status': keyed({ version: '5.14.0' }),
+      'GET /api/v3/qualityprofile': keyed([{ id: 4, name: 'HD-1080p' }]),
+      'GET /api/v3/rootfolder': keyed([{ id: 1, path: '/films', freeSpace: 1 }]),
+      'GET /api/v3/tag': routes['GET /api/v3/tag'] as FakeHandler,
+    });
+    const { send } = await setup();
+    const res = await send('POST', ARR_SERVERS_TEST_PATH, { type: 'radarr', url: arr.url, apiKey: KEY });
+    expect(res.json()).toMatchObject({ tags: [{ id: 3, label: 'films' }] });
   });
 });
 

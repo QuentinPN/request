@@ -1,6 +1,7 @@
 import type { RequestView } from '@shared/requests.ts';
 import { cn } from 'cn';
 import { type ReactNode, useId, useState } from 'react';
+import { ExternalServerLink } from '@/components/external-server-link';
 import { Notice } from '@/components/notice';
 import { formatBytes } from '@/components/setup/config';
 import { Button } from '@/components/ui/button';
@@ -67,6 +68,7 @@ function SendTo({
           </NativeSelect>
         </div>
       )}
+      {server?.externalUrl && <ExternalServerLink service={service} href={server.externalUrl} />}
       <div>
         <Label htmlFor={`${id}-profile`} className="font-medium text-muted-foreground">
           Profil de qualité
@@ -82,6 +84,9 @@ function SendTo({
             </option>
           ))}
         </NativeSelect>
+        {options.anime && (
+          <FieldHint>Série d’animation : valeurs par défaut des réglages anime de {server?.name}.</FieldHint>
+        )}
       </div>
       <div>
         <Label htmlFor={`${id}-folder`} className="font-medium text-muted-foreground">

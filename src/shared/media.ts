@@ -107,6 +107,11 @@ export const mediaDetailsSchema = mediaSummarySchema.extend({
 });
 export type MediaDetails = z.infer<typeof mediaDetailsSchema>;
 
+/** Mot-clé TMDB « anime » : celui que Seerr utilise pour router une série vers les réglages anime de Sonarr. */
+export const ANIME_KEYWORD_ID = 210024;
+export const isAnime = ({ keywords }: Pick<MediaDetails, 'keywords'>) =>
+  keywords?.some((keyword) => keyword.id === ANIME_KEYWORD_ID) ?? false;
+
 export const personSummarySchema = z.object({
   id: z.number().int(),
   name: z.string(),

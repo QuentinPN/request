@@ -441,6 +441,14 @@ describe('schémas partagés des nouvelles entités', () => {
       seriesType: null,
       languageProfileId: null,
       tags: [],
+      tagRequester: false,
+      searchOnAdd: true,
+      externalUrl: null,
+      animeQualityProfileId: null,
+      animeRootFolderPath: null,
+      animeSeriesType: null,
+      animeLanguageProfileId: null,
+      animeTags: [],
     });
     expect(arrServerInputSchema.safeParse({ ...input, type: 'lidarr', rootFolderPath: '/x' }).success).toBe(false);
   });

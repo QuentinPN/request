@@ -91,6 +91,18 @@ function typeColumnsOf(
   };
 }
 
+/** Réglages anime (Sonarr seulement, comme chez Seerr) : vides pour Radarr. */
+function animeColumnsOf(kind: ArrKind, v: ArrServerValues) {
+  const sonarr = kind === 'sonarr';
+  return {
+    animeQualityProfileId: sonarr ? v.animeQualityProfileId : null,
+    animeRootFolderPath: sonarr ? v.animeRootFolderPath : null,
+    animeSeriesType: sonarr ? v.animeSeriesType : null,
+    animeLanguageProfileId: sonarr ? v.animeLanguageProfileId : null,
+    animeTags: sonarr ? v.animeTags : [],
+  };
+}
+
 function columnsOf(cryptoKey: Buffer, v: ArrServerValues) {
   return {
     type: v.type,
@@ -102,7 +114,11 @@ function columnsOf(cryptoKey: Buffer, v: ArrServerValues) {
     qualityProfileId: v.qualityProfileId,
     rootFolderPath: v.rootFolderPath,
     ...typeColumnsOf(v.type, v),
+    ...animeColumnsOf(v.type, v),
     tags: v.tags,
+    tagRequester: v.tagRequester,
+    searchOnAdd: v.searchOnAdd,
+    externalUrl: v.externalUrl,
   };
 }
 

@@ -540,8 +540,8 @@ describe('demandes 4K', () => {
     const owner = await as('owner', 'proprietaire');
     const options = (await owner.get('/api/requests/send-options/movie')).json<SendOptions>();
     expect(options.servers).toEqual([
-      { id: 1, name: 'Radarr', is4k: false, isDefault: true },
-      { id: 4, name: 'Radarr bis', is4k: false, isDefault: false },
+      { id: 1, name: 'Radarr', is4k: false, isDefault: true, externalUrl: null },
+      { id: 4, name: 'Radarr bis', is4k: false, isDefault: false, externalUrl: null },
     ]);
     expect(options.serverId).toBe(1);
     const fourKOptions = (await owner.get('/api/requests/send-options/movie?is4k=true')).json<SendOptions>();
@@ -826,7 +826,7 @@ describe('approbation et envoi', () => {
   it('GET /api/requests/send-options/:type : profils et dossiers pour les approbateurs, sans adresse ni clé', async () => {
     const { as, db } = await setup();
     const expected: SendOptions = {
-      servers: [{ id: 2, name: 'Sonarr', is4k: false, isDefault: true }],
+      servers: [{ id: 2, name: 'Sonarr', is4k: false, isDefault: true, externalUrl: null }],
       serverId: 2,
       qualityProfiles: [
         { id: 1, name: 'HD-1080p' },
@@ -839,6 +839,7 @@ describe('approbation et envoi', () => {
       ],
       defaultProfileId: 2,
       defaultFolder: '/series',
+      anime: false,
     };
     for (const role of ['owner', 'manager'] as const) {
       const res = await (await as(role, role)).get('/api/requests/send-options/tv');

@@ -6,6 +6,8 @@ import { quotaRuleSchema } from './roles.ts';
 /** Adresse d'un service telle qu'enregistrée : sans `/` final. */
 export const normalizeUrl = (u: string) => u.replace(/\/+$/, '');
 const url = z.url({ protocol: /^https?$/ }).transform(normalizeUrl);
+/** Adresse http(s) validée, sans `/` final : champs facultatifs d'autres schémas (adresse externe d'un serveur Radarr/Sonarr). */
+export const httpUrlSchema = url;
 const apiKey = z.string().trim().min(1, 'Clé d’API requise');
 const service = z.object({ url, apiKey });
 /** Adresse et clé d'un service ; aussi la connexion de l'import Seerr (`shared/import.ts`), jamais enregistrée. */

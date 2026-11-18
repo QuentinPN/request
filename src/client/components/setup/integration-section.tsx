@@ -3,6 +3,7 @@ import {
   type ArrKind,
   type ArrServerInput,
   arrKindLabels,
+  hasAnimeRoute,
   isArrKind,
 } from '@shared/arr-servers.ts';
 import { loginMethodOf } from '@shared/media-server.ts';
@@ -28,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { CheckboxRow, FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
 import { apiSend } from '@/lib/http';
 import { setupStateQuery } from '@/lib/session';
+import { ArrChoices, ArrServerOptions } from './arr-server-options';
 import {
   type ConnectionKey,
   connectionTextOf,
@@ -61,13 +63,37 @@ export type Values = {
   minimumAvailability: MinimumAvailability;
   seriesType: SeriesType;
   languageProfileId: string;
+  /** Serveur Radarr/Sonarr : adresse externe (lien « Ouvrir dans… »), options d'envoi et étiquettes. */
+  externalUrl: string;
+  searchOnAdd: boolean;
+  tagRequester: boolean;
+  tags: number[];
+  /** Sonarr : réglages à part des animes (profil, dossier et profil de langue vides : comme les autres séries). */
+  animeEnabled: boolean;
+  animeQualityProfileId: string;
+  animeRootFolderPath: string;
+  animeSeriesType: SeriesType;
+  animeLanguageProfileId: string;
+  animeTags: number[];
 };
 
 /** Vue à plat d'un réglage masqué ou d'un serveur Radarr/Sonarr enregistré. */
 export type StoredFields = Partial<
   Omit<
     Values,
-    'kind' | 'apiKey' | 'publicUrl' | 'qualityProfileId' | 'languageProfileId' | 'minimumAvailability' | 'seriesType'
+    | 'kind'
+    | 'apiKey'
+    | 'publicUrl'
+    | 'qualityProfileId'
+    | 'languageProfileId'
+    | 'minimumAvailability'
+    | 'seriesType'
+    | 'externalUrl'
+    | 'animeEnabled'
+    | 'animeQualityProfileId'
+    | 'animeRootFolderPath'
+    | 'animeSeriesType'
+    | 'animeLanguageProfileId'
   >
 > & {
   kind?: MediaServerKind;
@@ -79,7 +105,11 @@ export type StoredFields = Partial<
   languageProfileId?: number | null;
   minimumAvailability?: MinimumAvailability | null;
   seriesType?: SeriesType | null;
-  tags?: number[];
+  externalUrl?: string | null;
+  animeQualityProfileId?: number | null;
+  animeRootFolderPath?: string | null;
+  animeSeriesType?: SeriesType | null;
+  animeLanguageProfileId?: number | null;
 };
 
 const initialValues = (s: StoredFields): Values => ({
@@ -96,6 +126,22 @@ const initialValues = (s: StoredFields): Values => ({
   minimumAvailability: s.minimumAvailability ?? DEFAULT_MINIMUM_AVAILABILITY,
   seriesType: s.seriesType ?? DEFAULT_SERIES_TYPE,
   languageProfileId: s.languageProfileId ? String(s.languageProfileId) : '',
+  externalUrl: s.externalUrl ?? '',
+  searchOnAdd: s.searchOnAdd ?? true,
+  tagRequester: s.tagRequester ?? false,
+  tags: s.tags ?? [],
+  animeEnabled: hasAnimeRoute({
+    animeQualityProfileId: s.animeQualityProfileId ?? null,
+    animeRootFolderPath: s.animeRootFolderPath ?? null,
+    animeSeriesType: s.animeSeriesType ?? null,
+    animeLanguageProfileId: s.animeLanguageProfileId ?? null,
+    animeTags: s.animeTags ?? [],
+  }),
+  animeQualityProfileId: s.animeQualityProfileId ? String(s.animeQualityProfileId) : '',
+  animeRootFolderPath: s.animeRootFolderPath ?? '',
+  animeSeriesType: s.animeSeriesType ?? 'anime',
+  animeLanguageProfileId: s.animeLanguageProfileId ? String(s.animeLanguageProfileId) : '',
+  animeTags: s.animeTags ?? [],
 });
 
 const connectionOf = (key: ConnectionKey, v: Values) =>
@@ -118,8 +164,9 @@ function settingPayloadOf(key: IntegrationKey, v: Values): SettingInput<Integrat
     : (connection as SettingInput<'tmdb'>);
 }
 
-/** Corps de l'ajout ou de la modification d'un serveur ; les étiquettes enregistrées sont gardées telles quelles. */
-export function arrPayloadOf(type: ArrKind, v: Values, stored: StoredFields | null): ArrServerInput {
+/** Corps de l'ajout ou de la modification d'un serveur. Réglages anime : Sonarr seulement, vides s'ils sont désactivés. */
+export function arrPayloadOf(type: ArrKind, v: Values): ArrServerInput {
+  const anime = type === 'sonarr' && v.animeEnabled;
   return {
     url: v.url.trim(),
     apiKey: v.apiKey,
@@ -132,7 +179,15 @@ export function arrPayloadOf(type: ArrKind, v: Values, stored: StoredFields | nu
     minimumAvailability: type === 'radarr' ? v.minimumAvailability : null,
     seriesType: type === 'sonarr' ? v.seriesType : null,
     languageProfileId: type === 'sonarr' && v.languageProfileId ? Number(v.languageProfileId) : null,
-    tags: stored?.tags ?? [],
+    tags: v.tags,
+    tagRequester: v.tagRequester,
+    searchOnAdd: v.searchOnAdd,
+    externalUrl: v.externalUrl.trim() || null,
+    animeQualityProfileId: anime && v.animeQualityProfileId ? Number(v.animeQualityProfileId) : null,
+    animeRootFolderPath: anime && v.animeRootFolderPath ? v.animeRootFolderPath : null,
+    animeSeriesType: anime ? v.animeSeriesType : null,
+    animeLanguageProfileId: anime && v.animeLanguageProfileId ? Number(v.animeLanguageProfileId) : null,
+    animeTags: anime ? v.animeTags : [],
   };
 }
 
@@ -170,14 +225,27 @@ function prefill(key: ConnectionKey, v: Values, result: TestResults[ConnectionKe
             r.languageProfiles.map((p) => String(p.id)),
           )
         : '',
+      // Réglages anime : un choix qui n'existe plus revient à « comme les autres séries » ; étiquettes disparues retirées.
+      animeQualityProfileId: r.qualityProfiles.some((p) => String(p.id) === v.animeQualityProfileId)
+        ? v.animeQualityProfileId
+        : '',
+      animeRootFolderPath: r.rootFolders.some((f) => f.path === v.animeRootFolderPath) ? v.animeRootFolderPath : '',
+      animeLanguageProfileId: r.languageProfiles?.some((p) => String(p.id) === v.animeLanguageProfileId)
+        ? v.animeLanguageProfileId
+        : '',
+      ...(r.tags && {
+        tags: v.tags.filter((id) => r.tags?.some((t) => t.id === id)),
+        animeTags: v.animeTags.filter((id) => r.tags?.some((t) => t.id === id)),
+      }),
     };
   }
   return v;
 }
 
-/** Adresse publique d'Emby ou de Jellyfin : facultative, mais valide si elle est renseignée. */
-const publicUrlError = (key: ConnectionKey, v: Values) =>
-  hasPublicUrl(key, v) && v.publicUrl.trim() !== '' && !isHttpUrl(v.publicUrl) ? URL_ERROR : null;
+/** Adresse facultative (publique d'Emby ou de Jellyfin, externe d'un serveur Radarr/Sonarr) : valide si renseignée. */
+const optionalUrlError = (value: string) => (value.trim() !== '' && !isHttpUrl(value) ? URL_ERROR : null);
+const publicUrlError = (key: ConnectionKey, v: Values) => (hasPublicUrl(key, v) ? optionalUrlError(v.publicUrl) : null);
+const externalUrlError = (key: ConnectionKey, v: Values) => (isArrKind(key) ? optionalUrlError(v.externalUrl) : null);
 
 /**
  * La clé enregistrée vaut pour cette saisie : même adresse, et même type de serveur multimédia (le serveur ne reprend
@@ -302,10 +370,12 @@ export function IntegrationForm<P>({
   const result = test.data;
   const arr = result && isArrKind(service) ? (result as TestResults['sonarr']) : null;
   const publicError = publicUrlError(service, values);
+  const externalError = externalUrlError(service, values);
   const canSave =
     test.isSuccess &&
     !save.isPending &&
     !publicError &&
+    !externalError &&
     (!serverFields || values.name.trim() !== '') &&
     (!arr || (values.qualityProfileId !== '' && values.rootFolderPath !== ''));
 
@@ -572,6 +642,20 @@ export function IntegrationForm<P>({
             </div>
           )}
         </div>
+      )}
+
+      {arr && serverFields && isArrKind(service) && (
+        <ArrChoices id={id} service={service} values={values} arr={arr} onChange={setChoice} />
+      )}
+
+      {serverFields && isArrKind(service) && (
+        <ArrServerOptions
+          id={id}
+          service={service}
+          values={values}
+          externalUrlError={externalError}
+          onChange={setChoice}
+        />
       )}
 
       {serverFields && (

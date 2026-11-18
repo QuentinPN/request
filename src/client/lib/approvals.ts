@@ -43,20 +43,26 @@ export const approvalListQuery = (tab: ApprovalTab, page = 1) =>
 export type SendChoice = ApproveRequestInput;
 export type { SendOptions };
 
-/** Ce dont dépendent les listes d'envoi : type, qualité (4K ou non) et serveur choisi (absent : celui par défaut). */
+/**
+ * Ce dont dépendent les listes d'envoi : type, qualité (4K ou non), serveur choisi (absent : celui par défaut) et, pour
+ * une série, le titre : une série d'animation a d'autres valeurs par défaut (réglages anime du serveur).
+ */
 export interface SendTarget {
   type: MediaType;
   is4k: boolean;
   serverId?: number | undefined;
+  tmdbId?: number | undefined;
 }
 
-const targetKey = ({ type, is4k, serverId }: SendTarget) => [type, is4k, serverId ?? null] as const;
+const targetKey = ({ type, is4k, serverId, tmdbId }: SendTarget) =>
+  [type, is4k, serverId ?? null, tmdbId ?? null] as const;
 
 /** Serveur d'envoi d'une demande : choix de l'approbateur, sinon serveur déjà retenu, sinon celui par défaut. */
 export const sendTargetOf = (request: RequestView, choice?: SendChoice): SendTarget => ({
   type: request.type,
   is4k: request.is4k,
   serverId: choice?.serverId ?? request.server?.id,
+  tmdbId: request.type === 'tv' ? request.tmdbId : undefined,
 });
 
 /** Serveurs, profils et dossiers (route des approbateurs) ; `null` : aucun serveur du type et de la qualité. */
@@ -69,6 +75,7 @@ export const sendOptionsQuery = (target: SendTarget) =>
     queryFn: async ({ signal }): Promise<SendOptions | null> => {
       const query = new URLSearchParams({ is4k: String(target.is4k) });
       if (target.serverId !== undefined) query.set('serverId', String(target.serverId));
+      if (target.tmdbId !== undefined) query.set('tmdbId', String(target.tmdbId));
       try {
         return await apiGet<SendOptions>(`${sendOptionsPath(target.type)}?${query}`, undefined, signal);
       } catch (error) {

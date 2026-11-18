@@ -66,7 +66,14 @@ import type { AvailabilityService } from './availability.ts';
 import { assertNotBlocked, assertTitleNotBlocked } from './blocklist.ts';
 import { mediaServerName } from './media-server.ts';
 import { notifyRequestEvent, notifyRequestedOnBehalf } from './notifications.ts';
-import { assertSendChoice, sendServer } from './send-options.ts';
+import {
+  assertSendChoice,
+  destinationOf,
+  isAnimeTitle,
+  isAnimeTitleOrDefault,
+  sendServer,
+  tagsToSend,
+} from './send-options.ts';
 import { getSetting } from './settings.ts';
 import { loadDetails, loadSummaries } from './tmdb.ts';
 import { avatarUrlOf, getUser, type User } from './users.ts';
@@ -589,16 +596,19 @@ export function createRequests(
   }
 
   /**
-   * Ajoute le titre au serveur de la demande (à défaut, celui par défaut du type et de la qualité), avec recherche ;
-   * un échec est rendu lisible, jamais levé.
+   * Ajoute le titre au serveur de la demande (à défaut, celui par défaut du type et de la qualité), avec ses étiquettes
+   * et la recherche si le serveur la veut ; profil, dossier, type de série et étiquettes anime d'une série d'animation
+   * (`destinationOf`). Un échec est rendu lisible, jamais levé.
    */
   async function deliver(row: RequestRow, seasons: number[]): Promise<SendOutcome> {
     try {
       const server = sendServer(data, row.type, row.is4k, row.serverId);
+      const destination = destinationOf(server, await isAnimeTitle(deps.tmdb, server, row.type, row.tmdbId));
       const target = {
-        qualityProfileId: row.qualityProfileId ?? server.qualityProfileId,
-        rootFolderPath: row.rootFolder ?? server.rootFolderPath,
-        search: true,
+        qualityProfileId: row.qualityProfileId ?? destination.qualityProfileId,
+        rootFolderPath: row.rootFolder ?? destination.rootFolderPath,
+        search: server.searchOnAdd,
+        tags: await tagsToSend(server, destination, getUser(db, row.userId)),
       };
       if (row.type === 'movie') {
         const { radarrId } = await addMovie(server, {
@@ -614,9 +624,9 @@ export function createRequests(
       const { sonarrId } = await addSeries(server, {
         ...target,
         tvdbId,
-        seriesType: row.seriesType ?? server.seriesType ?? DEFAULT_SERIES_TYPE,
+        seriesType: row.seriesType ?? destination.seriesType ?? DEFAULT_SERIES_TYPE,
         seasons,
-        ...(server.languageProfileId !== null && { languageProfileId: server.languageProfileId }),
+        ...(destination.languageProfileId !== null && { languageProfileId: destination.languageProfileId }),
       });
       return { ok: true, is4k: server.is4k, arrId: sonarrId, tvdbId, detail: `${server.name} #${sonarrId}` };
     } catch (error) {
@@ -666,15 +676,17 @@ export function createRequests(
     // (import Seerr), sinon le serveur par défaut. Aucun serveur : l'envoi échouera avec un message clair.
     const server = serverFor(row, choice.serverId ?? row.serverId);
     if (server) await assertSendChoice(server, choice);
+    const destination =
+      server && destinationOf(server, await isAnimeTitleOrDefault(deps.tmdb, server, row.type, row.tmdbId));
     // Valeurs envoyées gardées sur la demande (une relance les reprend) ; à défaut, celles du serveur.
     db.transaction((tx) => {
       transition(tx, id, ['pending'], {
         status: 'approved',
         decidedBy: actor.id,
         serverId: server?.id ?? null,
-        qualityProfileId: choice.qualityProfileId ?? server?.qualityProfileId ?? null,
-        rootFolder: choice.rootFolderPath ?? server?.rootFolderPath ?? null,
-        seriesType: row.type === 'tv' ? (choice.seriesType ?? server?.seriesType ?? null) : null,
+        qualityProfileId: choice.qualityProfileId ?? destination?.qualityProfileId ?? null,
+        rootFolder: choice.rootFolderPath ?? destination?.rootFolderPath ?? null,
+        seriesType: row.type === 'tv' ? (choice.seriesType ?? destination?.seriesType ?? null) : null,
         // « Hors quota » coché ou décoché à l'approbation ; absent, la demande garde le sien.
         ...(choice.quotaExempt !== undefined && { quotaExempt: choice.quotaExempt }),
       });

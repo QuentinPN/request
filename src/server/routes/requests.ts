@@ -69,6 +69,7 @@ export function requestsRoutes(app: FastifyInstance) {
     async (req): Promise<SendOptions> =>
       sendOptions(
         app.data,
+        app.tmdb,
         parseRequest(sendOptionsParamsSchema, req.params).type,
         parseRequest(sendOptionsQuerySchema, req.query),
       ),
