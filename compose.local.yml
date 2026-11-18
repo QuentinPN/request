@@ -1,0 +1,71 @@
+# Request sur le réseau local, en HTTPS (certificat Let's Encrypt par défi DNS Cloudflare), sans rien exposer
+# sur Internet. Voir docs/DEPLOIEMENT.md (« Réseau local seul »).
+# Autonome : images publiées sur GHCR par .github/workflows/images.yml, à coller tel quel dans Dockhand.
+#   Variables : DOMAIN (ex. demandes.example.com), CLOUDFLARE_API_TOKEN, REQUEST_BIND (IP locale de l'hôte)
+#   Puis https://<DOMAIN>:8445 (HTTPS_PORT)
+name: request
+
+services:
+  request:
+    image: ghcr.io/quentinpn/request:${REQUEST_TAG:-latest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    environment:
+      # Caddy est le seul proxy de confiance : son adresse est dans ce sous-réseau (voir `networks`).
+      TRUST_PROXY: ${PROXY_SUBNET:-172.28.80.0/24}
+      IMAGE_CACHE_MAX_MB: ${IMAGE_CACHE_MAX_MB:-500}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      # Jeton d'installation de l'assistant ; vide : tiré au hasard et écrit dans les journaux au démarrage.
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      # Lien des courriels et contact push : le port fait partie de l'adresse.
+      PUBLIC_URL: https://${DOMAIN:?DOMAIN}:${HTTPS_PORT:-8445}
+      # Fuseau de la sauvegarde quotidienne et des dates.
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      - data:/data
+    # Aucun port publié : Caddy joint l'appli par `proxy` ; Radarr, Sonarr et Emby par `media`
+    # (http://radarr:7878 dans l'assistant, webhooks vers http://request:3000).
+    expose: ["3000"]
+    networks: [proxy, media]
+
+  caddy:
+    image: ghcr.io/quentinpn/request-caddy:${REQUEST_TAG:-latest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN}
+    # Publié sur une seule IP de l'hôte, comme les autres stacks ; pas sur 443, pris par le Caddy public.
+    ports:
+      - "${REQUEST_BIND:?REQUEST_BIND}:${HTTPS_PORT:-8445}:443"
+    volumes:
+      # Certificat : se réobtient tout seul, inutile à sauvegarder.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      request:
+        condition: service_healthy
+    networks: [proxy]
+
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: ${PROXY_SUBNET:-172.28.80.0/24}
+  media:
+    external: true
+    name: media
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:

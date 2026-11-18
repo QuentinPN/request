@@ -1,0 +1,10 @@
+# Caddyfile de compose.local.yml : DOMAIN pointe vers l'IP locale du mini-PC, le certificat est obtenu par
+# défi DNS-01 chez Cloudflare (CLOUDFLARE_API_TOKEN) ; aucun port n'a besoin d'être joignable depuis Internet.
+{$DOMAIN} {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+		resolvers 1.1.1.1
+	}
+	encode zstd gzip
+	reverse_proxy request:3000
+}
