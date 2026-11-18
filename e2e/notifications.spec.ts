@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { mockNotifications } from './notifications-mocks.ts';
 import { expect, expectNoAxeViolations, test } from './support/api.ts';
+import { mobileTabs } from './support/nav.ts';
 
 const panel = (page: Page) => page.getByRole('dialog', { name: 'Notifications' });
 
@@ -51,27 +52,22 @@ test('ordinateur : ouvrir une notification la marque lue et mène à sa page', a
   await expect(page.getByRole('button', { name: 'Notifications, 1 non lue' })).toBeVisible();
 });
 
-test('mobile : l’onglet « Alertes » tient dans la barre et ouvre la feuille des notifications', async ({ page }, {
-  project,
-}) => {
-  test.skip(project.name !== 'mobile', 'barre d’onglets réservée au mobile');
+test('mobile : la cloche de l’en-tête ouvre la feuille des notifications, la barre garde ses cinq onglets', async ({
+  page,
+}, { project }) => {
+  test.skip(project.name !== 'mobile', 'en-tête et barre d’onglets réservés au mobile');
   const state = await mockNotifications(page);
   await page.goto('/demandes');
-  const tabs = page.getByRole('navigation', { name: 'Navigation', exact: true });
-  // Propriétaire : sept onglets, tous dans la barre, sans chevauchement.
-  const bar = await tabs.boundingBox();
-  const boxes = await Promise.all(
-    (await tabs.locator(':scope > a, :scope > button').all()).map((el) => el.boundingBox()),
-  );
-  expect(boxes).toHaveLength(7);
-  for (const [i, box] of boxes.entries()) {
-    expect(box?.height).toBeGreaterThanOrEqual(44);
-    expect(box && bar && box.x >= bar.x && box.x + box.width <= bar.x + bar.width).toBe(true);
-    const next = boxes[i + 1];
-    if (box && next) expect(box.x + box.width).toBeLessThanOrEqual(next.x);
-  }
+  const tabs = mobileTabs(page);
+  // Propriétaire : cinq onglets, la cloche n'en fait pas partie.
+  await expect(tabs.locator(':scope > a, :scope > button')).toHaveCount(5);
+  await expect(tabs.getByRole('button', { name: /^Notifications/ })).toHaveCount(0);
 
-  await tabs.getByRole('button', { name: /^Alertes ?, 2 non lues$/ }).tap();
+  const bell = page.getByRole('button', { name: 'Notifications, 2 non lues' });
+  const box = await bell.boundingBox();
+  expect(box?.width).toBeGreaterThanOrEqual(44);
+  expect(box?.height).toBeGreaterThanOrEqual(44);
+  await bell.tap();
   const sheet = panel(page);
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole('link', { name: /Disponible dans Emby/ })).toBeVisible();
@@ -83,13 +79,12 @@ test('mobile : l’onglet « Alertes » tient dans la barre et ouvre la feuille 
   // La feuille est modale : la barre redevient accessible une fois fermée.
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
-  await expect(tabs.getByRole('button', { name: 'Alertes', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
 });
 
-test('sans notification : panneau vide et aucune pastille', async ({ page }, { project }) => {
+test('sans notification : panneau vide et aucune pastille', async ({ page }) => {
   await page.goto('/demandes');
-  if (project.name === 'mobile') await page.getByRole('button', { name: 'Alertes', exact: true }).tap();
-  else await page.getByRole('button', { name: 'Notifications', exact: true }).click();
+  await page.getByRole('button', { name: 'Notifications', exact: true }).click();
   await expect(panel(page).getByText('Aucune notification')).toBeVisible();
   await expectNoAxeViolations(page);
 });

@@ -3,6 +3,7 @@ import type { WatchlistImportResult } from '../src/shared/watchlist.ts';
 import { mockCatalogue } from './catalogue-mocks.ts';
 import { entryOf, mockTraktSetting, mockWatchlist } from './ma-liste-mocks.ts';
 import { expect, expectNoAxeViolations, field, test, viewerAs } from './support/api.ts';
+import { openMoreEntry } from './support/nav.ts';
 
 const dialog = (page: Page) => page.getByRole('dialog', { name: 'Importer une liste' });
 
@@ -15,10 +16,8 @@ test('Ma liste : affiches avec leur statut, lien vers la fiche, entrée dans la 
   project,
 }) => {
   await mockWatchlist(page, [entryOf('Conclave'), entryOf('Le Robot sauvage'), entryOf('Dune : Deuxième partie')]);
-  // Ordinateur : entrée de la navigation. Mobile : la barre d'onglets est pleine, on passe par Compte.
-  const mobile = project.name === 'mobile';
-  await page.goto(mobile ? '/compte' : '/');
-  await (mobile ? page : page.getByRole('navigation')).getByRole('link', { name: 'Ma liste' }).click();
+  // Ordinateur : menu « Plus » de la navigation. Mobile : la barre d'onglets n'a pas la page, on passe par Compte.
+  await openMoreEntry(page, project.name === 'mobile', 'Ma liste');
 
   await expect(page).toHaveURL(/\/ma-liste$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Ma liste' })).toBeVisible();

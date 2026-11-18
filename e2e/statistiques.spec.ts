@@ -1,6 +1,7 @@
 import type { Stats } from '../src/shared/stats.ts';
 import { mockStats, sampleStats } from './stats-mocks.ts';
 import { expect, expectNoAxeViolations, test, viewerAs } from './support/api.ts';
+import { openMoreMenu } from './support/nav.ts';
 
 const emptyStats: Stats = {
   requests: {
@@ -84,9 +85,9 @@ test('un membre sans le droit ne voit ni l’entrée de navigation ni les chiffr
   await expect(page.getByText('Accès réservé')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Statistiques' })).toHaveCount(0);
   if (project.name === 'mobile') return;
-  await expect(
-    page.getByRole('navigation', { name: 'Navigation principale' }).getByRole('link', { name: 'Statistiques' }),
-  ).toHaveCount(0);
+  await expect(await openMoreMenu(page)).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Statistiques' })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Ma liste' })).toBeVisible();
 });
 
 test('mobile : la page s’ouvre depuis Compte, sans défilement horizontal', async ({ page, api }, { project }) => {

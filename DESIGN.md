@@ -20,7 +20,7 @@ Maquettes : [canevas « Request — directions de design »](https://claude.ai/a
 | Assistant                               | C : une seule page, sections en accordéon, chacune testée en direct                                  |
 | Feuille de demande, Mes demandes, états | A                                                                                                    |
 
-Navigation ordinateur : nom de l'appli à gauche, pilule en verre centrée (Découvrir, Films, Séries, Demandes, Approbations avec compteur pour les admins, Rechercher `Ctrl K`), cloche et avatar à droite. Mobile : barre d'onglets flottante en verre (Découvrir, Rechercher, Demandes, Approuver avec compteur pour les admins, Compte).
+Navigation ordinateur : nom de l'appli à gauche, pilule en verre centrée (Découvrir, Films, Séries, Demandes, Approbations avec compteur pour les admins, menu « Plus » avec Ma liste, Signalements et Statistiques, Rechercher `Ctrl K`), cloche et avatar à droite ; de 1024 à 1280 px la pilule se resserre (recherche réduite à l'icône). Mobile : barre d'onglets flottante en verre, cinq onglets au plus (Découvrir, Rechercher, Demandes, Approuver avec compteur pour les admins, Compte) ; la cloche est dans l'en-tête, Ma liste, Signalements et Statistiques s'ouvrent depuis Compte.
 
 ## Correspondance avec shadcn
 
@@ -72,7 +72,7 @@ Tailles minimales : mot-symbole 16 px de haut (`h-[1.3em]` sur un texte de 13 px
 
 ## Écrans
 
-- **Navigation** : pilule en verre centrée en haut (Découvrir, Films, Séries, Demandes, recherche `Ctrl+K`, compte) ; sur mobile, barre d'onglets flottante en verre en bas. Entrée « Approbations » avec compteur pour les admins.
+- **Navigation** : pilule en verre centrée en haut (Découvrir, Films, Séries, Demandes, Approbations avec compteur pour les admins, menu « Plus », recherche `Ctrl+K`, compte) ; sur mobile, barre d'onglets flottante en verre en bas. Le compteur des signalements ouverts (gestionnaires) est sur « Plus » et sur l'onglet Compte.
 - **Découvrir** : hero d'un titre tendance (fond, logo ou titre, synopsis, « Demander » blanc, « Plus d'infos » en verre), puis rangées horizontales d'affiches 2:3.
 - **Affiche** : pastille de statut en haut à droite (couleurs d'état, « Demandé » en accent), bouton « Demander » au survol et au focus, toujours visible au toucher.
 - **Fiche titre** : gabarit de la fiche film d'Viewer (fond sur 70 % de la hauteur, voile noir à gauche et en bas, métadonnées, genres en pilules de verre), bloc « Demande » clair (statut, demandeur, date, progression du téléchargement), puis saisons, distribution, recommandations.

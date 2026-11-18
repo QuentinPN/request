@@ -5,6 +5,7 @@ import { fixtures, mockCatalogue } from './catalogue-mocks.ts';
 import { type IssuesMock, mockIssues, quentin, sampleIssues } from './issues-mocks.ts';
 import { mockNotifications } from './notifications-mocks.ts';
 import { test as base, expect, expectNoAxeViolations, viewerAs } from './support/api.ts';
+import { desktopNav, mobileTabs, openMoreMenu } from './support/nav.ts';
 
 /** Gestionnaire (propriétaire) devant les trois signalements d'exemple, et un catalogue pour les affiches. */
 const test = base.extend<{ issues: IssuesMock }>({
@@ -36,8 +37,14 @@ test('ordinateur : la liste des ouverts, avec le détail du premier et le compte
   await expect(card(page, 'Le Robot sauvage')).toContainText('Marion');
   await expect(panel(page).getByRole('heading', { name: 'Le Robot sauvage' })).toBeVisible();
   await expect(panel(page)).toContainText('Le son est très faible');
-  // Gestionnaire : pastille des signalements ouverts à côté du lien.
-  await expect(page.getByRole('navigation', { name: 'Navigation principale' })).toContainText('2');
+  // Gestionnaire : pastille des signalements ouverts sur « Plus », qui contient l'entrée.
+  await expect(desktopNav(page).getByRole('button', { name: /^Plus ?, 2 signalements ouverts$/ })).toBeVisible();
+  await openMoreMenu(page);
+  await expect(page.getByRole('menuitem', { name: /^Signalements ?, 2 signalements ouverts$/ })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.keyboard.press('Escape');
   await expectNoAxeViolations(page);
 });
 
@@ -91,7 +98,7 @@ test('un membre ne voit que ses signalements, résout le sien mais ne le rouvre 
   await page.goto('/signalements');
   await expect(page.getByRole('list', { name: 'Ouverts' }).getByRole('listitem')).toHaveCount(1);
   // Pas de compteur pour qui ne gère pas les signalements.
-  await expect(page.getByRole('navigation', { name: 'Navigation principale' })).not.toContainText('1');
+  await expect(desktopNav(page).getByRole('button', { name: 'Plus', exact: true })).toBeVisible();
 
   await panel(page).getByRole('button', { name: 'Marquer comme résolu' }).click();
   await expect(panel(page).getByText('Résolu par Quentin')).toBeVisible();
@@ -132,10 +139,7 @@ test('une notification mène au signalement, ouvert d’emblée', async ({ page 
   await mockNotifications(page, [commentedNotification]);
   await page.goto('/demandes');
   if (project.name === 'mobile') {
-    await page
-      .getByRole('navigation', { name: 'Navigation', exact: true })
-      .getByRole('button', { name: /Alertes/ })
-      .tap();
+    await page.getByRole('button', { name: /^Notifications/ }).tap();
     await page
       .getByRole('dialog', { name: 'Notifications' })
       .getByRole('link', { name: /Nouveau commentaire/ })
@@ -158,9 +162,10 @@ test('mobile : une carte par signalement, la feuille du détail s’ouvre au tou
   await expect(page.getByRole('list', { name: 'Ouverts' }).getByRole('listitem')).toHaveCount(2);
   await expect(sheet(page)).toBeHidden();
   await expectNoAxeViolations(page);
-  const tabs = page.getByRole('navigation', { name: 'Navigation', exact: true });
-  await expect(tabs.getByRole('link', { name: /Problèmes/ })).toHaveAttribute('aria-current', 'page');
-  // Sept onglets pour un gestionnaire : chaque libellé tient en entier.
+  const tabs = mobileTabs(page);
+  // Gestionnaire : la pastille des signalements ouverts est sur Compte, d'où l'on atteint la page.
+  await expect(tabs.getByRole('link', { name: 'Compte , 2 signalements ouverts' })).toBeVisible();
+  // Cinq onglets pour un gestionnaire : chaque libellé tient en entier.
   for (const link of await tabs.getByRole('link').all()) {
     const label = link.locator('span.truncate');
     expect(await label.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);

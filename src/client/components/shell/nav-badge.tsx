@@ -3,7 +3,7 @@ import { cn } from 'cn';
 import { useViewer } from '@/hooks/use-viewer';
 import { issueCountsQuery } from '@/lib/issues';
 import { requestCountsQuery } from '@/lib/requests';
-import type { NavItem } from './nav-items';
+import { type NavItem, useNavItems } from './nav-items';
 
 /**
  * Pastille chiffrée (maquettes : `.count`). Le chiffre est décoratif, `label` le dit aux lecteurs d'écran, à la suite
@@ -43,6 +43,21 @@ export function NavBadge({ item, className }: { item: NavItem; className?: strin
   // Le cache est partagé : sans ce test, chaque entrée de la navigation afficherait le chiffre.
   const count = item.count === 'pendingApprovals' ? approvals.data?.pendingApprovals : issues.data?.open;
   if (!item.count || !count) return null;
-  const label = item.count === 'openIssues' ? `${count} ouvert${count > 1 ? 's' : ''}` : `${count} en attente`;
+  const label =
+    item.count === 'openIssues'
+      ? `${count} signalement${count > 1 ? 's' : ''} ouvert${count > 1 ? 's' : ''}`
+      : `${count} en attente`;
   return <CountBadge count={count} label={label} className={className} />;
+}
+
+/** Compteurs des entrées du menu « Plus », reportés sur ce qui y mène (bouton « Plus », onglet Compte). */
+export function MenuBadge({ className }: { className?: string }) {
+  const items = useNavItems('menu');
+  return (
+    <>
+      {items.map((item) => (
+        <NavBadge key={item.to} item={item} className={className} />
+      ))}
+    </>
+  );
 }
