@@ -12,7 +12,7 @@ import {
 } from '@tanstack/react-router';
 import { AppShell } from '@/components/shell/app-shell';
 import { ErrorState, LoadingState } from '@/components/states';
-import { genreSearchSchema } from '@/lib/catalogue';
+import { browseSearch } from '@/lib/catalogue';
 import { issueSearchSchema } from '@/lib/issues';
 import { requestsSearchSchema } from '@/lib/requests';
 import { guardRedirect, safeReturnPath, setupStateQuery, viewerQuery } from '@/lib/session';
@@ -93,12 +93,9 @@ const routeTree = rootRoute.addChildren([
   assistantRoute,
   appRoute.addChildren([
     createRoute(page('/', () => import('@/pages/decouvrir'), 'DecouvrirPage')),
-    // Films et Séries gardent le genre choisi dans l'adresse (`?genre=`), pour le retour depuis une fiche.
-    createRoute({ ...page('/films', () => import('@/pages/films'), 'FilmsPage'), validateSearch: genreSearchSchema }),
-    createRoute({
-      ...page('/series', () => import('@/pages/series'), 'SeriesPage'),
-      validateSearch: genreSearchSchema,
-    }),
+    // Films et Séries gardent leurs filtres dans l'adresse (`?genres=`, `?rating=`…), partageable et rétablie au retour d'une fiche.
+    createRoute({ ...page('/films', () => import('@/pages/films'), 'FilmsPage'), validateSearch: browseSearch }),
+    createRoute({ ...page('/series', () => import('@/pages/series'), 'SeriesPage'), validateSearch: browseSearch }),
     createRoute(page('/titre/$type/$id', () => import('@/pages/fiche'), 'FichePage')),
     createRoute(page('/plateforme/$type/$id', () => import('@/pages/plateforme'), 'PlateformePage')),
     // `?membre=` : un gestionnaire lit les demandes d'un membre (lien de Réglages › Membres).

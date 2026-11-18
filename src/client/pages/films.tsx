@@ -1,5 +1,5 @@
-import { GenreBrowser } from '@/components/media/genre-browser';
+import { TitleBrowser } from '@/components/media/title-browser';
 
 export function FilmsPage() {
-  return <GenreBrowser type="movie" title="Films" path="/films" />;
+  return <TitleBrowser type="movie" title="Films" path="/films" />;
 }

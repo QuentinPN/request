@@ -1,6 +1,8 @@
+import { desc, eq, max, notInArray } from 'drizzle-orm';
 import { keyOf, type MediaKey } from '../../shared/media.ts';
-import type { MediaStatus, TitleAvailability } from '../../shared/status.ts';
-import type { Data } from '../db/index.ts';
+import type { MediaStatus, RequestStatus, TitleAvailability } from '../../shared/status.ts';
+import type { Data, Db } from '../db/index.ts';
+import { media, requests } from '../db/schema.ts';
 import { requestStatesFor } from './availability.ts';
 import { getSetting } from './settings.ts';
 
@@ -30,4 +32,25 @@ export function hiddenInDiscover(
     if (setting.hideRequested && (isRequested(status) || isRequested(requested4k.get(key)?.status))) hidden.add(key);
   }
   return hidden;
+}
+
+/** Demandes qui n'ont pas (ou plus) de raison d'être mises en avant : refusées, annulées, en échec d'envoi. */
+const NOT_RECENT: RequestStatus[] = ['declined', 'cancelled', 'failed'];
+const RECENT_REQUESTS_LIMIT = 20;
+
+/**
+ * Titres demandés le plus récemment par n'importe quel membre (rangée « Demandes récentes », visible de tous comme dans
+ * Seerr : titres seulement, jamais le demandeur), du plus récent au plus ancien, un titre une seule fois (normal et 4K
+ * confondus). Une demande refusée, annulée ou en échec n'y figure pas.
+ */
+export function recentRequestKeys(db: Pick<Db, 'select'>, limit = RECENT_REQUESTS_LIMIT): MediaKey[] {
+  return db
+    .select({ type: media.type, tmdbId: media.tmdbId })
+    .from(requests)
+    .innerJoin(media, eq(media.id, requests.mediaId))
+    .where(notInArray(requests.status, NOT_RECENT))
+    .groupBy(media.id)
+    .orderBy(desc(max(requests.createdAt)), desc(media.id))
+    .limit(limit)
+    .all();
 }

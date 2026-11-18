@@ -89,9 +89,9 @@ describe('GET /api/discover', () => {
 });
 
 describe('découverte par genre et par plateforme', () => {
-  it('GET /api/discover/:type/genre/:id pagine', async () => {
+  it('GET /api/discover/:type pagine avec les filtres', async () => {
     const { get, server } = await setup({ 'GET /discover/movie': fixture('trending-movie') });
-    const res = await get('/api/discover/movie/genre/28?page=2');
+    const res = await get('/api/discover/movie?genres=28&page=2');
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ page: 1, totalPages: 5, results: [{ tmdbId: 603, type: 'movie' }] });
@@ -178,6 +178,126 @@ describe('GET /api/media/:type/:id', () => {
   });
 });
 
+describe('filtres de Films et Séries (GET /api/discover/:type)', () => {
+  it('sans filtre : popularité, page 1, aucun autre paramètre de filtre', async () => {
+    const { get, server } = await setup({ 'GET /discover/movie': fixture('trending-movie') });
+    const res = await get('/api/discover/movie');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ page: 1, totalPages: 5, results: [{ tmdbId: 603, type: 'movie' }] });
+    const { query } = server.requests[0] ?? { query: {} };
+    expect(query).toMatchObject({ sort_by: 'popularity.desc', page: '1' });
+    expect(Object.keys(query).filter((k) => /^(with_|vote_|primary_|first_)/.test(k))).toEqual([]);
+  });
+
+  it('films : tous les filtres traduits en paramètres TMDB', async () => {
+    const { get, server } = await setup({ 'GET /discover/movie': fixture('trending-movie') });
+    const params = new URLSearchParams({
+      genres: '28,12',
+      yearFrom: '2010',
+      yearTo: '2020',
+      rating: '7',
+      runtimeMin: '90',
+      runtimeMax: '150',
+      language: 'ja',
+      provider: '8',
+      company: '420',
+      network: '213',
+      sort: 'release',
+      page: '3',
+    });
+    expect((await get(`/api/discover/movie?${params}`)).statusCode).toBe(200);
+
+    expect(server.requests[0]?.query).toEqual({
+      language: 'fr-FR',
+      page: '3',
+      sort_by: 'primary_release_date.desc',
+      with_genres: '28,12',
+      'primary_release_date.gte': '2010-01-01',
+      'primary_release_date.lte': '2020-12-31',
+      'vote_average.gte': '7',
+      'vote_count.gte': '200',
+      'with_runtime.gte': '90',
+      'with_runtime.lte': '150',
+      with_original_language: 'ja',
+      with_watch_providers: '8',
+      watch_region: 'FR',
+      with_watch_monetization_types: 'flatrate',
+      with_companies: '420',
+      api_key: V3_KEY,
+    });
+  });
+
+  it('séries : dates de première diffusion, chaîne ; ni durée ni studio', async () => {
+    const { get, server } = await setup({ 'GET /discover/tv': fixture('trending-movie') });
+    const params = new URLSearchParams({
+      yearFrom: '2015',
+      runtimeMin: '90',
+      company: '420',
+      network: '213',
+      sort: 'title',
+    });
+    expect((await get(`/api/discover/tv?${params}`)).statusCode).toBe(200);
+
+    expect(server.requests[0]?.query).toEqual({
+      language: 'fr-FR',
+      page: '1',
+      sort_by: 'name.asc',
+      'first_air_date.gte': '2015-01-01',
+      with_networks: '213',
+      api_key: V3_KEY,
+    });
+  });
+
+  it('trier par note exige un plancher de votes, même sans note minimale', async () => {
+    const { get, server } = await setup({ 'GET /discover/movie': fixture('trending-movie') });
+    await get('/api/discover/movie?sort=rating');
+
+    expect(server.requests[0]?.query).toMatchObject({ sort_by: 'vote_average.desc', 'vote_count.gte': '200' });
+    expect(server.requests[0]?.query).not.toHaveProperty('vote_average.gte');
+  });
+
+  it('un seul genre dans l’adresse reste un genre', async () => {
+    const { get, server } = await setup({ 'GET /discover/movie': fixture('trending-movie') });
+    await get('/api/discover/movie?genres=28');
+
+    expect(server.requests[0]?.query).toMatchObject({ with_genres: '28' });
+  });
+
+  it.each([
+    'genres=abc',
+    'genres=28,,12',
+    'genres=1,2,3,4,5,6,7,8,9,10,11',
+    'yearFrom=1800',
+    'yearTo=abc',
+    'yearFrom=2020&yearTo=2010',
+    'rating=0',
+    'rating=11',
+    'rating=7.5',
+    'runtimeMin=0',
+    'runtimeMin=150&runtimeMax=90',
+    'language=fra',
+    'language=FR',
+    'provider=0',
+    'company=-1',
+    'network=x',
+    'sort=popularity.desc',
+    'page=0',
+  ])('?%s → 400 sans appeler TMDB', async (query) => {
+    const { get, server } = await setup();
+    const res = await get(`/api/discover/movie?${query}`);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'Requête invalide' });
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it('un type inconnu → 400', async () => {
+    const { get } = await setup();
+    expect((await get('/api/discover/anime?sort=title')).statusCode).toBe(400);
+  });
+});
+
 describe('validation', () => {
   it.each([
     '/api/media/person/603',
@@ -185,12 +305,12 @@ describe('validation', () => {
     '/api/media/movie/-3',
     '/api/media/movie/abc',
     '/api/media/movie/1.5',
-    '/api/discover/anime/genre/28',
-    '/api/discover/movie/genre/x',
+    '/api/discover/anime?genres=28',
+    '/api/discover/movie?genres=x',
     '/api/discover/movie/provider/0',
-    '/api/discover/movie/genre/28?page=0',
-    '/api/discover/movie/genre/28?page=501',
-    '/api/discover/movie/genre/28?page=abc',
+    '/api/discover/movie?genres=28&page=0',
+    '/api/discover/movie?genres=28&page=501',
+    '/api/discover/movie?genres=28&page=abc',
     '/api/genres/anime',
     '/api/providers/anime',
     '/api/search',
@@ -229,7 +349,7 @@ describe('contrat serveur', () => {
 describe('erreurs de TMDB', () => {
   const urls = [
     '/api/discover',
-    '/api/discover/movie/genre/28',
+    '/api/discover/movie?genres=28',
     '/api/discover/tv/provider/8',
     '/api/genres/movie',
     '/api/providers/tv',

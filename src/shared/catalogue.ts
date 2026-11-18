@@ -21,14 +21,77 @@ export const searchQuerySchema = pageQuerySchema.extend({ q: z.string().trim().m
 export const typeParamsSchema = z.object({ type: mediaTypeSchema });
 export const typeIdParamsSchema = typeParamsSchema.extend({ id: positiveInt });
 
+// --- Filtres de Films et Séries (adresse de la page et requête de l'API : mêmes noms, mêmes formats) ---
+
+export const BROWSE_SORTS = ['popularity', 'rating', 'release', 'title'] as const;
+export type BrowseSort = (typeof BROWSE_SORTS)[number];
+export const DEFAULT_BROWSE_SORT: BrowseSort = 'popularity';
+const MAX_GENRES = 10;
+
+/** `28,12` (ou `28` : le routeur lit un nombre seul comme un nombre) → [28, 12] ; plusieurs genres = tous à la fois. */
+const idList = z
+  .preprocess((value) => (typeof value === 'number' ? String(value) : value), z.string().regex(/^\d+(,\d+)*$/))
+  .transform((value) => value.split(',').map(Number))
+  .pipe(z.array(z.number().int().positive()).max(MAX_GENRES));
+
+const yearField = z.coerce.number().int().min(1900).max(2100);
+const minutesField = positiveInt.max(1000);
+
+export const browseFilterShape = {
+  genres: idList,
+  yearFrom: yearField,
+  yearTo: yearField,
+  /** Note minimale (sur 10), appliquée avec un plancher de votes côté serveur. */
+  rating: z.coerce.number().int().min(1).max(10),
+  /** Durée en minutes (films seulement). */
+  runtimeMin: minutesField,
+  runtimeMax: minutesField,
+  /** Langue originale, code ISO 639-1. */
+  language: z.string().regex(/^[a-z]{2}$/),
+  /** Plateforme de streaming (France, abonnement). */
+  provider: positiveInt,
+  sort: z.enum(BROWSE_SORTS),
+  /** Studio (films) ou chaîne (séries) : `with_companies` / `with_networks`. */
+  company: positiveInt,
+  network: positiveInt,
+} as const;
+
+type Ranges = { yearFrom?: number; yearTo?: number; runtimeMin?: number; runtimeMax?: number };
+
+/** Bornes dans le mauvais ordre (début après fin) : le champ de fin fautif, que la page abandonne et que l'API refuse. */
+export const invertedRanges = (f: Ranges): Array<'yearTo' | 'runtimeMax'> => [
+  ...(f.yearFrom !== undefined && f.yearTo !== undefined && f.yearFrom > f.yearTo ? (['yearTo'] as const) : []),
+  ...(f.runtimeMin !== undefined && f.runtimeMax !== undefined && f.runtimeMin > f.runtimeMax
+    ? (['runtimeMax'] as const)
+    : []),
+];
+
+export const browseFiltersSchema = z
+  .object(browseFilterShape)
+  .partial()
+  .check((ctx) => {
+    for (const path of invertedRanges(ctx.value))
+      ctx.issues.push({
+        code: 'custom',
+        message: 'Bornes dans le mauvais ordre',
+        path: [path],
+        input: ctx.value[path],
+      });
+  });
+export type BrowseFilters = z.infer<typeof browseFiltersSchema>;
+
+/** Page de résultats filtrés (`GET /api/discover/:type`). */
+export const browseQuerySchema = pageQuerySchema.and(browseFiltersSchema);
+
 // --- Adresses de l'API ---
 
 type TypeParam = MediaType | ':type';
 type IdParam = number | ':id';
 export const DISCOVER_PATH = '/api/discover';
-/** Liste « Charger plus » d'un genre ou d'une plateforme. */
-export const discoverListPath = (type: TypeParam, by: 'genre' | 'provider', id: IdParam) =>
-  `${DISCOVER_PATH}/${type}/${by}/${id}`;
+/** Liste « Charger plus » d'une plateforme. */
+export const discoverListPath = (type: TypeParam, id: IdParam) => `${DISCOVER_PATH}/${type}/provider/${id}`;
+/** Films ou séries filtrés (`browseQuerySchema`), paginés. */
+export const browsePath = (type: TypeParam) => `${DISCOVER_PATH}/${type}`;
 export const genresPath = (type: TypeParam) => `/api/genres/${type}`;
 export const providersPath = (type: TypeParam) => `/api/providers/${type}`;
 export const SEARCH_PATH = '/api/search';

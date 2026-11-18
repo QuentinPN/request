@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { type BrowseFilters, type BrowseSort, DEFAULT_BROWSE_SORT } from '../../shared/catalogue.ts';
 import {
   type CastMember,
   type Genre,
@@ -220,6 +221,45 @@ function newClient({ apiKey, baseUrl = DEFAULT_BASE_URL }: TmdbConfig) {
 
 type Query = NonNullable<RequestOptions['query']>;
 
+/** Plancher de votes de TMDB pour la note : sans lui, un titre à 10/10 avec un seul vote passerait en tête. */
+const MIN_VOTES_FOR_RATING = 200;
+/** Filtre « abonnement » de la région : mêmes paramètres pour la page d'une plateforme et pour les filtres. */
+const providerParams = (providerId: number): Query => ({
+  with_watch_providers: providerId,
+  watch_region: REGION,
+  with_watch_monetization_types: 'flatrate',
+});
+/** Tri des filtres : noms de TMDB, différents pour les films et les séries. */
+const SORT_BY: Record<BrowseSort, Record<MediaType, string>> = {
+  popularity: { movie: 'popularity.desc', tv: 'popularity.desc' },
+  rating: { movie: 'vote_average.desc', tv: 'vote_average.desc' },
+  release: { movie: 'primary_release_date.desc', tv: 'first_air_date.desc' },
+  title: { movie: 'title.asc', tv: 'name.asc' },
+};
+
+/**
+ * Paramètres `/discover/{type}` des filtres de Films et Séries (hors page et mots-clés bloqués). Genres multiples :
+ * `,` = ET (le titre a tous les genres). Durée et studio ne valent que pour les films, chaîne que pour les séries.
+ */
+export function browseParams(type: MediaType, f: BrowseFilters): Query {
+  const dateKey = type === 'movie' ? 'primary_release_date' : 'first_air_date';
+  const sort = f.sort ?? DEFAULT_BROWSE_SORT;
+  return {
+    sort_by: SORT_BY[sort][type],
+    ...(f.genres !== undefined && f.genres.length > 0 && { with_genres: f.genres.join(',') }),
+    ...(f.yearFrom !== undefined && { [`${dateKey}.gte`]: `${f.yearFrom}-01-01` }),
+    ...(f.yearTo !== undefined && { [`${dateKey}.lte`]: `${f.yearTo}-12-31` }),
+    ...(f.rating !== undefined && { 'vote_average.gte': f.rating }),
+    ...((f.rating !== undefined || sort === 'rating') && { 'vote_count.gte': MIN_VOTES_FOR_RATING }),
+    ...(type === 'movie' && f.runtimeMin !== undefined && { 'with_runtime.gte': f.runtimeMin }),
+    ...(type === 'movie' && f.runtimeMax !== undefined && { 'with_runtime.lte': f.runtimeMax }),
+    ...(f.language !== undefined && { with_original_language: f.language }),
+    ...(f.provider !== undefined && providerParams(f.provider)),
+    ...(type === 'movie' && f.company !== undefined && { with_companies: f.company }),
+    ...(type === 'tv' && f.network !== undefined && { with_networks: f.network }),
+  };
+}
+
 /** Vérifie la clé (v3 ou jeton v4) ; lève une `IntegrationError` au message lisible (« Clé TMDB refusée »…) en cas d'échec. */
 export async function testTmdb(config: TmdbConfig): Promise<{ ok: true }> {
   await newClient(config).get('/configuration', z.object({ images: z.object({ base_url: z.string() }) }));
@@ -274,16 +314,11 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
 
     /** Titres disponibles en streaming (abonnement) chez une plateforme, en France ; sans les mots-clés `exclude`. */
     discoverByProvider: (type: MediaType, providerId: number, page = 1, exclude?: readonly number[]) =>
-      discover(
-        type,
-        page,
-        { with_watch_providers: providerId, watch_region: REGION, with_watch_monetization_types: 'flatrate' },
-        exclude,
-      ),
+      discover(type, page, providerParams(providerId), exclude),
 
-    /** Titres d'un genre ; sans les mots-clés `exclude`. */
-    byGenre: (type: MediaType, genreId: number, page = 1, exclude?: readonly number[]) =>
-      discover(type, page, { with_genres: genreId }, exclude),
+    /** Films ou séries selon les filtres de la page (voir `browseParams`) ; sans les mots-clés `exclude`. */
+    browse: (type: MediaType, filters: BrowseFilters, page = 1, exclude?: readonly number[]) =>
+      discover(type, page, browseParams(type, filters), exclude),
 
     /** Mots-clés TMDB dont le nom correspond (Réglages › Blocages), première page. */
     searchKeywords: async (query: string): Promise<Array<{ id: number; name: string }>> =>

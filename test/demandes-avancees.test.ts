@@ -370,7 +370,7 @@ describe('blocage de titres', () => {
     const search = (q: Actor) => q.get('/api/search?q=matrix').then((r) => r.json<MediaSearchResults>().results);
     expect((await search(member)).map((i) => i.tmdbId)).toEqual([604]);
     expect((await search(manager)).map((i) => i.tmdbId)).toEqual([603, 604]);
-    expect((await member.get('/api/discover/movie/genre/28')).json().results).toMatchObject([{ tmdbId: 604 }]);
+    expect((await member.get('/api/discover/movie?genres=28')).json().results).toMatchObject([{ tmdbId: 604 }]);
   });
 
   it('réservé au droit « Gérer les blocages » ; un titre inconnu de TMDB → 404', async () => {
@@ -416,8 +416,8 @@ describe('blocage par mot-clé', () => {
     const member = await as('member');
     await manager.put('/api/blocklist/keywords', { keywords: [NOVEL, { id: 9715, name: 'superhero' }] });
 
-    await member.get('/api/discover/movie/genre/28');
-    await manager.get('/api/discover/movie/genre/28?page=2');
+    await member.get('/api/discover/movie?genres=28');
+    await manager.get('/api/discover/movie?genres=28&page=2');
     const discover = tmdb.requests.filter((r) => r.path === '/discover/movie');
     expect(discover.map((r) => r.query.without_keywords)).toEqual(['818|9715', undefined]);
   });
@@ -464,5 +464,60 @@ describe('masquer dans Découvrir', () => {
     expect(hidden['popular-movies']).toBeUndefined();
     const search = await member.get('/api/search?q=matrix');
     expect(search.json<MediaSearchResults>().results.map((i) => i.tmdbId)).toEqual([603, 604]);
+  });
+});
+
+// --- Rangée « Demandes récentes » (lot 8.6) ---
+
+describe('rangée « Demandes récentes »', () => {
+  const recent = async (actor: Actor) => discoverIds(await actor.get('/api/discover'))['recent-requests'];
+
+  it('omise sans demande ; sinon les titres demandés par tous, le plus récent d’abord, sans le demandeur', async () => {
+    const { as } = await setup();
+    const viewer = await as('member', 'membre-spectateur');
+    expect(await recent(viewer)).toBeUndefined();
+
+    await (await as('member', 'membre-a')).post('/api/requests', { type: 'movie', tmdbId: 603 });
+    await (await as('manager')).post('/api/requests', { type: 'movie', tmdbId: 700 });
+    const res = await viewer.get('/api/discover');
+    const rows = res.json<DiscoverResponse>().rows;
+    expect(rows.map((r) => r.id).slice(0, 3)).toEqual(['trending', 'recent-requests', 'popular-movies']);
+    expect(discoverIds(res)['recent-requests']).toEqual([700, 603]);
+    expect(res.body).not.toContain('membre-a');
+  });
+
+  it('écarte les demandes refusées et annulées, et un titre demandé deux fois n’apparaît qu’une fois', async () => {
+    const { db, as } = await setup();
+    const viewer = await as('member', 'membre-spectateur');
+    const manager = await as('manager');
+    await (await as('member', 'membre-a')).post('/api/requests', { type: 'movie', tmdbId: 603 });
+    await (await as('member', 'membre-b')).post('/api/requests', { type: 'movie', tmdbId: 603 });
+    await manager.post('/api/requests', { type: 'movie', tmdbId: 700 });
+    expect(await recent(viewer)).toEqual([700, 603]);
+
+    db.update(requests).set({ status: 'declined' }).where(eq(requests.userId, manager.user.id)).run();
+    expect(await recent(viewer)).toEqual([603]);
+    db.update(requests).set({ status: 'cancelled' }).run();
+    expect(await recent(viewer)).toBeUndefined();
+  });
+
+  it('respecte les blocages (retirés pour les membres, marqués pour les gestionnaires) et « masquer déjà demandés »', async () => {
+    const { as } = await setup();
+    const owner = await as('owner');
+    const manager = await as('manager');
+    const member = await as('member');
+    await member.post('/api/requests', { type: 'movie', tmdbId: 603 });
+    await member.post('/api/requests', { type: 'movie', tmdbId: 700 });
+    await manager.post('/api/blocklist/titles', { mediaType: 'movie', tmdbId: 603 });
+
+    expect(await recent(member)).toEqual([700]);
+    const forManager = (await manager.get('/api/discover')).json<DiscoverResponse>();
+    expect(forManager.rows.find((r) => r.id === 'recent-requests')?.items.map((i) => [i.tmdbId, i.blocked])).toEqual([
+      [700, undefined],
+      [603, { by: 'title' }],
+    ]);
+
+    await owner.put('/api/settings/discover', { hideRequested: true });
+    expect(await recent(member)).toBeUndefined();
   });
 });

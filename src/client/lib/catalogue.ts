@@ -1,11 +1,15 @@
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
-import { z } from 'zod';
 import {
+  type BrowseFilters,
+  browseFilterShape,
+  browsePath,
+  DEFAULT_BROWSE_SORT,
   DISCOVER_PATH,
   discoverListPath,
   discoverResponseSchema,
   genresPath,
   genresResponseSchema,
+  invertedRanges,
   mediaPath,
   pagedMediaSchema,
   providersPath,
@@ -60,12 +64,12 @@ export const searchQuery = (q: string) =>
     placeholderData: keepPreviousData,
   });
 
-/** Liste paginée « Charger plus » : par genre ou par plateforme. */
-export const discoverListQuery = (by: 'genre' | 'provider', type: MediaType, id: number) =>
+/** Liste paginée « Charger plus » d'une plateforme. */
+export const discoverListQuery = (type: MediaType, id: number) =>
   infiniteQueryOptions({
-    queryKey: ['discover', by, type, id],
+    queryKey: ['discover', 'provider', type, id],
     queryFn: ({ pageParam, signal }) =>
-      apiGet(`${discoverListPath(type, by, id)}?page=${pageParam}`, pagedMediaSchema, signal),
+      apiGet(`${discoverListPath(type, id)}?page=${pageParam}`, pagedMediaSchema, signal),
     initialPageParam: 1,
     getNextPageParam: nextPageParam,
   });
@@ -76,8 +80,53 @@ export const titleLink = ({ type, tmdbId }: MediaKey) => ({
   params: { type, id: String(tmdbId) },
 });
 
-/** `?genre=` des pages Films et Séries (absent ou invalide : premier genre). */
-export const genreSearchSchema = z.object({ genre: z.coerce.number().int().positive().optional().catch(undefined) });
+// --- Filtres de Films et Séries (adresse de la page) ---
+
+/** Valeurs de l'adresse : un nombre ou un texte (`?genres=28,12&rating=7`), jamais un tableau. */
+export type BrowseSearch = { [K in keyof BrowseFilters]?: string | number };
+
+const withoutUndefined = <T extends object>(object: T): T =>
+  Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined)) as T;
+
+/** Filtres lus dans l'adresse : un champ invalide est abandonné (adresse modifiée à la main), jamais une erreur. */
+export function parseBrowseFilters(raw: Record<string, unknown>): BrowseFilters {
+  const valid: Record<string, unknown> = {};
+  for (const [key, schema] of Object.entries(browseFilterShape)) {
+    const parsed = schema.safeParse(raw[key]);
+    if (parsed.success) valid[key] = parsed.data;
+  }
+  for (const key of invertedRanges(valid)) delete valid[key];
+  return valid as BrowseFilters;
+}
+
+/** Filtres écrits dans l'adresse, forme canonique : rien pour une valeur absente ou le tri par défaut ; un genre = un nombre. */
+export function browseSearchOf({ genres, sort, ...rest }: BrowseFilters): BrowseSearch {
+  return withoutUndefined({
+    ...rest,
+    genres: genres && genres.length > 0 ? (genres.length === 1 ? genres[0] : genres.join(',')) : undefined,
+    sort: sort === DEFAULT_BROWSE_SORT ? undefined : sort,
+  });
+}
+
+/** `validateSearch` de Films et Séries (adresse partageable). */
+export const browseSearch = (raw: Record<string, unknown>): BrowseSearch => browseSearchOf(parseBrowseFilters(raw));
+
+/** Liste paginée « Charger plus » des films ou séries filtrés. */
+export const browseQuery = (type: MediaType, filters: BrowseFilters) => {
+  const search = browseSearchOf(filters);
+  return infiniteQueryOptions({
+    queryKey: ['discover', 'browse', type, search],
+    queryFn: ({ pageParam, signal }) => {
+      const params = new URLSearchParams({
+        ...Object.fromEntries(Object.entries(search).map(([k, v]) => [k, String(v)])),
+        page: String(pageParam),
+      });
+      return apiGet(`${browsePath(type)}?${params}`, pagedMediaSchema, signal);
+    },
+    initialPageParam: 1,
+    getNextPageParam: nextPageParam,
+  });
+};
 
 // --- Libellés ---
 

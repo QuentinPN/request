@@ -12,7 +12,7 @@ import { IntrouvablePage } from './introuvable.tsx';
 function ProviderListing({ type, id }: { type: MediaType; id: number }) {
   const navigate = useNavigate();
   const provider = useQuery(providersQuery(type)).data?.providers.find((p) => p.id === id);
-  const listing = useInfiniteQuery(discoverListQuery('provider', type, id));
+  const listing = useInfiniteQuery(discoverListQuery(type, id));
 
   return (
     <Page title={provider?.name ?? 'Plateforme'} back={homeBack}>

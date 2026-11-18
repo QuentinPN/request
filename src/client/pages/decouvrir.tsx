@@ -13,7 +13,8 @@ import { Loading } from '@/components/states';
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { discoverQuery, providersQuery, summaryMeta, titleLink } from '@/lib/catalogue';
-import { imageUrl, type MediaSummary, type WatchProvider } from '../../shared/media.ts';
+import { type Brand, brandsOf } from '../../shared/brands.ts';
+import { imageUrl, type MediaSummary, type MediaType, type WatchProvider } from '../../shared/media.ts';
 
 /** Plateformes affichées : la liste TMDB pour la France est longue, les premières sont les plus regardées. */
 const PROVIDER_COUNT = 10;
@@ -48,17 +49,52 @@ function Hero({ media }: { media: MediaSummary }) {
   );
 }
 
+/** Carte d'une rangée à logos (plateformes, studios, chaînes). */
+const logoCard =
+  'flex h-24 w-[200px] shrink-0 items-center justify-center gap-3 rounded-card border border-border bg-card px-4 text-[17px] font-bold transition-[transform,box-shadow] duration-(--dur) ease-request outline-none hover:scale-(--focus-scale) hover:shadow-(--shadow-lift) focus-visible:scale-(--focus-scale) focus-visible:ring-3 focus-visible:ring-ring max-lg:h-20 max-lg:w-40 max-lg:text-[15px]';
+
 function ProviderCard({ provider }: { provider: WatchProvider }) {
   const logo = imageUrl(provider.logoPath, 'profile');
   return (
-    <Link
-      to="/plateforme/$type/$id"
-      params={{ type: 'movie', id: String(provider.id) }}
-      className="flex h-24 w-[200px] shrink-0 items-center justify-center gap-3 rounded-card border border-border bg-card px-4 text-[17px] font-bold transition-[transform,box-shadow] duration-(--dur) ease-request outline-none hover:scale-(--focus-scale) hover:shadow-(--shadow-lift) focus-visible:scale-(--focus-scale) focus-visible:ring-3 focus-visible:ring-ring max-lg:h-20 max-lg:w-40 max-lg:text-[15px]"
-    >
+    <Link to="/plateforme/$type/$id" params={{ type: 'movie', id: String(provider.id) }} className={logoCard}>
       {logo && <img src={logo} alt="" width={40} height={40} loading="lazy" className="size-10 rounded-[10px]" />}
       <span className="line-clamp-2">{provider.name}</span>
     </Link>
+  );
+}
+
+/** Logo d'un studio ou d'une chaîne, en aplat (les logos TMDB sont de couleurs variées) ; mène aux Films ou Séries filtrés. */
+function BrandCard({ type, brand }: { type: MediaType; brand: Brand }) {
+  const logo = (
+    <img
+      src={imageUrl(brand.logoPath, 'profile') ?? ''}
+      alt={brand.name}
+      width={140}
+      height={40}
+      loading="lazy"
+      className="max-h-10 max-w-[140px] object-contain brightness-0 dark:invert"
+    />
+  );
+  return type === 'movie' ? (
+    <Link to="/films" search={{ company: brand.id }} className={logoCard}>
+      {logo}
+    </Link>
+  ) : (
+    <Link to="/series" search={{ network: brand.id }} className={logoCard}>
+      {logo}
+    </Link>
+  );
+}
+
+const brandTitle: Record<MediaType, string> = { movie: 'Par studio', tv: 'Par chaîne' };
+
+function Brands({ type }: { type: MediaType }) {
+  return (
+    <Rail title={brandTitle[type]}>
+      {brandsOf[type].map((brand) => (
+        <BrandCard key={brand.id} type={type} brand={brand} />
+      ))}
+    </Rail>
   );
 }
 
@@ -117,6 +153,8 @@ export function DecouvrirPage() {
                   <MediaRail key={row.id} title={row.title} items={row.items} />
                 ))}
                 <Providers />
+                <Brands type="movie" />
+                <Brands type="tv" />
               </div>
             </div>
           );

@@ -1,5 +1,7 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import {
+  browsePath,
+  browseQuerySchema,
   DISCOVER_PATH,
   discoverListPath,
   discoverRowSchema,
@@ -21,8 +23,8 @@ import { parseRequest, parseUpstream } from '../lib/api-errors.ts';
 import { viewerOf } from '../plugins/auth.ts';
 import { withStatus } from '../services/availability.ts';
 import { blockOf, excludedKeywordIds, forViewer } from '../services/blocklist.ts';
-import { hiddenInDiscover } from '../services/discover.ts';
-import { loadDetails } from '../services/tmdb.ts';
+import { hiddenInDiscover, recentRequestKeys } from '../services/discover.ts';
+import { loadDetails, loadSummaries } from '../services/tmdb.ts';
 
 const SERVICE = 'TMDB';
 /** Rangée de titres déjà dans la bibliothèque : « Masquer les disponibles » la viderait, elle n'y est pas soumise. */
@@ -37,8 +39,16 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     // Ordre de PRODUCT.md ; « Ajoutés récemment dans … » (nom du serveur multimédia) est omise tant qu'aucun n'est
     // configuré (`null`). Son id `emby-recent` reste celui du contrat, quel que soit le serveur.
     const server = app.mediaServers.current();
+    // Résumés TMDB des titres demandés, dans l'ordre des demandes ; aucune demande (ou aucun résumé) : rangée omise.
+    const recentRequests = async () => {
+      const keys = recentRequestKeys(app.data.db);
+      const found = await loadSummaries(app.tmdb, keys);
+      const items = keys.flatMap((key) => found.get(keyOf(key)) ?? []);
+      return items.length > 0 ? items : null;
+    };
     const rows: Array<{ id: string; title: string; load: () => Promise<MediaSummary[] | null> }> = [
       { id: 'trending', title: 'Tendances', load: () => tmdb.trendingAll('week') },
+      { id: 'recent-requests', title: 'Demandes récentes', load: recentRequests },
       { id: 'popular-movies', title: 'Films populaires', load: () => tmdb.popular('movie') },
       { id: 'popular-tv', title: 'Séries populaires', load: () => tmdb.popular('tv') },
       { id: 'upcoming', title: 'Prochainement', load: () => tmdb.upcoming() },
@@ -77,21 +87,26 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
-  for (const [segment, method] of [
-    ['genre', 'byGenre'],
-    ['provider', 'discoverByProvider'],
-  ] as const) {
-    app.get(discoverListPath(':type', segment, ':id'), async (req) => {
-      const { type, id } = parseRequest(typeIdParamsSchema, req.params);
-      const { page } = parseRequest(pageQuerySchema, req.query);
-      const viewer = viewerOf(req);
-      // Flux `/discover` : les mots-clés bloqués sont écartés par TMDB (membres seulement).
-      const raw = await app.tmdb()[method](type, id, page, excludedKeywordIds(app.data, viewer));
-      const paged = parseUpstream(SERVICE, pagedMediaSchema, raw);
-      const results = forViewer(app.data.db, viewer, paged.results);
-      return { ...paged, results: await app.availability.withStatuses(results) };
-    });
-  }
+  /** Liste « Charger plus » : flux TMDB `/discover` (mots-clés bloqués écartés par TMDB pour les membres), blocages et statuts. */
+  const discoverList = async (req: FastifyRequest, load: (exclude: number[]) => Promise<unknown>) => {
+    const viewer = viewerOf(req);
+    const paged = parseUpstream(SERVICE, pagedMediaSchema, await load(excludedKeywordIds(app.data, viewer)));
+    const results = forViewer(app.data.db, viewer, paged.results);
+    return { ...paged, results: await app.availability.withStatuses(results) };
+  };
+
+  app.get(discoverListPath(':type', ':id'), async (req) => {
+    const { type, id } = parseRequest(typeIdParamsSchema, req.params);
+    const { page } = parseRequest(pageQuerySchema, req.query);
+    return discoverList(req, (exclude) => app.tmdb().discoverByProvider(type, id, page, exclude));
+  });
+
+  // Films et Séries : filtres validés (400 si invalides) puis traduits en paramètres TMDB.
+  app.get(browsePath(':type'), async (req) => {
+    const { type } = parseRequest(typeParamsSchema, req.params);
+    const { page, ...filters } = parseRequest(browseQuerySchema, req.query);
+    return discoverList(req, (exclude) => app.tmdb().browse(type, filters, page, exclude));
+  });
 
   app.get(genresPath(':type'), async (req) => {
     const { type } = parseRequest(typeParamsSchema, req.params);
