@@ -20,7 +20,7 @@ import { type UseMutationResult, useMutation } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
-import { FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
+import { CheckboxRow, FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
 import { apiSend } from '@/lib/http';
 import {
   type ConnectionKey,
@@ -499,33 +499,6 @@ export function IntegrationForm<P>({
         </Button>
       </SectionActions>
     </form>,
-  );
-}
-
-function CheckboxRow({
-  checked,
-  onChange,
-  label,
-  hint,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <label className="flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm">
-      <input
-        type="checkbox"
-        className="size-4 shrink-0 accent-(--accent-play)"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span className="flex flex-col">
-        <span className="font-medium">{label}</span>
-        <span className="text-xs text-muted-foreground">{hint}</span>
-      </span>
-    </label>
   );
 }
 

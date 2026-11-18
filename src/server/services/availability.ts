@@ -31,6 +31,7 @@ import { type LibraryMovie, listMovies } from '../integrations/radarr.ts';
 import { type LibrarySeries, listSeries } from '../integrations/sonarr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { TtlLru } from '../lib/lru.ts';
+import { keyPairsIn } from '../lib/sql.ts';
 import { type ArrServerConfig, listArrServers, serversOf } from './arr-servers.ts';
 import { notifyRequestEvent } from './notifications.ts';
 import { markAvailable } from './requests.ts';
@@ -163,13 +164,7 @@ export const withStatus = <T extends MediaKey>(statuses: ReadonlyMap<string, Tit
 type MediaRow = typeof media.$inferSelect;
 
 /** `(type, tmdb_id) IN (VALUES …)` : lecture par lot servie par l'index unique `(type, tmdb_id)` de `media`. */
-function mediaKeysIn(keys: readonly MediaKey[]) {
-  const values = sql.join(
-    keys.map(({ type, tmdbId }) => sql`(${type}, ${tmdbId})`),
-    sql`, `,
-  );
-  return sql`(${media.type}, ${media.tmdbId}) IN (VALUES ${values})`;
-}
+const mediaKeysIn = (keys: readonly MediaKey[]) => keyPairsIn(media.type, media.tmdbId, keys);
 
 /** Lecture par lot des statuts d'une page d'affiches, en une requête servie par l'index unique `(type, tmdb_id)`. */
 export function selectCached(db: Db, keys: readonly MediaKey[]) {

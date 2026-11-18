@@ -22,6 +22,7 @@ import { errorMessage } from '@/lib/http';
 import {
   formatDay,
   myRequestsQuery,
+  onBehalfLabel,
   requestCountsQuery,
   requestMeta,
   requestProgress,
@@ -123,6 +124,9 @@ function RequestRow({ request }: { request: RequestView }) {
             {title}
           </Link>
           <p className="truncate text-[13px] text-muted-foreground">{requestMeta(request).join(' · ')}</p>
+          {request.createdBy && (
+            <p className="truncate text-xs text-muted-foreground">{onBehalfLabel(request, request.requester.id)}</p>
+          )}
         </div>
         <div className="mt-2 space-y-1.5 lg:mt-0">
           <RequestStatusPill progress={progress} />

@@ -63,6 +63,10 @@ describe('guardRedirect', () => {
     expect(guard('/demandes', setup, 'member')).toBeNull();
   });
 
+  it('réglages : ouverts au gestionnaire (section Blocages seule)', () => {
+    expect(guard('/reglages', setupOf(true, true, true), 'manager')).toBeNull();
+  });
+
   it('file d’approbation : réservée à qui gère les demandes', () => {
     const setup = setupOf(true, true, true);
     for (const role of ['member', 'auto_approve'] as const)

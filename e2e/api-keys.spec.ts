@@ -111,9 +111,9 @@ test('une liste illisible : message et « Réessayer »', async ({ page }) => {
   await expect(field(page, 'Nom de la clé')).toBeVisible();
 });
 
-test('pas de section API hors du propriétaire (Réglages lui est fermé)', async ({ page, api }) => {
+test('pas de section API hors du propriétaire (un gestionnaire n’y voit que les blocages)', async ({ page, api }) => {
   api.state.viewer = viewerAs('manager', 'Marion');
   await page.goto('/reglages');
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('button', { name: /^Blocages/ })).toBeVisible();
   await expect(section(page)).toHaveCount(0);
 });

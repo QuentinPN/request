@@ -34,7 +34,7 @@ import {
   type RequestView,
   type requestListQuerySchema,
 } from '../../shared/requests.ts';
-import type { QuotaRule } from '../../shared/roles.ts';
+import { capabilitiesOf, type QuotaRule } from '../../shared/roles.ts';
 import { DEFAULT_SERIES_TYPE, settingSchemas } from '../../shared/settings.ts';
 import {
   activeRequestStatuses,
@@ -58,16 +58,19 @@ import { DAY_MS } from '../lib/time.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
 import { hasArrServer } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
-import { notifyRequestEvent } from './notifications.ts';
+import { assertNotBlocked, assertTitleNotBlocked } from './blocklist.ts';
+import { notifyRequestEvent, notifyRequestedOnBehalf } from './notifications.ts';
 import { assertSendChoice, sendServer } from './send-options.ts';
 import { getSetting } from './settings.ts';
 import { loadDetails, loadSummaries } from './tmdb.ts';
-import { avatarUrlOf, type User } from './users.ts';
+import { avatarUrlOf, getUser, type User } from './users.ts';
 
 type CreateInput = z.output<typeof createRequestSchema>;
 type ListQuery = z.output<typeof requestListQuerySchema>;
 type BatchInput = z.output<typeof batchRequestSchema>;
 type Writer = Pick<Db, 'select' | 'insert' | 'update'>;
+/** Membre à qui une demande appartient, avec ses droits (quota, approbation automatique). */
+type Owner = Pick<SessionViewer, 'user' | 'capabilities'>;
 
 const ALREADY_AVAILABLE = 'Ce titre est déjà disponible dans Emby';
 const alreadyAvailable = (is4k: boolean) => (is4k ? 'Ce titre est déjà disponible en 4K' : ALREADY_AVAILABLE);
@@ -88,14 +91,15 @@ export const quotaMessage = (kind: QuotaKind, rule: QuotaRule) =>
   `Quota atteint : ${plural(rule.limit, QUOTA_UNIT[kind])} sur ${plural(rule.days, ['jour', 'jours'])}`;
 
 /**
- * Films (demandes) ou saisons (saisons demandées) d'un membre depuis `since`, hors refusées et annulées. Servies
- * par l'index `requests(user_id, created_at)`.
+ * Films (demandes) ou saisons (saisons demandées) d'un membre depuis `since`, hors refusées, annulées et demandes
+ * exemptées (« Hors quota »). Servies par l'index `requests(user_id, created_at)`.
  */
 export function quotaUsageQuery(db: Pick<Db, 'select'>, userId: string, kind: QuotaKind, since: Date) {
   const counted = and(
     eq(requests.userId, userId),
     gte(requests.createdAt, since),
     notInArray(requests.status, UNCOUNTED),
+    eq(requests.quotaExempt, false),
   );
   return kind === 'movies'
     ? db
@@ -398,7 +402,7 @@ export function createRequests(
   }
 
   /** Propriétaire et gestionnaires sont hors quotas. */
-  function assertQuota(tx: Pick<Db, 'select'>, { user, capabilities }: SessionViewer, kind: QuotaKind, wanted: number) {
+  function assertQuota(tx: Pick<Db, 'select'>, { user, capabilities }: Owner, kind: QuotaKind, wanted: number) {
     if (capabilities.quotaExempt) return;
     const rule = quotaRules(user)[kind];
     const { remaining } = usage(tx, user, kind, rule);
@@ -408,7 +412,22 @@ export function createRequests(
     }
   }
 
-  function quota({ user, capabilities }: SessionViewer): RequestQuota {
+  /**
+   * Membre `forUserId` vu par `viewer` : lui-même, ou un autre membre (droit « Demander pour un autre », sinon 403 ;
+   * inconnu → 404), avec les droits de son rôle.
+   */
+  function ownerFor(viewer: SessionViewer, forUserId: string | undefined): Owner {
+    if (forUserId === undefined || forUserId === viewer.user.id) return viewer;
+    if (!viewer.capabilities.canRequestOnBehalf)
+      throw new HttpError(403, 'Vous ne pouvez pas demander à la place d’un autre membre');
+    const user = getUser(db, forUserId);
+    if (!user) throw new HttpError(404, 'Membre introuvable');
+    return { user, capabilities: capabilitiesOf(user.role) };
+  }
+
+  /** Quota du membre connecté, ou d'un autre membre (`forUserId`, voir `ownerFor`). */
+  function quota(viewer: SessionViewer, forUserId?: string): RequestQuota {
+    const { user, capabilities } = ownerFor(viewer, forUserId);
     const rules = quotaRules(user);
     return {
       movies: usage(db, user, 'movies', rules.movies),
@@ -445,7 +464,7 @@ export function createRequests(
   async function toViews(rows: RequestRow[]): Promise<RequestView[]> {
     if (rows.length === 0) return [];
     const ids = rows.map((r) => r.id);
-    const userIds = [...new Set(rows.flatMap((r) => (r.decidedBy ? [r.userId, r.decidedBy] : [r.userId])))];
+    const userIds = [...new Set(rows.flatMap((r) => [r.userId, r.decidedBy, r.createdBy].filter((id) => id !== null)))];
     const people = new Map(
       db
         .select()
@@ -479,6 +498,8 @@ export function createRequests(
       status: r.status,
       seasons: seasonsOf.get(r.id) ?? [],
       requester: people.get(r.userId) ?? unknown(r.userId),
+      createdBy: r.createdBy ? (people.get(r.createdBy) ?? unknown(r.createdBy)) : null,
+      quotaExempt: r.quotaExempt,
       decidedBy: r.decidedBy ? (people.get(r.decidedBy) ?? unknown(r.decidedBy)) : null,
       declineReason: r.declineReason,
       qualityProfileId: r.qualityProfileId,
@@ -640,6 +661,8 @@ export function createRequests(
         qualityProfileId: choice.qualityProfileId ?? server?.qualityProfileId ?? null,
         rootFolder: choice.rootFolderPath ?? server?.rootFolderPath ?? null,
         seriesType: row.type === 'tv' ? (choice.seriesType ?? server?.seriesType ?? null) : null,
+        // « Hors quota » coché ou décoché à l'approbation ; absent, la demande garde le sien.
+        ...(choice.quotaExempt !== undefined && { quotaExempt: choice.quotaExempt }),
       });
       addEvent(tx, id, 'approved', actor.id, new Date(now()));
     });
@@ -680,20 +703,36 @@ export function createRequests(
    * Crée la demande (`created: true`), ou renvoie celle déjà en cours du membre (double clic, `created: false`).
    * Vérification du quota et insertion dans la même transaction. Rôle à approbation automatique (4K : approbation
    * automatique 4K) → approuvée et envoyée aussitôt. Une demande 4K suppose le droit et un serveur 4K du type ; elle
-   * compte dans le quota comme une autre.
+   * compte dans le quota comme une autre. Un titre bloqué (liste ou mot-clé) est refusé (403), pour tous.
+   *
+   * Pour un autre membre (`forUserId`, droit « Demander pour un autre ») : la demande est à lui. Son quota, ses droits
+   * (4K, approbation automatique, en son nom) et sa demande en cours s'appliquent ; il est prévenu
+   * (`requested_on_behalf`) et `created_by` garde l'auteur, acteur de l'évènement `requested`. « Hors quota »
+   * (`quotaExempt`, gestionnaires) saute le quota et marque la demande. Des saisons ajoutées à une demande en attente
+   * lui donnent l'exemption de l'ajout : hors quota, toute la demande l'est ; sinon elle ne l'est plus et le quota compte
+   * toutes ses saisons. Un ajout pour autrui fusionné prévient le membre et renseigne `created_by` s'il est vide ; une
+   * demande qui ne change rien (film déjà demandé, saisons déjà dedans) ne prévient personne.
    */
   async function create(
     viewer: SessionViewer,
     input: CreateInput,
   ): Promise<{ request: RequestDetail; created: boolean }> {
-    const { user, capabilities } = viewer;
+    if (input.quotaExempt && !viewer.capabilities.canManageRequests)
+      throw new HttpError(403, 'Seul un gestionnaire peut mettre une demande hors quota');
+    const owner = ownerFor(viewer, input.forUserId);
+    const { user, capabilities } = owner;
+    const author = viewer.user;
+    const onBehalf = user.id !== author.id;
+    const exempt = input.quotaExempt === true;
     const { is4k } = input;
+    assertTitleNotBlocked(db, input);
     if (is4k) {
       if (!capabilities.canRequest4k) throw new HttpError(403, 'Vous ne pouvez pas demander en 4K');
       if (!hasArrServer(db, arrKindOf(input.type), true))
         throw new HttpError(409, `Aucun serveur ${arrLabel(arrKindOf(input.type), true)} n’est configuré`);
     }
     const details = await deps.availability.withDetailsStatus(await loadDetails(deps.tmdb(), input.type, input.tmdbId));
+    assertNotBlocked(data, details);
     let wanted: number[] = [];
     if (input.type === 'movie') {
       if (statusIn(details, is4k) === 'available') throw new HttpError(409, alreadyAvailable(is4k));
@@ -710,11 +749,23 @@ export function createRequests(
           tvdbId: details.externalIds.tvdb,
         });
         const own = ownActive(tx, mediaId, user.id, is4k, input.type === 'movie' ? activeRequestStatuses : undefined);
+        const checkQuota = (kind: QuotaKind, n: number) => {
+          if (!exempt) assertQuota(tx, owner, kind, n);
+        };
 
         const insert = (seasons: number[]) => {
           const row = tx
             .insert(requests)
-            .values({ mediaId, userId: user.id, status: 'pending', is4k, createdAt: at, updatedAt: at })
+            .values({
+              mediaId,
+              userId: user.id,
+              status: 'pending',
+              is4k,
+              quotaExempt: exempt,
+              createdBy: onBehalf ? author.id : null,
+              createdAt: at,
+              updatedAt: at,
+            })
             .onConflictDoUpdate(ACTIVE_CONFLICT)
             .returning({ id: requests.id })
             .get();
@@ -728,7 +779,8 @@ export function createRequests(
             tx.insert(requestSeasons)
               .values(seasons.map((seasonNumber) => ({ requestId: row.id, seasonNumber })))
               .run();
-          addEvent(tx, row.id, 'requested', user.id, at);
+          addEvent(tx, row.id, 'requested', author.id, at);
+          if (onBehalf) notifyRequestedOnBehalf(tx, { requestId: row.id, userId: user.id, actorId: author.id, at });
           return { id: row.id, created: true };
         };
 
@@ -736,7 +788,7 @@ export function createRequests(
           if (own) return { id: own.id, created: false };
           if (tx.select({ id: requests.id }).from(requests).where(activeOn(mediaId, is4k)).get())
             throw new HttpError(409, 'Ce titre est déjà demandé');
-          assertQuota(tx, viewer, 'movies', 1);
+          checkQuota('movies', 1);
           return insert([]);
         }
 
@@ -757,18 +809,28 @@ export function createRequests(
         }
         // Une seule demande en cours par membre et par titre : tant qu'elle attend, les nouvelles saisons s'y ajoutent.
         if (own && own.status !== 'pending') throw new HttpError(409, 'Une demande est déjà en cours pour ce titre');
-        assertQuota(tx, viewer, 'seasons', missing.length);
-        if (!own) return insert(missing);
+        if (!own) {
+          checkQuota('seasons', missing.length);
+          return insert(missing);
+        }
+        // La demande fusionnée prend l'exemption de l'ajout : sans elle, ses saisons jusque-là exemptées comptent aussi.
+        const uncounted = own.quotaExempt ? active.filter((s) => s.requestId === own.id).length : 0;
+        checkQuota('seasons', missing.length + uncounted);
         tx.insert(requestSeasons)
           .values(missing.map((seasonNumber) => ({ requestId: own.id, seasonNumber })))
           .run();
-        tx.update(requests).set({ updatedAt: at }).where(eq(requests.id, own.id)).run();
-        addEvent(tx, own.id, 'requested', user.id, at, `Saisons ajoutées : ${missing.join(', ')}`);
+        tx.update(requests)
+          .set({ updatedAt: at, quotaExempt: exempt, ...(onBehalf && { createdBy: own.createdBy ?? author.id }) })
+          .where(eq(requests.id, own.id))
+          .run();
+        addEvent(tx, own.id, 'requested', author.id, at, `Saisons ajoutées : ${missing.join(', ')}`);
+        if (onBehalf) notifyRequestedOnBehalf(tx, { requestId: own.id, userId: user.id, actorId: author.id, at });
         return { id: own.id, created: false };
       },
       { behavior: 'immediate' },
     );
 
+    // Approbation automatique d'après les droits du membre, en son nom : il n'est pas prévenu de « sa » approbation.
     const autoApprove = is4k ? capabilities.autoApprove4k : capabilities.autoApprove;
     if (autoApprove && rowOf(outcome.id)?.status === 'pending') {
       try {

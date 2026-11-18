@@ -26,14 +26,26 @@ const requestId = z.number().int().positive();
 /** Demande en 4K : envoyée à un serveur 4K, statut 4K à part (`media.status_4k`). */
 const is4k = z.boolean().default(false);
 
+/**
+ * Hors quota : la demande ne compte pas dans le quota du membre (gestionnaires seulement, à la demande et à
+ * l'approbation).
+ */
+const quotaExempt = z.boolean().optional();
+
+/**
+ * Champs communs aux films et aux séries : `forUserId` demande à la place de ce membre (droit « Demander pour un
+ * autre » : la demande est à lui, quota et notifications compris), `quotaExempt` la met hors quota.
+ */
+const requestOptions = { is4k, forUserId: z.string().min(1).optional(), quotaExempt };
+
 /** Film, ou saisons d'une série (`'all'`, par défaut : toutes les saisons diffusées encore manquantes). */
 export const createRequestSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('movie'), tmdbId, is4k }),
+  z.strictObject({ type: z.literal('movie'), tmdbId, ...requestOptions }),
   z.strictObject({
     type: z.literal('tv'),
     tmdbId,
     seasons: z.union([z.literal('all'), z.array(seasonNumber).min(1).max(100)]).default('all'),
-    is4k,
+    ...requestOptions,
   }),
 ]);
 export type CreateRequestInput = z.input<typeof createRequestSchema>;
@@ -57,6 +69,7 @@ export const approveRequestSchema = z.object({
   qualityProfileId: profileId.optional(),
   rootFolderPath: rootFolderPath.optional(),
   seriesType: z.enum(seriesTypes).optional(),
+  quotaExempt,
 });
 export type ApproveRequestInput = z.input<typeof approveRequestSchema>;
 
@@ -124,7 +137,12 @@ export interface RequestView {
   status: RequestStatus;
   /** Saisons demandées (séries), triées ; vide pour un film. */
   seasons: number[];
+  /** Membre à qui la demande appartient (quota, notifications). */
   requester: RequestPerson;
+  /** Gestionnaire qui l'a faite à sa place (« Demandée par X pour Y ») ; `null` : le membre lui-même. */
+  createdBy: RequestPerson | null;
+  /** Hors quota : ne compte pas dans le quota du membre. */
+  quotaExempt: boolean;
   /** Qui a approuvé ou refusé ; `null` tant que la demande est en attente. */
   decidedBy: RequestPerson | null;
   declineReason: string | null;
@@ -178,6 +196,9 @@ export interface SendOptions {
   defaultFolder: string;
 }
 
+/** `?userId=` : quota d'un autre membre (droit « Demander pour un autre »), pour la feuille de demande. */
+export const quotaQuerySchema = z.object({ userId: z.string().min(1).optional() });
+
 export const sendOptionsParamsSchema = z.object({ type: mediaTypeSchema });
 /** `?is4k=true&serverId=` : serveurs 4K, et profils/dossiers d'un serveur choisi plutôt que du serveur par défaut. */
 export const sendOptionsQuerySchema = z.object({
@@ -192,7 +213,7 @@ export interface QuotaUsage {
   remaining: number;
 }
 
-/** Quota restant du membre connecté : films et saisons sur leur fenêtre glissante. */
+/** Quota restant du membre connecté (ou du membre `?userId=`) : films et saisons sur leur fenêtre glissante. */
 export interface RequestQuota {
   movies: QuotaUsage;
   seasons: QuotaUsage;

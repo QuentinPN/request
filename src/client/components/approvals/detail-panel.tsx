@@ -4,7 +4,7 @@ import { type ReactNode, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
 import { formatBytes } from '@/components/setup/config';
 import { Button } from '@/components/ui/button';
-import { FieldHint, Label, NativeSelect } from '@/components/ui/field';
+import { CheckboxRow, FieldHint, Label, NativeSelect } from '@/components/ui/field';
 import { type ApprovalTab, profileName, type SendChoice, type SendOptions } from '@/lib/approvals';
 import { arrName, formatWhen, requestArrName, requestMeta, requestStatusLabel, requestTitle } from '@/lib/requests';
 import { approveClass, parseReason, ReasonField, Requester, RequestPoster } from './request-parts';
@@ -154,7 +154,7 @@ export function DetailPanel({
 
       <dl className="space-y-2.5">
         <Fact label="Demandé par">
-          <Requester person={request.requester} />
+          <Requester request={request} />
         </Fact>
         {request.server && <Fact label="Serveur">{request.server.name}</Fact>}
         {tab === 'history' && (
@@ -193,6 +193,16 @@ export function DetailPanel({
           choice={choice}
           onChoice={onChoice}
           disabled={busy || optionsLoading}
+        />
+      )}
+
+      {tab === 'pending' && (
+        <CheckboxRow
+          checked={choice.quotaExempt ?? request.quotaExempt}
+          onChange={(quotaExempt) => onChoice({ quotaExempt })}
+          label="Hors quota"
+          hint={`Ne compte pas dans le quota de ${request.requester.name}.`}
+          disabled={busy}
         />
       )}
 

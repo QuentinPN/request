@@ -8,11 +8,21 @@ import {
   type ArrServer,
   type ArrServerInput,
 } from '../../src/shared/arr-servers.ts';
-import type { Viewer } from '../../src/shared/auth.ts';
+import type { Member, Viewer } from '../../src/shared/auth.ts';
+import {
+  BLOCKED_KEYWORDS_PATH,
+  BLOCKED_TITLES_PATH,
+  BLOCKLIST_PATH,
+  type BlockedKeyword,
+  type Blocklist,
+  type BlockTitleInput,
+  KEYWORD_SEARCH_PATH,
+} from '../../src/shared/blocklist.ts';
+import { DISCOVER_SETTINGS_PATH } from '../../src/shared/catalogue.ts';
 import { EMBY_LINK_PATH, type EmbyLink } from '../../src/shared/emby.ts';
 import type { NotificationPage } from '../../src/shared/notifications.ts';
 import { capabilitiesOf, type Role } from '../../src/shared/roles.ts';
-import { type MaskedSetting, settingSchemas } from '../../src/shared/settings.ts';
+import { type MaskedSetting, type Setting, settingSchemas } from '../../src/shared/settings.ts';
 import type { SettingSection, SetupState, TestResults } from '../../src/shared/setup.ts';
 import {
   WEBHOOK_SERVER_QUERY,
@@ -115,6 +125,14 @@ type MockState = {
   webhooks: WebhookSettings;
   /** Clés d'API (Réglages › API), vide par défaut ; la création en ajoute une, la révocation la marque révoquée. */
   apiKeys: ApiKey[];
+  /** Membres (`/api/users`) : sélecteur de la feuille de demande pour autrui. */
+  members: Member[];
+  /** Titres et mots-clés bloqués (Réglages › Blocages) ; blocage, déblocage et mots-clés s'y appliquent. */
+  blocklist: Blocklist;
+  /** Mots-clés TMDB que trouve la recherche (filtrés par nom). */
+  keywordResults: BlockedKeyword[];
+  /** Réglage « Masquer dans Découvrir ». */
+  discover: Setting<'discover'>;
 };
 
 /** Secret renvoyé par la création factice d'une clé d'API. */
@@ -132,6 +150,10 @@ export class ApiMock {
     embyLink: null,
     webhooks: webhookSettingsOf('jeton-initial'),
     apiKeys: [],
+    members: [],
+    blocklist: { titles: [], keywords: [] },
+    keywordResults: [],
+    discover: { hideAvailable: false, hideRequested: false },
   };
 
   readonly page: Page;
@@ -188,10 +210,52 @@ export class ApiMock {
       revoked.revokedAt = new Date().toISOString();
       return json(route, 204);
     }
+    if (method === 'GET' && pathname === '/api/users') return json(route, 200, state.members);
+    if (pathname.startsWith(BLOCKLIST_PATH)) return this.blocklist(route, method, pathname);
+    if (pathname === DISCOVER_SETTINGS_PATH) {
+      if (method === 'PUT') state.discover = route.request().postDataJSON() as Setting<'discover'>;
+      return json(route, 200, state.discover);
+    }
     const setting = pathname.match(/^\/api\/settings\/(\w+)$/)?.[1] as SettingSection | undefined;
     if (method === 'GET' && setting) {
       const value = state.settings[setting] ?? (setting === 'rules' ? settingSchemas.rules.parse({}) : undefined);
       return value ? json(route, 200, value) : json(route, 404, { error: 'Pas encore configuré' });
+    }
+    return json(route, 404, { error: 'Introuvable' });
+  }
+
+  /** `/api/blocklist` : titres (blocage nommé « Titre <id> » sauf s'il est déjà connu), mots-clés et leur recherche. */
+  private blocklist(route: Route, method: string, pathname: string) {
+    const { state } = this;
+    const list = state.blocklist;
+    if (method === 'GET' && pathname === BLOCKLIST_PATH) return json(route, 200, list);
+    if (method === 'GET' && pathname === KEYWORD_SEARCH_PATH) {
+      const q = (new URL(route.request().url()).searchParams.get('q') ?? '').toLowerCase();
+      return json(
+        route,
+        200,
+        state.keywordResults.filter((k) => k.name.toLowerCase().includes(q)),
+      );
+    }
+    if (method === 'PUT' && pathname === BLOCKED_KEYWORDS_PATH) {
+      list.keywords = (route.request().postDataJSON() as { keywords: BlockedKeyword[] }).keywords;
+      return json(route, 200, list);
+    }
+    if (method === 'POST' && pathname === BLOCKED_TITLES_PATH) {
+      const { mediaType, tmdbId } = route.request().postDataJSON() as BlockTitleInput;
+      list.titles.unshift({
+        mediaType,
+        tmdbId,
+        title: `Titre ${tmdbId}`,
+        blockedBy: state.viewer?.name ?? null,
+        createdAt: new Date().toISOString(),
+      });
+      return json(route, 200, list);
+    }
+    const [, type, id] = pathname.match(/\/titles\/(movie|tv)\/(\d+)$/) ?? [];
+    if (method === 'DELETE' && type) {
+      list.titles = list.titles.filter((t) => !(t.mediaType === type && t.tmdbId === Number(id)));
+      return json(route, 200, list);
     }
     return json(route, 404, { error: 'Introuvable' });
   }

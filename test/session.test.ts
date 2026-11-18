@@ -46,9 +46,10 @@ describe('guardRedirect', () => {
     expect(guardRedirect('/assistant', '/assistant', partial, viewer('owner'))).toBeNull();
   });
 
-  it('assistant et réglages réservés au propriétaire', () => {
+  it('assistant réservé au propriétaire, réglages aussi aux gestionnaires des blocages', () => {
     expect(guardRedirect('/assistant', '/assistant', complete, viewer('manager'))).toEqual({ to: '/' });
-    expect(guardRedirect('/reglages', '/reglages', complete, viewer('manager'))).toEqual({ to: '/' });
+    expect(guardRedirect('/reglages', '/reglages', complete, viewer('member'))).toEqual({ to: '/' });
+    expect(guardRedirect('/reglages', '/reglages', complete, viewer('manager'))).toBeNull();
     expect(guardRedirect('/reglages', '/reglages', complete, viewer('owner'))).toBeNull();
     expect(guardRedirect('/demandes', '/demandes', complete, viewer('member'))).toBeNull();
   });

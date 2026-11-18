@@ -51,7 +51,7 @@ export function ComptePage() {
               Statistiques
             </Link>
           )}
-          {viewer.capabilities.isOwner && (
+          {(viewer.capabilities.isOwner || viewer.capabilities.canManageBlocklist) && (
             <Link to="/reglages" className={buttonVariants({ variant: 'secondary' })}>
               <Settings data-icon="inline-start" />
               Réglages

@@ -13,7 +13,7 @@ void _complete;
  * Sections de Réglages : celles de l'assistant, plus les webhooks, Discord, le courriel, Trakt, l'import facultatif des
  * demandes de Seerr et les clés d'API (propriétaire, hors assistant : rien à tester ou facultatif).
  */
-export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord' | 'smtp' | 'trakt' | 'api';
+export type SectionId = SetupSection | 'webhooks' | 'seerr' | 'discord' | 'smtp' | 'trakt' | 'api' | 'blocklist';
 export const settingsSectionOrder = [
   ...sectionOrder,
   'webhooks',
@@ -22,6 +22,7 @@ export const settingsSectionOrder = [
   'smtp',
   'trakt',
   'api',
+  'blocklist',
 ] as const satisfies readonly SectionId[];
 
 /** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande. */
@@ -45,6 +46,7 @@ export const sectionText: Record<SectionId, { title: string; description: string
   smtp: { title: 'Notifications par courriel', description: 'Facultatif : serveur SMTP pour écrire aux membres' },
   trakt: { title: 'Listes externes', description: 'Facultatif : import des listes de souhaits Trakt des membres' },
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
+  blocklist: { title: 'Blocages', description: 'Titres et mots-clés TMDB qui ne peuvent pas être demandés' },
 };
 
 /** Service qui se teste à la connexion : une intégration (réglage) ou un serveur Radarr/Sonarr. */

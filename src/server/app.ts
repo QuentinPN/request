@@ -12,6 +12,7 @@ import { registerAuth } from './plugins/auth.ts';
 import { apiKeysRoutes } from './routes/api-keys.ts';
 import { arrServersRoutes } from './routes/arr-servers.ts';
 import { authRoutes } from './routes/auth.ts';
+import { blocklistRoutes } from './routes/blocklist.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
 import { discordRoutes } from './routes/discord.ts';
 import { embyRoutes } from './routes/emby.ts';
@@ -173,6 +174,7 @@ export async function buildApp({
   importRoutes(app);
   watchlistRoutes(app, upstreams);
   statsRoutes(app);
+  blocklistRoutes(app);
   await app.register(catalogueRoutes);
   await app.register(embyRoutes);
   await app.register(

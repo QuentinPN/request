@@ -98,9 +98,12 @@ test('un jeton illisible : message et « Réessayer »', async ({ page }) => {
   await expect(field(page, 'Radarr')).toBeVisible();
 });
 
-test('pas de section Webhooks hors du propriétaire (Réglages lui est fermé)', async ({ page, api }) => {
+test('pas de section Webhooks hors du propriétaire (un gestionnaire n’y voit que les blocages)', async ({
+  page,
+  api,
+}) => {
   api.state.viewer = viewerAs('manager', 'Marion');
   await page.goto('/reglages');
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('button', { name: /^Blocages/ })).toBeVisible();
   await expect(webhooksSection(page)).toHaveCount(0);
 });

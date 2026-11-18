@@ -206,6 +206,17 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
   notify(tx, { kind, recipients, actorId, requestId, detail, at });
 }
 
+/**
+ * Demande faite par un gestionnaire à la place d'un membre : le membre est prévenu (`requested_on_behalf`), dans la
+ * transaction de la demande, puis par courriel et push selon ses préférences (`notify`).
+ */
+export function notifyRequestedOnBehalf(
+  tx: Pick<Db, 'insert'>,
+  { requestId, userId, actorId, at }: { requestId: number; userId: string; actorId: string; at: Date },
+) {
+  notify(tx, { kind: 'requested_on_behalf', recipients: [userId], actorId, requestId, detail: null, at });
+}
+
 export interface IssueEventFact {
   issueId: number;
   kind: IssueNotificationKind;

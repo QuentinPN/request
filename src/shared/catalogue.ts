@@ -19,6 +19,9 @@ export const searchQuerySchema = pageQuerySchema.extend({ q: z.string().trim().m
 export const typeParamsSchema = z.object({ type: mediaTypeSchema });
 export const typeIdParamsSchema = typeParamsSchema.extend({ id: positiveInt });
 
+/** Réglage `discover` (masquer disponibles / déjà demandés), propriétaire seulement. */
+export const DISCOVER_SETTINGS_PATH = '/api/settings/discover';
+
 // --- Réponses ---
 
 export const discoverRowSchema = z.object({

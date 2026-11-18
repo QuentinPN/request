@@ -16,6 +16,16 @@ export const keyOf = ({ type, tmdbId }: MediaKey) => `${type}:${tmdbId}`;
  * Média normalisé tel qu'il est envoyé au client (film ou série, issu de TMDB), avec son statut calculé par le
  * serveur (`status` absent : ni dans la bibliothèque ni demandé).
  */
+/**
+ * Titre bloqué (Réglages › Blocages) : par la liste des titres, ou par un mot-clé TMDB bloqué (fiche seulement, seule à
+ * lire les mots-clés). Absent : demandable.
+ */
+export const mediaBlockSchema = z.discriminatedUnion('by', [
+  z.object({ by: z.literal('title') }),
+  z.object({ by: z.literal('keyword'), keyword: z.string() }),
+]);
+export type MediaBlock = z.infer<typeof mediaBlockSchema>;
+
 export const mediaSummarySchema = z
   .object({
     tmdbId: z.number().int(),
@@ -25,6 +35,8 @@ export const mediaSummarySchema = z
     posterPath: z.string().nullable(),
     backdropPath: z.string().nullable(),
     overview: z.string(),
+    /** Posé par le serveur pour qui gère les blocages (les membres ne voient pas les titres bloqués dans les listes). */
+    blocked: mediaBlockSchema.optional(),
   })
   .extend(titleAvailabilitySchema.shape);
 export type MediaSummary = z.infer<typeof mediaSummarySchema>;
@@ -88,6 +100,8 @@ export const mediaDetailsSchema = mediaSummarySchema.extend({
   similar: z.array(mediaSummarySchema),
   externalIds: z.object({ imdb: z.string().nullable(), tvdb: z.number().int().nullable() }),
   fourK: fourKSchema,
+  /** Mots-clés TMDB (blocage par mot-clé) ; usage serveur. */
+  keywords: z.array(genreSchema).optional(),
   /** Série : dernier épisode diffusé (TMDB), pour compter les épisodes attendus d'une saison en cours ; usage serveur. */
   lastAired: z.object({ seasonNumber: z.number().int(), episodeNumber: z.number().int() }).nullish(),
 });

@@ -43,6 +43,8 @@ export type SectionFrameProps<S extends SectionId = SectionId> = {
   doneLabel?: string;
   /** Libellé de « À faire » pour une section facultative (Seerr, Discord : « Désactivé »). */
   todoLabel?: string;
+  /** Numéro affiché, à la place du rang dans les réglages (section seule sur la page d'un gestionnaire). */
+  number?: number;
 };
 
 /** Élément d'accordéon de l'assistant et des réglages : en-tête numéroté, pastille de statut, contenu replié. */
@@ -53,6 +55,7 @@ export function SectionFrame({
   disabled = false,
   doneLabel,
   todoLabel,
+  number,
   status,
   children,
 }: SectionFrameProps & { status: SectionStatus; children: ReactNode }) {
@@ -84,7 +87,7 @@ export function SectionFrame({
             aria-hidden
             className={cn('grid size-7 shrink-0 place-items-center rounded-full text-[13px] font-bold', style.number)}
           >
-            {settingsSectionOrder.indexOf(section) + 1}
+            {number ?? settingsSectionOrder.indexOf(section) + 1}
           </span>
           <span className="flex min-w-0 grow flex-col gap-0.5">
             <span className="font-semibold">{title}</span>

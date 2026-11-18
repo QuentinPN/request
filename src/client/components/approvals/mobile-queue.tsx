@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { EmptyState } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { type ApprovalTab, approvalTabLabel } from '@/lib/approvals';
-import { arrName, formatWhen, requestMeta, requestStatusLabel, requestTitle } from '@/lib/requests';
+import { arrName, formatWhen, onBehalfLabel, requestMeta, requestStatusLabel, requestTitle } from '@/lib/requests';
 import { FailureReason } from './queue-table';
 import { Requester, RequestPoster } from './request-parts';
 
@@ -73,6 +73,7 @@ export function MobileQueue({
               <span className="font-semibold">{current.requester.name}</span>{' '}
               <span className="text-muted-foreground">· {formatWhen(current.createdAt)}</span>
             </p>
+            {current.createdBy && <p className="text-xs text-muted-foreground">{onBehalfLabel(current)}</p>}
             <h2 className="text-2xl leading-tight font-bold tracking-tight">{title}</h2>
             <p className="text-xs text-muted-foreground">{[...requestMeta(current), qualityOf(current)].join(' · ')}</p>
           </div>
@@ -135,7 +136,7 @@ export function MobileList({
                   {[...requestMeta(request), formatWhen(request.updatedAt)].join(' · ')}
                 </p>
                 <p className="text-xs">
-                  <Requester person={request.requester} />
+                  <Requester request={request} />
                 </p>
               </div>
             </div>

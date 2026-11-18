@@ -70,7 +70,8 @@ export function guardRedirect(
   if (!viewer) return { to: '/connexion', retour: href };
   // Configuration inachevée : le propriétaire garde /compte pour se déconnecter.
   if (isOwner && !setup.complete && path !== '/compte') return { to: '/assistant' };
-  if (path === '/reglages' && !isOwner) return { to: '/' };
+  // Réglages : le propriétaire, et les gestionnaires des blocages (leur seule section, Blocages).
+  if (path === '/reglages' && !isOwner && viewer.capabilities.canManageBlocklist !== true) return { to: '/' };
   // Le serveur ne ferme pas la liste aux membres (ils y voient leurs demandes) : la file d'approbation n'est pas pour eux.
   if (path === '/approbations' && viewer.capabilities.canManageRequests !== true) return { to: '/' };
   return null;

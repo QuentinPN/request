@@ -5,6 +5,7 @@ import {
   batchRequestSchema,
   createRequestSchema,
   declineRequestSchema,
+  quotaQuerySchema,
   type RequestCounts,
   type RequestDetail,
   type RequestPage,
@@ -45,7 +46,13 @@ export function requestsRoutes(app: FastifyInstance) {
     async (req): Promise<RequestPage> => service.list(viewerOf(req), parseRequest(requestListQuerySchema, req.query)),
   );
 
-  app.get('/api/requests/quota', canRequest, async (req): Promise<RequestQuota> => service.quota(viewerOf(req)));
+  // `?userId=` : quota d'un autre membre (feuille de demande pour autrui), droit « Demander pour un autre » sinon 403.
+  app.get(
+    '/api/requests/quota',
+    canRequest,
+    async (req): Promise<RequestQuota> =>
+      service.quota(viewerOf(req), parseRequest(quotaQuerySchema, req.query).userId),
+  );
 
   app.get('/api/requests/counts', canRequest, async (req): Promise<RequestCounts> => service.counts(viewerOf(req)));
 

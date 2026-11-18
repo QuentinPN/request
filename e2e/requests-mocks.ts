@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import type { Member } from '../src/shared/auth.ts';
 import type { MediaSummary, MediaType } from '../src/shared/media.ts';
 import {
   type BatchRequestInput,
@@ -24,6 +25,13 @@ import { fixtures } from './catalogue-mocks.ts';
 
 export const quentin: RequestPerson = { id: 'id-owner', name: 'Quentin', avatarUrl: null };
 export const person = (name: string): RequestPerson => ({ id: `id-${name}`, name, avatarUrl: null });
+/** Membre de `/api/users` (sélecteur de la feuille pour autrui), même id que `person(name)`. */
+export const memberNamed = (name: string): Member => ({
+  ...person(name),
+  role: 'member',
+  quotaOverride: null,
+  lastLoginAt: null,
+});
 
 /** Raison d'un envoi refusé par Radarr, affichée dans l'onglet Échecs. */
 const FAILURE = 'Radarr a refusé l’ajout (dossier /films plein)';
@@ -71,6 +79,9 @@ interface RequestOptions {
   rootFolder?: string | null;
   is4k?: boolean;
   server?: RequestDetail['server'];
+  /** Gestionnaire qui l'a faite à la place du membre. */
+  createdBy?: RequestPerson | null;
+  quotaExempt?: boolean;
 }
 
 const actorOf = (type: RequestEventType) =>
@@ -93,6 +104,8 @@ export function makeRequest(
     rootFolder = null,
     is4k = false,
     server = null,
+    createdBy = null,
+    quotaExempt = false,
   }: RequestOptions = {},
 ): RequestDetail {
   return {
@@ -102,6 +115,8 @@ export function makeRequest(
     status,
     seasons,
     requester,
+    createdBy,
+    quotaExempt,
     decidedBy,
     declineReason,
     qualityProfileId,
@@ -188,6 +203,8 @@ export class RequestsMock {
   /** Plus récentes en premier, comme le serveur. */
   requests: RequestDetail[] = [];
   quota = quotaOf(7, 3);
+  /** Quotas lus : `moi`, ou l'id du membre pour qui la feuille demande. */
+  quotaReads: string[] = [];
   /** Corps des POST /api/requests reçus. */
   posts: CreateRequestInput[] = [];
   /** Réponse d'erreur à servir aux créations. */
@@ -300,7 +317,10 @@ export class RequestsMock {
       if (!options) return json(503, { error: "Radarr n'est pas encore configuré" });
       return json(200, serverId ? { ...options, serverId: Number(serverId) } : options);
     }
-    if (method === 'GET' && path === '/api/requests/quota') return json(200, this.quota);
+    if (method === 'GET' && path === '/api/requests/quota') {
+      this.quotaReads.push(url.searchParams.get('userId') ?? 'moi');
+      return json(200, this.quota);
+    }
     if (method === 'GET' && path === '/api/requests/counts')
       return json(200, {
         pendingApprovals: this.requests.filter((r) => r.status === 'pending').length,

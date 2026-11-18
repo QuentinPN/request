@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { ChevronLeft, Film, Play, User, X } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
 import { ReportIssueButton } from '@/components/issues/report-sheet';
+import { BlockedPill, BlockTitleButton } from '@/components/media/block-button';
 import { MediaRail, Rail, SectionHeading } from '@/components/media/rail';
 import { DownloadBar, FourKPill, StatusPill } from '@/components/media/status-pill';
 import {
@@ -264,8 +265,9 @@ function Fiche({ media }: { media: MediaDetails }) {
           {media.title}
         </h1>
         <MetaLine parts={detailsMeta(media)} />
-        {(media.status || media.fourK?.status) && (
+        {(media.status || media.fourK?.status || media.blocked) && (
           <div className="flex flex-wrap gap-2">
+            {media.blocked && <BlockedPill block={media.blocked} />}
             {media.status && <StatusPill status={media.status} />}
             {media.fourK?.status && <FourKPill status={media.fourK.status} />}
           </div>
@@ -278,6 +280,7 @@ function Fiche({ media }: { media: MediaDetails }) {
           <WatchlistButton media={media} className="grow sm:grow-0" />
           {isYoutubeKey(media.trailerKey) && <TrailerButton title={media.title} trailerKey={media.trailerKey} />}
           <ReportIssueButton media={media} className="grow sm:grow-0" />
+          <BlockTitleButton media={media} className="grow sm:grow-0" />
         </div>
       </FicheFrame>
 

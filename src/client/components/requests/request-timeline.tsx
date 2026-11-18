@@ -8,6 +8,7 @@ import {
   formatDateTime,
   isActiveRequest,
   myRequestsForQuery,
+  onBehalfLabel,
   requestArrName,
   requestDetailQuery,
   requestProgress,
@@ -32,9 +33,11 @@ const eventTitle = (type: RequestEventType, actor: string | undefined, arr: stri
   return titles[type];
 };
 
-const eventNode = (event: RequestEventView, arr: string): Node => ({
+const eventNode = (event: RequestEventView, arr: string, onBehalf: string | null): Node => ({
   key: `event-${event.id}`,
-  title: eventTitle(event.type, event.actor?.name, arr),
+  // La demande elle-même (sans détail : pas un ajout de saisons) faite à la place du membre : « Demandée par X pour Y ».
+  title:
+    event.type === 'requested' && !event.detail && onBehalf ? onBehalf : eventTitle(event.type, event.actor?.name, arr),
   detail: [formatDateTime(event.createdAt), event.detail].filter(Boolean).join(' · '),
   state: event.type === 'failed' || event.type === 'declined' ? 'failed' : 'done',
 });
@@ -43,9 +46,10 @@ const eventNode = (event: RequestEventView, arr: string): Node => ({
  * Frise : les faits passés, puis, tant que la demande est en cours, l'étape actuelle (mise en avant) et celles à venir,
  * tirées de la même traduction en étapes que la barre de Mes demandes.
  */
-function timelineNodes(request: RequestDetail): Node[] {
+function timelineNodes(request: RequestDetail, viewerId: string | undefined): Node[] {
   const arr = requestArrName(request);
-  const nodes = request.events.map((event) => eventNode(event, arr));
+  const onBehalf = onBehalfLabel(request, viewerId);
+  const nodes = request.events.map((event) => eventNode(event, arr, onBehalf));
   const progress = requestProgress(request);
   if (!isActiveRequest(request.status) || progress.tone === 'available') return nodes;
   const current: Record<typeof request.status, string> = {
@@ -68,9 +72,10 @@ const dot: Record<StepState, string> = {
 };
 
 export function RequestTimeline({ request }: { request: RequestDetail }) {
+  const viewerId = useViewer()?.id;
   return (
     <ol className="relative space-y-5 pl-7 before:absolute before:top-1.5 before:bottom-1.5 before:left-[7px] before:w-0.5 before:bg-(--track)">
-      {timelineNodes(request).map((node) => (
+      {timelineNodes(request, viewerId).map((node) => (
         <li key={node.key} aria-current={node.state === 'current' ? 'step' : undefined} className="relative">
           <span aria-hidden className={cn('absolute top-0.5 -left-7 size-4 rounded-full border-2', dot[node.state])} />
           <span

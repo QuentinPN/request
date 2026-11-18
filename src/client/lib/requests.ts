@@ -6,6 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { arrKindOf, arrLabel } from '../../shared/arr-servers.ts';
+import type { Member } from '../../shared/auth.ts';
 import type { MediaKey, MediaType } from '../../shared/media.ts';
 import {
   type CreateRequestInput,
@@ -39,7 +40,8 @@ export const requestKeys = {
   list: (filter: RequestListFilter) => ['requests', 'list', filter] as const,
   /** Mes demandes, page après page (« Charger plus »), par filtre de statuts. */
   mine: (status: readonly RequestStatus[] | undefined) => ['requests', 'mine', status ?? 'all'] as const,
-  quota: ['requests', 'quota'] as const,
+  /** Quota du membre connecté, ou d'un autre membre (feuille de demande pour autrui). */
+  quota: (userId?: string) => ['requests', 'quota', userId ?? 'moi'] as const,
   counts: ['requests', 'counts'] as const,
   detail: (id: number) => ['requests', 'detail', id] as const,
 };
@@ -70,11 +72,23 @@ export const myRequestsForQuery = ({ type, tmdbId }: MediaKey) => requestListQue
 export const totalOf = (totals: RequestPage['totals'], statuses: readonly RequestStatus[] = requestStatuses) =>
   statuses.reduce((sum, status) => sum + totals[status], 0);
 
-export const requestQuotaQuery = () =>
+/** Quota du membre connecté ; `userId` : celui d'un autre membre (droit « Demander pour un autre »). */
+export const requestQuotaQuery = (userId?: string) =>
   queryOptions({
-    queryKey: requestKeys.quota,
-    queryFn: ({ signal }) => apiGet<RequestQuota>('/api/requests/quota', undefined, signal),
+    queryKey: requestKeys.quota(userId),
+    queryFn: ({ signal }) =>
+      apiGet<RequestQuota>(
+        `/api/requests/quota${userId ? `?${new URLSearchParams({ userId })}` : ''}`,
+        undefined,
+        signal,
+      ),
   });
+
+/** Membres de l'appli (gestionnaires) : sélecteur de la feuille de demande pour autrui. */
+export const membersQuery = queryOptions({
+  queryKey: ['users'],
+  queryFn: ({ signal }) => apiGet<Member[]>('/api/users', undefined, signal),
+});
 
 /** Compteurs (navigation, bande de Découvrir) : relus au retour sur l'onglet, l'approbateur peut avoir attendu longtemps. */
 export const requestCountsQuery = () =>
@@ -256,6 +270,18 @@ export const requestMeta = ({ type, media, seasons, is4k }: Pick<RequestView, 't
     type === 'tv' && seasons.length > 0 ? seasonsLabel(seasons) : media?.year,
     is4k && '4K',
   ].filter(Boolean);
+
+/**
+ * « Demandée par X pour Y » d'une demande faite par un gestionnaire à la place d'un membre (« pour vous » quand Y est
+ * le membre connecté) ; `null` pour une demande du membre lui-même. Listes, panneau d'approbation et frise.
+ */
+export function onBehalfLabel(
+  { createdBy, requester }: Pick<RequestView, 'createdBy' | 'requester'>,
+  viewerId?: string,
+): string | null {
+  if (!createdBy) return null;
+  return `Demandée par ${createdBy.name} pour ${requester.id === viewerId ? 'vous' : requester.name}`;
+}
 
 /** Titre court d'une demande : « Shōgun · S1 », « Arcane · S1-2 » (cartes de Découvrir). */
 export function requestShortTitle(request: Pick<RequestView, 'id' | 'seasons' | 'media' | 'type'>): string {

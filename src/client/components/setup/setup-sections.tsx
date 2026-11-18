@@ -9,6 +9,7 @@ import { useViewer } from '@/hooks/use-viewer';
 import { setupStateQuery } from '@/lib/session';
 import { ApiKeysSection } from './api-keys-section';
 import { ArrServersSection } from './arr-servers-section';
+import { BlocklistSection } from './blocklist-section';
 import { type SectionId, sectionOrder } from './config';
 import { DiscordSection } from './discord-section';
 import { IntegrationSection } from './integration-section';
@@ -69,6 +70,7 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <SmtpSection section="smtp" open={open === 'smtp'} onToggle={() => toggle('smtp')} />
           <TraktSection section="trakt" open={open === 'trakt'} onToggle={() => toggle('trakt')} />
           <ApiKeysSection section="api" open={open === 'api'} onToggle={() => toggle('api')} />
+          <BlocklistSection section="blocklist" open={open === 'blocklist'} onToggle={() => toggle('blocklist')} />
         </>
       )}
     </div>

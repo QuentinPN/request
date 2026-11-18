@@ -47,6 +47,44 @@ export function Textarea({ className, ...props }: React.ComponentProps<'textarea
   );
 }
 
+/** Case à cocher avec son libellé et une explication (réglages, feuille de demande, approbation). */
+export function CheckboxRow({
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled,
+  className,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <label
+      className={cn(
+        'flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm has-disabled:opacity-55',
+        className,
+      )}
+    >
+      <input
+        type="checkbox"
+        className="size-4 shrink-0 accent-(--accent-play)"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="flex flex-col">
+        <span className="font-medium">{label}</span>
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </label>
+  );
+}
+
 /** Liste déroulante native (clavier et lecteurs d'écran gérés par le navigateur), habillée comme un champ. */
 export function NativeSelect({ className, ...props }: React.ComponentProps<'select'>) {
   return (
