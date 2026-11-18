@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { Info } from 'lucide-react';
+import { browseFiltersFor } from '@/components/media/browse-filters';
 import { MediaRail, MediaRailSkeleton, Rail, RailSkeleton } from '@/components/media/rail';
 import { StatusPill } from '@/components/media/status-pill';
 import { Backdrop, MetaLine, RequestButton } from '@/components/media/title-parts';
@@ -12,9 +13,13 @@ import { ActiveRequestsStrip } from '@/components/requests/active-requests';
 import { Loading } from '@/components/states';
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { discoverQuery, providersQuery, summaryMeta, titleLink } from '@/lib/catalogue';
+import { browseSearchOf, discoverQuery, providersQuery, summaryMeta, titleLink } from '@/lib/catalogue';
 import { type Brand, brandsOf } from '../../shared/brands.ts';
+import type { DiscoverResponse } from '../../shared/catalogue.ts';
+import { builtInRowTitles, isLogoRow, type LogoRowId } from '../../shared/discover-layout.ts';
 import { imageUrl, type MediaSummary, type MediaType, type WatchProvider } from '../../shared/media.ts';
+
+type DiscoverRow = DiscoverResponse['rows'][number];
 
 /** Plateformes affichées : la liste TMDB pour la France est longue, les premières sont les plus regardées. */
 const PROVIDER_COUNT = 10;
@@ -86,7 +91,10 @@ function BrandCard({ type, brand }: { type: MediaType; brand: Brand }) {
   );
 }
 
-const brandTitle: Record<MediaType, string> = { movie: 'Par studio', tv: 'Par chaîne' };
+const brandTitle: Record<MediaType, string> = {
+  movie: builtInRowTitles.studios,
+  tv: builtInRowTitles.networks,
+};
 
 function Brands({ type }: { type: MediaType }) {
   return (
@@ -107,12 +115,34 @@ function Providers() {
   const providers = query.data?.providers.slice(0, PROVIDER_COUNT) ?? [];
   if (providers.length === 0) return null;
   return (
-    <Rail title="Par plateforme">
+    <Rail title={builtInRowTitles.providers}>
       {providers.map((provider) => (
         <ProviderCard key={provider.id} provider={provider} />
       ))}
     </Rail>
   );
+}
+
+/** « Tout voir » d'une rangée sur mesure : Films ou Séries avec les mêmes filtres. */
+function SeeAll({ title, type, filters }: { title: string } & NonNullable<DiscoverRow['seeAll']>) {
+  const search = browseSearchOf(browseFiltersFor(type, filters));
+  const className = buttonVariants({ variant: 'ghost', size: 'sm' });
+  const label = `Tout voir : ${title}`;
+  return type === 'movie' ? (
+    <Link to="/films" search={search} aria-label={label} className={className}>
+      Tout voir
+    </Link>
+  ) : (
+    <Link to="/series" search={search} aria-label={label} className={className}>
+      Tout voir
+    </Link>
+  );
+}
+
+/** Rangées à logos, construites par le navigateur : leur place dans la page vient de `layout`. */
+function LogoRow({ id }: { id: LogoRowId }) {
+  if (id === 'providers') return <Providers />;
+  return <Brands type={id === 'studios' ? 'movie' : 'tv'} />;
 }
 
 function DiscoverSkeleton() {
@@ -139,9 +169,10 @@ export function DecouvrirPage() {
         skeleton={<DiscoverSkeleton />}
         errorMessage="Les rangées de Découvrir n’ont pas pu se charger."
         empty={{ title: 'Rien à découvrir pour l’instant', description: 'TMDB n’a renvoyé aucune rangée.' }}
-        isEmpty={(data) => data.rows.every((row) => row.items.length === 0)}
+        isEmpty={(data) => data.rows.every((row) => row.items.length === 0) && !data.layout.some(isLogoRow)}
       >
-        {({ rows }) => {
+        {({ rows, layout }) => {
+          const rowOf = new Map(rows.map((row) => [row.id, row]));
           // Le hero n'existe que si la rangée Tendances est là : son libellé « N° 1 » doit rester vrai.
           const hero = rows.find((row) => row.id === 'trending')?.items[0];
           return (
@@ -149,12 +180,20 @@ export function DecouvrirPage() {
               {hero && <Hero media={hero} />}
               <div className={cn('relative space-y-8 lg:space-y-11', hero && 'mt-5 lg:-mt-[60px]')}>
                 <ActiveRequestsStrip />
-                {rows.map((row) => (
-                  <MediaRail key={row.id} title={row.title} items={row.items} />
-                ))}
-                <Providers />
-                <Brands type="movie" />
-                <Brands type="tv" />
+                {layout.map((id) => {
+                  if (isLogoRow(id)) return <LogoRow key={id} id={id} />;
+                  const row = rowOf.get(id);
+                  return (
+                    row && (
+                      <MediaRail
+                        key={id}
+                        title={row.title}
+                        items={row.items}
+                        action={row.seeAll && <SeeAll title={row.title} {...row.seeAll} />}
+                      />
+                    )
+                  );
+                })}
               </div>
             </div>
           );

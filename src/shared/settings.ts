@@ -2,9 +2,11 @@ import { z } from 'zod';
 import { agentRequired, NTFY_DEFAULT_URL } from './agents.ts';
 import { appTitleSchema, DEFAULT_APP_TITLE } from './app-info.ts';
 import { blockedKeywordSchema } from './blocklist.ts';
+import { discoverLayoutSchema } from './discover-layout.ts';
 import { JOB, jobIntervalSchema } from './jobs.ts';
 import { AGENT_EVENTS_VERSION, agentEventKinds, notificationKinds } from './notifications.ts';
 import { quotaRuleSchema } from './roles.ts';
+import { tmdbLocaleSchema } from './tmdb-locale.ts';
 
 /** Adresse d'un service telle qu'enregistrée : sans `/` final. */
 export const normalizeUrl = (u: string) => u.replace(/\/+$/, '');
@@ -211,6 +213,10 @@ export const settingSchemas = {
   }),
   /** Mots-clés TMDB bloqués : rangées Découvrir filtrées (`without_keywords`), demande refusée par le serveur. */
   blockedKeywords: z.object({ keywords: z.array(blockedKeywordSchema).default([]) }),
+  /** Ordre, état et rangées sur mesure de Découvrir (propriétaire) ; les membres voient le résultat dans la page. */
+  discoverLayout: discoverLayoutSchema,
+  /** Langue et région de TMDB (propriétaire) : `fr-FR` et `FR` par défaut. */
+  tmdbLocale: tmdbLocaleSchema,
   /** Fréquence (en minutes) des tâches planifiées réglables ; une tâche absente garde sa fréquence par défaut. */
   jobs: z.object({
     intervalMinutes: z
@@ -247,6 +253,8 @@ export const secretFields = {
   trakt: ['clientId'],
   discover: [],
   blockedKeywords: [],
+  discoverLayout: [],
+  tmdbLocale: [],
   jobs: [],
   general: [],
 } as const satisfies { [K in SettingKey]: readonly (keyof Setting<K>)[] };

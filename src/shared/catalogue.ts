@@ -67,19 +67,27 @@ export const invertedRanges = (f: Ranges): Array<'yearTo' | 'runtimeMax'> => [
     : []),
 ];
 
-export const browseFiltersSchema = z
-  .object(browseFilterShape)
-  .partial()
-  .check((ctx) => {
-    for (const path of invertedRanges(ctx.value))
-      ctx.issues.push({
-        code: 'custom',
-        message: 'Bornes dans le mauvais ordre',
-        path: [path],
-        input: ctx.value[path],
-      });
-  });
+const rejectInvertedRanges = (ctx: z.core.ParsePayload<Ranges>) => {
+  for (const path of invertedRanges(ctx.value))
+    ctx.issues.push({
+      code: 'custom',
+      message: 'Bornes dans le mauvais ordre',
+      path: [path],
+      input: ctx.value[path],
+    });
+};
+
+export const browseFiltersSchema = z.object(browseFilterShape).partial().check(rejectInvertedRanges);
 export type BrowseFilters = z.infer<typeof browseFiltersSchema>;
+
+/**
+ * Filtres tels qu'enregistrés (rangée sur mesure de Découvrir) : mêmes champs et mêmes sorties que `browseFiltersSchema`,
+ * mais les genres sont un tableau, relisible tel quel (l'adresse d'une page les écrit `28,12`).
+ */
+export const savedFiltersSchema = z
+  .object({ ...browseFilterShape, genres: z.array(z.number().int().positive()).max(MAX_GENRES) })
+  .partial()
+  .check(rejectInvertedRanges);
 
 /** Page de résultats filtrés (`GET /api/discover/:type`). */
 export const browseQuerySchema = pageQuerySchema.and(browseFiltersSchema);
@@ -102,16 +110,24 @@ export const collectionPath = (id: IdParam) => `/api/collection/${id}`;
 
 /** Réglage `discover` (masquer disponibles / déjà demandés), propriétaire seulement. */
 export const DISCOVER_SETTINGS_PATH = settingsPathOf('discover');
+/** Réglage `discoverLayout` (ordre, rangées masquées et rangées sur mesure de Découvrir), propriétaire seulement. */
+export const DISCOVER_LAYOUT_PATH = settingsPathOf('discover-layout');
 
 // --- Réponses ---
 
+/** Rangée d'affiches ; `seeAll` : la rangée sur mesure renvoie à Films ou Séries avec les mêmes filtres (« Tout voir »). */
 export const discoverRowSchema = z.object({
   id: z.string(),
   title: z.string(),
   items: z.array(mediaSummarySchema),
+  seeAll: z.object({ type: mediaTypeSchema, filters: savedFiltersSchema }).optional(),
 });
 
-export const discoverResponseSchema = z.object({ rows: z.array(discoverRowSchema) });
+/**
+ * `rows` : les rangées d'affiches, dans l'ordre configuré ; `layout` : les identifiants de toutes les rangées actives
+ * dans cet ordre, y compris les rangées à logos (plateformes, studios, chaînes) que le navigateur construit lui-même.
+ */
+export const discoverResponseSchema = z.object({ rows: z.array(discoverRowSchema), layout: z.array(z.string()) });
 export type DiscoverResponse = z.infer<typeof discoverResponseSchema>;
 
 export const pagedMediaSchema = pagedSchema(mediaSummarySchema);

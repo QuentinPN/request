@@ -35,11 +35,14 @@ export function Rail({
   children,
   focusable = false,
   className,
+  action,
 }: {
   title: string;
   children: ReactNode;
   focusable?: boolean;
   className?: string;
+  /** Lien ou bouton à côté du titre, avant les flèches (« Tout voir »). */
+  action?: ReactNode;
 }) {
   const headingId = useId();
   const ref = useRef<HTMLDivElement>(null);
@@ -85,30 +88,35 @@ export function Rail({
       <SectionHeading
         id={headingId}
         aside={
-          !(edges.start && edges.end) && (
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                size="icon-sm"
-                className={arrow}
-                tabIndex={-1}
-                disabled={edges.start}
-                onClick={() => page(-1)}
-                aria-label={`${title} : précédents`}
-              >
-                <ChevronLeft />
-              </Button>
-              <Button
-                variant="secondary"
-                size="icon-sm"
-                className={arrow}
-                tabIndex={-1}
-                disabled={edges.end}
-                onClick={() => page(1)}
-                aria-label={`${title} : suivants`}
-              >
-                <ChevronRight />
-              </Button>
+          (action || !(edges.start && edges.end)) && (
+            <div className="flex items-center gap-2">
+              {action}
+              {!(edges.start && edges.end) && (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    className={arrow}
+                    tabIndex={-1}
+                    disabled={edges.start}
+                    onClick={() => page(-1)}
+                    aria-label={`${title} : précédents`}
+                  >
+                    <ChevronLeft />
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    className={arrow}
+                    tabIndex={-1}
+                    disabled={edges.end}
+                    onClick={() => page(1)}
+                    aria-label={`${title} : suivants`}
+                  >
+                    <ChevronRight />
+                  </Button>
+                </>
+              )}
             </div>
           )
         }
@@ -147,10 +155,10 @@ export function RailSkeleton({ item, count = 8 }: { item: ReactNode; count?: num
 }
 
 /** Rangée d'affiches du catalogue (rien si la liste est vide : une rangée vide n'apporte rien). */
-export function MediaRail({ title, items }: { title: string; items: MediaSummary[] }) {
+export function MediaRail({ title, items, action }: { title: string; items: MediaSummary[]; action?: ReactNode }) {
   if (items.length === 0) return null;
   return (
-    <Rail title={title}>
+    <Rail title={title} action={action}>
       {items.map((media) => (
         <MediaPoster key={mediaKey(media)} media={media} />
       ))}

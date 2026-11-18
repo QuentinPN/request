@@ -1,5 +1,6 @@
 import { desc, eq, max, notInArray } from 'drizzle-orm';
 import { keyOf, type MediaKey } from '../../shared/media.ts';
+import { type Setting, settingSchemas } from '../../shared/settings.ts';
 import type { MediaStatus, RequestStatus, TitleAvailability } from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
 import { media, requests } from '../db/schema.ts';
@@ -8,6 +9,10 @@ import { getSetting } from './settings.ts';
 
 /** Statuts affichés (version normale) d'un titre « déjà demandé » : en attente, demandé, en téléchargement. */
 const REQUESTED: readonly MediaStatus[] = ['pending', 'requested', 'downloading'];
+
+/** Ordre et état des rangées de Découvrir (réglage `discoverLayout`) ; jamais enregistré : l'ordre par défaut. */
+export const discoverLayoutOf = (data: Data): Setting<'discoverLayout'> =>
+  getSetting(data.db, data.cryptoKey, 'discoverLayout') ?? settingSchemas.discoverLayout.parse({});
 
 /**
  * Titres à masquer dans les rangées de Découvrir (réglage `discover`, pour tous), d'après leurs statuts (`statuses`,

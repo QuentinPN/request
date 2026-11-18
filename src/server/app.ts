@@ -19,6 +19,7 @@ import { arrServersRoutes } from './routes/arr-servers.ts';
 import { authRoutes } from './routes/auth.ts';
 import { blocklistRoutes } from './routes/blocklist.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
+import { discoverSettingsRoutes } from './routes/discover-settings.ts';
 import { generalRoutes } from './routes/general.ts';
 import { imageRoutes } from './routes/images.ts';
 import { importRoutes } from './routes/import.ts';
@@ -221,6 +222,7 @@ export async function buildApp({
   watchlistRoutes(app, upstreams);
   statsRoutes(app);
   blocklistRoutes(app);
+  discoverSettingsRoutes(app);
   generalRoutes(app);
   aboutRoutes(app);
   await app.register(catalogueRoutes);

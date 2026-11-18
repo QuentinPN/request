@@ -20,6 +20,13 @@ import {
   type WatchProvider,
 } from '../../shared/media.ts';
 import type { Setting } from '../../shared/settings.ts';
+import {
+  DEFAULT_TMDB_LANGUAGE,
+  DEFAULT_TMDB_REGION,
+  languageCodeOf,
+  type TmdbLanguage,
+  type TmdbRegion,
+} from '../../shared/tmdb-locale.ts';
 import { TtlLru } from '../lib/lru.ts';
 import { createClient, type RequestOptions } from './http.ts';
 
@@ -28,13 +35,15 @@ export { imageUrl } from '../../shared/media.ts';
 export interface TmdbConfig extends Setting<'tmdb'> {
   /** Remplaçable pour les tests (défaut : l'API publique TMDB v3). */
   baseUrl?: string;
+  /** Langue des titres et synopsis (défaut : `fr-FR`). */
+  language?: TmdbLanguage;
+  /** Région des sorties, dates de sortie et plateformes (défaut : `FR`). */
+  region?: TmdbRegion;
 }
 
 const SERVICE = 'TMDB';
 const DEFAULT_BASE_URL = 'https://api.themoviedb.org/3';
-const LANGUAGE = 'fr-FR';
 const FALLBACK_LANGUAGE = 'en-US';
-const REGION = 'FR';
 const CAST_LIMIT = 15;
 const CREW_LIMIT = 8;
 /** Titres gardés par type dans la filmographie d'une personne (les plus populaires). */
@@ -259,15 +268,16 @@ const toPerson = (raw: z.infer<typeof rawPerson>, biography: string): PersonDeta
   ...toCredits(raw.combined_credits ?? { cast: [], crew: [] }),
 });
 
-/** Bande-annonce YouTube : française d'abord, puis anglaise, puis la première disponible. */
-function pickTrailerKey(videos: z.infer<typeof rawVideo>[] = []): string | null {
+/** Bande-annonce YouTube : dans la langue choisie d'abord, puis anglaise, puis la première disponible. */
+function pickTrailerKey(videos: z.infer<typeof rawVideo>[] = [], language: TmdbLanguage): string | null {
   const trailers = videos.filter((v) => v.site === 'YouTube' && v.type === 'Trailer');
-  const preferred = trailers.find((v) => v.iso_639_1 === 'fr') ?? trailers.find((v) => v.iso_639_1 === 'en');
+  const code = languageCodeOf(language);
+  const preferred = trailers.find((v) => v.iso_639_1 === code) ?? trailers.find((v) => v.iso_639_1 === 'en');
   return (preferred ?? trailers[0])?.key ?? null;
 }
 
-function toDetails(raw: RawDetails, type: MediaType): MediaDetails {
-  const providers = raw['watch/providers']?.results[REGION];
+function toDetails(raw: RawDetails, type: MediaType, { language, region }: Locale): MediaDetails {
+  const providers = raw['watch/providers']?.results[region];
   return {
     ...toSummary(raw, type),
     genres: raw.genres ?? [],
@@ -280,7 +290,7 @@ function toDetails(raw: RawDetails, type: MediaType): MediaDetails {
     cast: (raw.credits?.cast ?? []).slice(0, CAST_LIMIT).map(toCast),
     crew: toCrew(raw),
     collection: raw.belongs_to_collection ? toCollectionRef(raw.belongs_to_collection) : null,
-    trailerKey: pickTrailerKey(raw.videos?.results),
+    trailerKey: pickTrailerKey(raw.videos?.results, language),
     watchProviders: {
       flatrate: toProviders(providers?.flatrate),
       rent: toProviders(providers?.rent),
@@ -337,13 +347,14 @@ function newClient({ apiKey, baseUrl = DEFAULT_BASE_URL }: TmdbConfig) {
 }
 
 type Query = NonNullable<RequestOptions['query']>;
+type Locale = { language: TmdbLanguage; region: TmdbRegion };
 
 /** Plancher de votes de TMDB pour la note : sans lui, un titre à 10/10 avec un seul vote passerait en tête. */
 const MIN_VOTES_FOR_RATING = 200;
 /** Filtre « abonnement » de la région : mêmes paramètres pour la page d'une plateforme et pour les filtres. */
-const providerParams = (providerId: number): Query => ({
+const providerParams = (providerId: number, region: TmdbRegion): Query => ({
   with_watch_providers: providerId,
-  watch_region: REGION,
+  watch_region: region,
   with_watch_monetization_types: 'flatrate',
 });
 /** Tri des filtres : noms de TMDB, différents pour les films et les séries. */
@@ -358,7 +369,7 @@ const SORT_BY: Record<BrowseSort, Record<MediaType, string>> = {
  * Paramètres `/discover/{type}` des filtres de Films et Séries (hors page et mots-clés bloqués). Genres multiples :
  * `,` = ET (le titre a tous les genres). Durée et studio ne valent que pour les films, chaîne que pour les séries.
  */
-export function browseParams(type: MediaType, f: BrowseFilters): Query {
+export function browseParams(type: MediaType, f: BrowseFilters, region: TmdbRegion = DEFAULT_TMDB_REGION): Query {
   const dateKey = type === 'movie' ? 'primary_release_date' : 'first_air_date';
   const sort = f.sort ?? DEFAULT_BROWSE_SORT;
   return {
@@ -371,7 +382,7 @@ export function browseParams(type: MediaType, f: BrowseFilters): Query {
     ...(type === 'movie' && f.runtimeMin !== undefined && { 'with_runtime.gte': f.runtimeMin }),
     ...(type === 'movie' && f.runtimeMax !== undefined && { 'with_runtime.lte': f.runtimeMax }),
     ...(f.language !== undefined && { with_original_language: f.language }),
-    ...(f.provider !== undefined && providerParams(f.provider)),
+    ...(f.provider !== undefined && providerParams(f.provider, region)),
     ...(type === 'movie' && f.company !== undefined && { with_companies: f.company }),
     ...(type === 'tv' && f.network !== undefined && { with_networks: f.network }),
   };
@@ -384,15 +395,19 @@ export async function testTmdb(config: TmdbConfig): Promise<{ ok: true }> {
 }
 
 /**
- * Accès à TMDB (fr-FR, région FR). Toutes les requêtes GET sont mémorisées par adresse (clé secrète exclue) :
- * ~1 h pour les listes, ~6 h pour les fiches ; deux demandes identiques simultanées partagent un seul appel.
+ * Accès à TMDB dans la langue et la région du réglage (`fr-FR` et `FR` par défaut). Toutes les requêtes GET sont
+ * mémorisées par adresse (clé secrète exclue ; la langue et la région y figurent, un changement de réglage ne sert
+ * donc jamais l'ancienne langue) : ~1 h pour les listes, ~6 h pour les fiches ; deux demandes identiques simultanées
+ * partagent un seul appel.
  */
 export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
   const client = newClient(config);
   const baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+  const language = config.language ?? DEFAULT_TMDB_LANGUAGE;
+  const region = config.region ?? DEFAULT_TMDB_REGION;
 
   const get = <T>(path: string, schema: z.ZodType<T>, query: Query, ttlMs: number): Promise<T> => {
-    const params: Query = { language: LANGUAGE, ...query };
+    const params: Query = { language, ...query };
     const search = new URLSearchParams(
       Object.entries(params)
         .flatMap(([name, value]): [string, string][] => (value === undefined ? [] : [[name, String(value)]]))
@@ -403,6 +418,7 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
 
   /** Biographie ou synopsis vide en français, relu en anglais ; au mieux : un échec laisse le texte vide. */
   const englishText = async (path: string, field: 'biography' | 'overview'): Promise<string> => {
+    if (languageCodeOf(language) === 'en') return '';
     try {
       return (await get(path, rawEnglishText, { language: FALLBACK_LANGUAGE }, DETAILS_TTL_MS))[field] ?? '';
     } catch {
@@ -432,19 +448,19 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
 
     popular: async (type: MediaType): Promise<MediaSummary[]> => (await list(type, `/${type}/popular`)).results,
 
-    /** Films à venir en France. */
-    upcoming: async (): Promise<MediaSummary[]> => (await list('movie', '/movie/upcoming', { region: REGION })).results,
+    /** Films à venir dans la région. */
+    upcoming: async (): Promise<MediaSummary[]> => (await list('movie', '/movie/upcoming', { region })).results,
 
     /** Séries actuellement diffusées. */
     onTheAir: async (): Promise<MediaSummary[]> => (await list('tv', '/tv/on_the_air')).results,
 
-    /** Titres disponibles en streaming (abonnement) chez une plateforme, en France ; sans les mots-clés `exclude`. */
+    /** Titres disponibles en streaming (abonnement) chez une plateforme, dans la région ; sans les mots-clés `exclude`. */
     discoverByProvider: (type: MediaType, providerId: number, page = 1, exclude?: readonly number[]) =>
-      discover(type, page, providerParams(providerId), exclude),
+      discover(type, page, providerParams(providerId, region), exclude),
 
     /** Films ou séries selon les filtres de la page (voir `browseParams`) ; sans les mots-clés `exclude`. */
     browse: (type: MediaType, filters: BrowseFilters, page = 1, exclude?: readonly number[]) =>
-      discover(type, page, browseParams(type, filters), exclude),
+      discover(type, page, browseParams(type, filters, region), exclude),
 
     /** Mots-clés TMDB dont le nom correspond (Réglages › Blocages), première page. */
     searchKeywords: async (query: string): Promise<Array<{ id: number; name: string }>> =>
@@ -461,11 +477,11 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
       const raw = await get(
         `/watch/providers/${type}`,
         z.object({ results: z.array(rawRegionProvider) }),
-        { watch_region: REGION },
+        { watch_region: region },
         DETAILS_TTL_MS,
       );
       const rank = (p: z.infer<typeof rawRegionProvider>) =>
-        p.display_priorities?.[REGION] ?? p.display_priority ?? Number.MAX_SAFE_INTEGER;
+        p.display_priorities?.[region] ?? p.display_priority ?? Number.MAX_SAFE_INTEGER;
       return toProviders([...raw.results].sort((a, b) => rank(a) - rank(b)));
     },
 
@@ -478,9 +494,12 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
     /** Fiche complète ; si le titre ou le synopsis manquent en français, ils sont complétés en anglais (un seul appel, au mieux). */
     details: async (type: MediaType, id: number): Promise<MediaDetails> => {
       const path = `/${type}/${id}`;
-      const query = { append_to_response: DETAILS_APPEND, include_video_language: 'fr,en,null' };
-      const details = toDetails(await get(path, rawDetails, query, DETAILS_TTL_MS), type);
-      if (details.title && details.overview) return details;
+      const query = {
+        append_to_response: DETAILS_APPEND,
+        include_video_language: `${languageCodeOf(language)},en,null`,
+      };
+      const details = toDetails(await get(path, rawDetails, query, DETAILS_TTL_MS), type, { language, region });
+      if ((details.title && details.overview) || languageCodeOf(language) === 'en') return details;
       try {
         const english = toSummary(await get(path, rawMedia, { language: FALLBACK_LANGUAGE }, DETAILS_TTL_MS), type);
         return { ...details, title: details.title || english.title, overview: details.overview || english.overview };

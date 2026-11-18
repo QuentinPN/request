@@ -47,7 +47,8 @@ export type SectionId =
   | 'cache'
   | 'logs'
   | 'general'
-  | 'about';
+  | 'about'
+  | 'discover';
 export const settingsSectionOrder = [
   ...sectionOrder,
   'members',
@@ -66,6 +67,7 @@ export const settingsSectionOrder = [
   'logs',
   'general',
   'about',
+  'discover',
 ] as const satisfies readonly SectionId[];
 
 /**
@@ -109,6 +111,7 @@ export const sectionText: Record<SectionId, { title: string; description: string
   trakt: { title: 'Listes externes', description: 'Facultatif : import des listes de souhaits Trakt des membres' },
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
   blocklist: { title: 'Blocages', description: 'Titres et mots-clés TMDB qui ne peuvent pas être demandés' },
+  discover: { title: 'Découvrir', description: 'Rangées de la page, langue et région de TMDB' },
   jobs: { title: 'Tâches', description: 'Balayages et sauvegarde : dernière exécution, fréquence, lancement immédiat' },
   cache: { title: 'Cache d’images', description: 'Poids des affiches enregistrées sur le disque, et vidage' },
   logs: { title: 'Journaux', description: 'Dernières entrées du serveur, filtrables, sans secret' },

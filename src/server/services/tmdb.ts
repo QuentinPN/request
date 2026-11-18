@@ -6,6 +6,7 @@ import {
   type MediaType,
   mediaDetailsSchema,
 } from '../../shared/media.ts';
+import { tmdbLocaleSchema } from '../../shared/tmdb-locale.ts';
 import type { Data } from '../db/index.ts';
 import { IntegrationError } from '../integrations/http.ts';
 import { createTmdb, type TmdbClient } from '../integrations/tmdb.ts';
@@ -51,17 +52,19 @@ export async function loadSummaries(
 }
 
 /**
- * Fournit le client TMDB construit d'après le réglage enregistré. Le client est gardé tant que la clé ne change pas
- * (il n'est reconstruit qu'après une modification dans Réglages) ; la clé ne sort jamais de ce module.
- * Lève `NotConfiguredError` si TMDB n'est pas encore configuré.
+ * Fournit le client TMDB construit d'après les réglages enregistrés (clé, langue et région). Le client est gardé tant
+ * qu'aucun de ces trois ne change (il n'est reconstruit qu'après une modification dans Réglages) ; la clé ne sort
+ * jamais de ce module. Lève `NotConfiguredError` si TMDB n'est pas encore configuré.
  */
 export function createTmdbProvider(data: Data, baseUrl?: string): () => TmdbClient {
-  let current: { apiKey: string; client: TmdbClient } | undefined;
+  let current: { id: string; client: TmdbClient } | undefined;
   return () => {
     const setting = getSetting(data.db, data.cryptoKey, 'tmdb');
     if (!setting) throw new NotConfiguredError('TMDB');
-    if (current?.apiKey !== setting.apiKey)
-      current = { apiKey: setting.apiKey, client: createTmdb({ ...setting, ...(baseUrl && { baseUrl }) }) };
+    const { language, region } = getSetting(data.db, data.cryptoKey, 'tmdbLocale') ?? tmdbLocaleSchema.parse({});
+    const id = JSON.stringify([setting.apiKey, language, region]);
+    if (current?.id !== id)
+      current = { id, client: createTmdb({ ...setting, language, region, ...(baseUrl && { baseUrl }) }) };
     return current.client;
   };
 }

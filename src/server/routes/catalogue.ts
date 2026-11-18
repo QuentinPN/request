@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import {
+  type BrowseFilters,
   browsePath,
   browseQuerySchema,
   collectionPath,
@@ -20,10 +21,12 @@ import {
   typeIdParamsSchema,
   typeParamsSchema,
 } from '../../shared/catalogue.ts';
+import { type BuiltInRowId, builtInRowTitles, isLogoRow, type LogoRowId } from '../../shared/discover-layout.ts';
 import {
   collectionDetailsSchema,
   keyOf,
   type MediaSummary,
+  type MediaType,
   mediaSearchResultsSchema,
   personDetailsSchema,
 } from '../../shared/media.ts';
@@ -32,12 +35,14 @@ import { parseRequest, parseUpstream } from '../lib/api-errors.ts';
 import { viewerOf } from '../plugins/auth.ts';
 import { withStatus } from '../services/availability.ts';
 import { blockOf, excludedKeywordIds, forViewer } from '../services/blocklist.ts';
-import { hiddenInDiscover, recentRequestKeys } from '../services/discover.ts';
+import { discoverLayoutOf, hiddenInDiscover, recentRequestKeys } from '../services/discover.ts';
 import { loadDetails, loadSummaries, orTitleNotFound } from '../services/tmdb.ts';
 
 const SERVICE = 'TMDB';
 /** Rangée de titres déjà dans la bibliothèque : « Masquer les disponibles » la viderait, elle n'y est pas soumise. */
 const LIBRARY_ROW = 'emby-recent';
+/** Rangées de l'appli chargées par le serveur (les rangées à logos sont construites par le navigateur). */
+type DataRowId = Exclude<BuiltInRowId, LogoRowId>;
 
 /** API du catalogue TMDB : rangées Découvrir, genres, plateformes, recherche et fiches, avec le statut de chaque titre. */
 export const catalogueRoutes: FastifyPluginAsync = async (app) => {
@@ -55,22 +60,44 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
       const items = keys.flatMap((key) => found.get(keyOf(key)) ?? []);
       return items.length > 0 ? items : null;
     };
-    const rows: Array<{ id: string; title: string; load: () => Promise<MediaSummary[] | null> }> = [
-      { id: 'trending', title: 'Tendances', load: () => tmdb.trendingAll('week') },
-      { id: 'recent-requests', title: 'Demandes récentes', load: recentRequests },
-      { id: 'popular-movies', title: 'Films populaires', load: () => tmdb.popular('movie') },
-      { id: 'popular-tv', title: 'Séries populaires', load: () => tmdb.popular('tv') },
-      { id: 'upcoming', title: 'Prochainement', load: () => tmdb.upcoming() },
-      {
-        id: 'emby-recent',
-        title: `Ajoutés récemment dans ${server ? labelOf(server) : 'la bibliothèque'}`,
+    type Row = {
+      id: string;
+      title: string;
+      load: () => Promise<MediaSummary[] | null>;
+      seeAll?: { type: MediaType; filters: BrowseFilters };
+    };
+    const builtIn: Record<DataRowId, Omit<Row, 'id'>> = {
+      trending: { title: builtInRowTitles.trending, load: () => tmdb.trendingAll('week') },
+      'recent-requests': { title: builtInRowTitles['recent-requests'], load: recentRequests },
+      'popular-movies': { title: builtInRowTitles['popular-movies'], load: () => tmdb.popular('movie') },
+      'popular-tv': { title: builtInRowTitles['popular-tv'], load: () => tmdb.popular('tv') },
+      upcoming: { title: builtInRowTitles.upcoming, load: () => tmdb.upcoming() },
+      'emby-recent': {
+        title: `${builtInRowTitles['emby-recent']} dans ${server ? labelOf(server) : 'la bibliothèque'}`,
         load: () => app.availability.recentlyAdded(userId),
       },
-    ];
+    };
+    // Ordre et rangées actives choisis par le propriétaire : une rangée désactivée n'appelle pas TMDB. Les rangées à
+    // logos n'ont rien à charger ici (le navigateur les construit) : elles ne figurent que dans `layout`.
+    const active = discoverLayoutOf(app.data).rows.filter((row) => row.enabled);
+    const rows = active.flatMap((row): Row[] => {
+      if (row.kind === 'custom') {
+        const { type, filters } = row;
+        return [
+          {
+            id: row.id,
+            title: row.title,
+            load: async () => (await tmdb.browse(type, filters, 1, excludedKeywordIds(app.data, viewer))).results,
+            seeAll: { type, filters },
+          },
+        ];
+      }
+      return isLogoRow(row.id) ? [] : [{ id: row.id, ...builtIn[row.id] }];
+    });
     const settled = await Promise.allSettled(
-      rows.map(async ({ id, title, load }) => {
+      rows.map(async ({ id, title, load, seeAll }) => {
         const items = await load();
-        return items && parseUpstream(SERVICE, discoverRowSchema, { id, title, items });
+        return items && parseUpstream(SERVICE, discoverRowSchema, { id, title, items, seeAll });
       }),
     );
     // Une rangée en échec (ou hors contrat) est omise ; si aucune ne reste, l'erreur remonte (une page vide cacherait la panne).
@@ -93,6 +120,7 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
           ? []
           : [{ ...row, items: items.map((item) => withStatus(statuses, item)) }];
       }),
+      layout: active.map((row) => row.id),
     };
   });
 

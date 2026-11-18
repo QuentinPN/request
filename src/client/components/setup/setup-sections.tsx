@@ -14,6 +14,7 @@ import { BlocklistSection } from './blocklist-section';
 import { CacheSection } from './cache-section';
 import { type SectionId, sectionOrder } from './config';
 import { DiscordSection } from './discord-section';
+import { DiscoverSection } from './discover-section';
 import { GeneralSection } from './general-section';
 import { IntegrationSection } from './integration-section';
 import { JobsSection } from './jobs-section';
@@ -88,6 +89,7 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <TraktSection section="trakt" open={open === 'trakt'} onToggle={() => toggle('trakt')} />
           <ApiKeysSection section="api" open={open === 'api'} onToggle={() => toggle('api')} />
           <BlocklistSection section="blocklist" open={open === 'blocklist'} onToggle={() => toggle('blocklist')} />
+          <DiscoverSection section="discover" open={open === 'discover'} onToggle={() => toggle('discover')} />
           <JobsSection section="jobs" open={open === 'jobs'} onToggle={() => toggle('jobs')} />
           <CacheSection section="cache" open={open === 'cache'} onToggle={() => toggle('cache')} />
           <LogsSection section="logs" open={open === 'logs'} onToggle={() => toggle('logs')} />
