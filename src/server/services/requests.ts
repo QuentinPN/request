@@ -906,5 +906,3 @@ export function createRequests(
 
   return { create, list, get, approve, decline, cancel, retry, batch, quota, counts };
 }
-
-export type RequestService = ReturnType<typeof createRequests>;

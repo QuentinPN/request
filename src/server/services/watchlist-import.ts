@@ -227,5 +227,3 @@ export function createWatchlistImport(data: Data, deps: { tmdb: () => TmdbClient
 
   return { importTrakt: exclusive(importTrakt), importLetterboxd: exclusive(importLetterboxd) };
 }
-
-export type WatchlistImportService = ReturnType<typeof createWatchlistImport>;

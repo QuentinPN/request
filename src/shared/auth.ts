@@ -43,4 +43,3 @@ export const memberUpdateSchema = z.object({
   /** `null` : revenir aux quotas par défaut. */
   quotaOverride: quotaOverrideSchema.nullable().optional(),
 });
-export type MemberUpdate = z.input<typeof memberUpdateSchema>;

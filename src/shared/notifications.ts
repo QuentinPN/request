@@ -39,7 +39,6 @@ export const NOTIFICATIONS_PAGE_SIZE = 20;
 export const NOTIFICATIONS_READ_MAX = 100;
 
 export const notificationListQuerySchema = z.object({ page: z.coerce.number().int().positive().default(1) });
-export type NotificationListQuery = z.input<typeof notificationListQuerySchema>;
 
 /** Marquer comme lues : certaines (`ids`, les siennes seulement) ou toutes. */
 export const markNotificationsReadSchema = z.union([

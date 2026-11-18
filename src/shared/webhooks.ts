@@ -1,10 +1,8 @@
-import { z } from 'zod';
 import { arrKinds } from './arr-servers.ts';
 
 /** Services qui appellent l'appli par webhook (Réglages › Connexions › Webhook de Radarr et Sonarr). */
 export const webhookServices = arrKinds;
 export type WebhookService = (typeof webhookServices)[number];
-export const webhookServiceSchema = z.enum(webhookServices);
 
 /** Adresse du webhook entrant d'un service : la seule route ouverte sans session ni en-tête CSRF, avec le jeton. */
 export const webhookPath = (service: WebhookService) => `/api/webhooks/${service}`;

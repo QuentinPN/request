@@ -60,7 +60,6 @@ export const arrServerTestSchema = serviceConnectionSchema.extend({
   type: arrKindSchema,
   id: z.number().int().positive().optional(),
 });
-export type ArrServerTestInput = z.input<typeof arrServerTestSchema>;
 
 export const arrServerIdParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 

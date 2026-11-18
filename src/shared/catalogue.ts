@@ -29,7 +29,6 @@ export const discoverRowSchema = z.object({
   title: z.string(),
   items: z.array(mediaSummarySchema),
 });
-export type DiscoverRow = z.infer<typeof discoverRowSchema>;
 
 export const discoverResponseSchema = z.object({ rows: z.array(discoverRowSchema) });
 export type DiscoverResponse = z.infer<typeof discoverResponseSchema>;
@@ -37,10 +36,8 @@ export type DiscoverResponse = z.infer<typeof discoverResponseSchema>;
 export const pagedMediaSchema = pagedSchema(mediaSummarySchema);
 
 export const genresResponseSchema = z.object({ genres: z.array(genreSchema) });
-export type GenresResponse = z.infer<typeof genresResponseSchema>;
 
 export const providersResponseSchema = z.object({ providers: z.array(watchProviderSchema) });
-export type ProvidersResponse = z.infer<typeof providersResponseSchema>;
 
 // --- Images ---
 

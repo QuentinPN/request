@@ -31,7 +31,6 @@ export function arrClient(kind: ArrKind, config: ArrConfig) {
     put: <T>(path: string, schema: z.ZodType<T>, body: unknown) => client.put(at(path), schema, { body }),
   };
 }
-export type ArrClient = ReturnType<typeof arrClient>;
 
 /** Erreur « ressource absente » dans le même format que les erreurs HTTP (message lisible, en français). */
 export const notFound = (kind: ArrKind, what: string) =>

@@ -268,5 +268,3 @@ export function createIssues(
 
   return { create, list, counts, get, comment, resolve, reopen };
 }
-
-export type IssueService = ReturnType<typeof createIssues>;

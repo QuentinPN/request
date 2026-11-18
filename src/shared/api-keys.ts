@@ -9,7 +9,6 @@ export const API_KEYS_PATH = '/api/settings/api-keys';
 export const apiKeyPath = (id: number | ':id') => `${API_KEYS_PATH}/${id}`;
 
 export const apiKeyCreateSchema = z.object({ name: z.string().trim().min(1, 'Nom requis').max(100) });
-export type ApiKeyCreateInput = z.input<typeof apiKeyCreateSchema>;
 
 export const apiKeyIdParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 

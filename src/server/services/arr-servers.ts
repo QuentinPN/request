@@ -58,10 +58,6 @@ export function getArrServer({ db, cryptoKey }: Pick<Data, 'db' | 'cryptoKey'>, 
   return row ? toConfig(cryptoKey, row) : null;
 }
 
-/** Serveur par défaut d'un type et d'une qualité, ou `null` s'il n'y en a aucun. */
-export const defaultArrServer = (data: Pick<Data, 'db' | 'cryptoKey'>, kind: ArrKind, is4k: boolean) =>
-  serversOf(listArrServers(data), kind, is4k)[0] ?? null;
-
 /** Id du serveur par défaut d'un type et d'une qualité, sans déchiffrer de clé (import Seerr). */
 export const defaultArrServerId = (db: Db, kind: ArrKind, is4k: boolean): number | null =>
   db

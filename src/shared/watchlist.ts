@@ -6,22 +6,6 @@ export const watchlistSources = ['manual', 'trakt', 'letterboxd'] as const;
 export type WatchlistSource = (typeof watchlistSources)[number];
 export const watchlistSourceSchema = z.enum(watchlistSources);
 
-/**
- * Titre de la liste d'un membre (unique par membre et titre). Titre, année et affiche sont une copie pour l'affichage
- * (facultatifs) : TMDB reste la source.
- */
-export const watchlistItemSchema = z.object({
-  mediaType: mediaTypeSchema,
-  tmdbId: z.number().int().positive(),
-  title: z.string().nullable(),
-  year: z.number().int().nullable(),
-  posterPath: z.string().nullable(),
-  source: watchlistSourceSchema,
-  /** ISO 8601. */
-  addedAt: z.string(),
-});
-export type WatchlistItem = z.output<typeof watchlistItemSchema>;
-
 // --- API de la liste de souhaits (chaque membre ne voit et ne modifie que la sienne) ---
 
 export const WATCHLIST_PATH = '/api/watchlist';
@@ -36,7 +20,6 @@ export const WATCHLIST_PAGE_SIZE = 40;
 
 /** Ajout : le serveur lit le titre chez TMDB (il valide l'id et garde titre, année et affiche). */
 export const addWatchlistSchema = z.object({ type: mediaTypeSchema, tmdbId: z.number().int().positive() });
-export type AddWatchlistInput = z.input<typeof addWatchlistSchema>;
 
 /** Titre de « Ma liste » : un résumé TMDB (donc affichable comme toute affiche, avec son statut) et son origine. */
 export const watchlistEntrySchema = mediaSummarySchema.extend({

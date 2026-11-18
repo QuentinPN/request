@@ -78,7 +78,6 @@ export const issueSchema = z.object({
   updatedAt: z.string(),
   resolvedAt: z.string().nullable(),
 });
-export type Issue = z.output<typeof issueSchema>;
 
 // --- Listes et détail ---
 
@@ -88,7 +87,6 @@ export const issueListQuerySchema = z.object({
   status: issueStatusSchema.optional(),
   page: z.coerce.number().int().positive().default(1),
 });
-export type IssueListQuery = z.input<typeof issueListQuerySchema>;
 
 export const issueIdParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 

@@ -12,9 +12,6 @@ import { loadSummaries } from './tmdb.ts';
 
 type Row = typeof watchlist.$inferSelect;
 
-/** Copie d'affichage d'un titre : ce que la liste garde pour ne pas dépendre de TMDB à chaque page. */
-export type WatchlistCopy = Pick<MediaSummary, 'title' | 'year' | 'posterPath'>;
-
 const ownedBy = (userId: string, { type, tmdbId }: MediaKey) =>
   and(eq(watchlist.userId, userId), eq(watchlist.mediaType, type), eq(watchlist.tmdbId, tmdbId));
 
@@ -104,5 +101,3 @@ export function createWatchlist(db: Db, deps: { tmdb: () => TmdbClient; availabi
 
   return { add, list, has, remove };
 }
-
-export type WatchlistService = ReturnType<typeof createWatchlist>;

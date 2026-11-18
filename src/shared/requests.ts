@@ -58,7 +58,6 @@ const declineReason = z
   .max(DECLINE_REASON_MAX, `Motif trop long (${DECLINE_REASON_MAX} caractères au plus)`);
 
 export const declineRequestSchema = z.object({ reason: declineReason });
-export type DeclineRequestInput = z.input<typeof declineRequestSchema>;
 
 /**
  * Choix de l'approbateur avant envoi ; chaque champ absent prend la valeur du serveur. `serverId` : serveur du bon type
