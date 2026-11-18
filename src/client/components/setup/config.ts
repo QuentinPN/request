@@ -40,6 +40,9 @@ export type SectionId =
   | 'trakt'
   | 'api'
   | 'blocklist'
+  | 'jobs'
+  | 'cache'
+  | 'logs'
   | 'general'
   | 'about';
 export const settingsSectionOrder = [
@@ -52,6 +55,9 @@ export const settingsSectionOrder = [
   'trakt',
   'api',
   'blocklist',
+  'jobs',
+  'cache',
+  'logs',
   'general',
   'about',
 ] as const satisfies readonly SectionId[];
@@ -82,6 +88,9 @@ export const sectionText: Record<SectionId, { title: string; description: string
   trakt: { title: 'Listes externes', description: 'Facultatif : import des listes de souhaits Trakt des membres' },
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
   blocklist: { title: 'Blocages', description: 'Titres et mots-clés TMDB qui ne peuvent pas être demandés' },
+  jobs: { title: 'Tâches', description: 'Balayages et sauvegarde : dernière exécution, fréquence, lancement immédiat' },
+  cache: { title: 'Cache d’images', description: 'Poids des affiches enregistrées sur le disque, et vidage' },
+  logs: { title: 'Journaux', description: 'Dernières entrées du serveur, filtrables, sans secret' },
   general: { title: 'Général', description: 'Titre de l’application, affiché dans l’onglet et les messages' },
   about: { title: 'À propos', description: 'Version, environnement et compteurs, en lecture seule' },
 };

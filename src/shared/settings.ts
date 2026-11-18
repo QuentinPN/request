@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { appTitleSchema, DEFAULT_APP_TITLE } from './app-info.ts';
 import { blockedKeywordSchema } from './blocklist.ts';
+import { JOB, jobIntervalSchema } from './jobs.ts';
 import { requestNotificationKinds } from './notifications.ts';
 import { quotaRuleSchema } from './roles.ts';
 
@@ -143,6 +144,15 @@ export const settingSchemas = {
   }),
   /** Mots-clés TMDB bloqués : rangées Découvrir filtrées (`without_keywords`), demande refusée par le serveur. */
   blockedKeywords: z.object({ keywords: z.array(blockedKeywordSchema).default([]) }),
+  /** Fréquence (en minutes) des tâches planifiées réglables ; une tâche absente garde sa fréquence par défaut. */
+  jobs: z.object({
+    intervalMinutes: z
+      .object({
+        [JOB.scanLight]: jobIntervalSchema(JOB.scanLight).optional(),
+        [JOB.scanFull]: jobIntervalSchema(JOB.scanFull).optional(),
+      })
+      .default({}),
+  }),
   /** Titre de l'appli : onglet du navigateur, courriels et messages d'essai (jamais le logo). Pas un secret. */
   general: z.object({ appTitle: appTitleSchema.default(DEFAULT_APP_TITLE) }),
 } as const;
@@ -167,6 +177,7 @@ export const secretFields = {
   trakt: ['clientId'],
   discover: [],
   blockedKeywords: [],
+  jobs: [],
   general: [],
 } as const satisfies { [K in SettingKey]: readonly (keyof Setting<K>)[] };
 

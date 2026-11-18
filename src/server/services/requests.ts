@@ -59,6 +59,7 @@ import { addMovie } from '../integrations/radarr.ts';
 import { addSeries } from '../integrations/sonarr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { HttpError, NotConfiguredError, UpstreamContractError } from '../lib/api-errors.ts';
+import { logError } from '../lib/logger.ts';
 import { one } from '../lib/sql.ts';
 import { DAY_MS } from '../lib/time.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
@@ -632,7 +633,7 @@ export function createRequests(
       return { ok: true, is4k: server.is4k, arrId: sonarrId, tvdbId, detail: `${server.name} #${sonarrId}` };
     } catch (error) {
       if (readable(error)) return { ok: false, detail: (error as Error).message };
-      console.error('Envoi de la demande', row.id, error);
+      logError(`Envoi de la demande ${row.id}`, error);
       return { ok: false, detail: "Erreur inattendue pendant l'envoi" };
     }
   }

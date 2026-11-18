@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import type { ImageCacheStats } from '../../shared/cache.ts';
 import type { ImageSize } from '../../shared/media.ts';
 import { normalizeUrl } from '../../shared/settings.ts';
 import { IntegrationError } from '../integrations/http.ts';
+import { logError } from '../lib/logger.ts';
 import { MINUTE_MS } from '../lib/time.ts';
 
 const SERVICE = 'TMDB';
@@ -66,8 +68,8 @@ export function createImageCache({
   let lastPrune = Number.NEGATIVE_INFINITY;
   let pruning: Promise<void> | null = null;
 
-  /** Supprime les images les moins récemment utilisées jusqu'à passer sous `maxBytes` (fichiers temporaires ignorés). */
-  async function prune(): Promise<void> {
+  /** Images en cache (fichiers temporaires des téléchargements en cours ignorés). */
+  async function listFiles(): Promise<Array<{ path: string; size: number; mtimeMs: number }>> {
     const files: Array<{ path: string; size: number; mtimeMs: number }> = [];
     for (const size of await readdir(root).catch(() => [])) {
       for (const name of await readdir(join(root, size)).catch(() => [])) {
@@ -77,6 +79,25 @@ export function createImageCache({
         if (info?.isFile()) files.push({ path, size: info.size, mtimeMs: info.mtimeMs });
       }
     }
+    return files;
+  }
+
+  /** Nombre d'images et poids total du cache, et sa taille limite. */
+  async function stats(): Promise<ImageCacheStats> {
+    const files = await listFiles();
+    return { files: files.length, bytes: files.reduce((sum, file) => sum + file.size, 0), maxBytes };
+  }
+
+  /** Supprime toutes les images du cache ; elles sont retéléchargées à la demande. Renvoie ce qui a été supprimé. */
+  async function clear(): Promise<Pick<ImageCacheStats, 'files' | 'bytes'>> {
+    const files = await listFiles();
+    await Promise.all(files.map((file) => rm(file.path, { force: true })));
+    return { files: files.length, bytes: files.reduce((sum, file) => sum + file.size, 0) };
+  }
+
+  /** Supprime les images les moins récemment utilisées jusqu'à passer sous `maxBytes`. */
+  async function prune(): Promise<void> {
+    const files = await listFiles();
     let total = files.reduce((sum, file) => sum + file.size, 0);
     for (const file of files.sort((a, b) => a.mtimeMs - b.mtimeMs)) {
       if (total <= maxBytes) break;
@@ -90,7 +111,7 @@ export function createImageCache({
     if (pruning || now - lastPrune < pruneIntervalMs) return;
     lastPrune = now;
     pruning = prune()
-      .catch((error: unknown) => console.error("Nettoyage du cache d'images", error))
+      .catch((error: unknown) => logError("Nettoyage du cache d'images", error))
       .finally(() => {
         pruning = null;
       });
@@ -154,6 +175,8 @@ export function createImageCache({
       return pending;
     },
     prune,
+    stats,
+    clear,
   };
 }
 

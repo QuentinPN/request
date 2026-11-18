@@ -235,8 +235,7 @@ describe('distribution des notifications', () => {
   });
 
   it('l’échec d’un canal n’empêche ni les autres ni l’action du membre ; journalisé sans adresse', async () => {
-    const { as, sent, mail, pushReplies } = await setup({ smtp: {} });
-    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { app, as, sent, mail, pushReplies } = await setup({ smtp: {} });
     mail.fail = 'ECONNECTION';
     const member = await as('member');
     const manager = await as('manager');
@@ -250,11 +249,13 @@ describe('distribution des notifications', () => {
     expect(mails).toEqual([]);
     // L'appareil 1 reçoit malgré le refus de l'appareil 2 et l'échec du courriel ; aucune nouvelle tentative.
     expect(pushes.map((p) => p.endpoint)).toEqual([device(1).endpoint]);
-    expect(log.mock.calls).toEqual([
-      ['Notification courriel non envoyée', 'ECONNECTION'],
-      ['Notification push non envoyée', 'HTTP 500'],
+    // Journaux (et donc la sortie standard du serveur) : les plus récentes d'abord.
+    const { entries } = app.logs.list({ level: 'error', q: '', limit: 10 });
+    expect(entries.map((e) => [e.message, e.context])).toEqual([
+      ['Notification push non envoyée', '{"detail":"HTTP 500"}'],
+      ['Notification courriel non envoyée', '{"detail":"ECONNECTION"}'],
     ]);
-    expect(JSON.stringify(log.mock.calls)).not.toContain('exemple.fr');
+    expect(JSON.stringify(entries)).not.toContain('exemple.fr');
   });
 
   it('push : un appareil disparu (404, 410) est désabonné, les autres reçoivent', async () => {

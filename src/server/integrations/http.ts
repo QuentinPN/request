@@ -69,8 +69,10 @@ export interface HttpRequest<T> extends RequestOptions {
   schema: z.ZodType<T>;
 }
 
-const SECRET_PARAM =
-  /^(api[_-]?key|x-api-key|key|token|access[_-]?token|x-emby-token|x-plex-token|secret|client[_-]?secret|password|passwd|pwd|pw|auth|authorization)$/i;
+/** Noms (paramètres d'adresse, en-têtes, champs) dont la valeur est secrète : expression de l'alternative, sans ancres. */
+export const SECRET_NAMES =
+  'api[_-]?key|x-api-key|key|token|access[_-]?token|x-emby-token|x-plex-token|x-webhook-token|x-setup-token|secret|client[_-]?secret|password|passwd|pwd|pw|auth|authorization|cookie|set-cookie|request_session';
+const SECRET_PARAM = new RegExp(`^(${SECRET_NAMES})$`, 'i');
 const MAX_RETRY_AFTER_MS = 2000;
 
 /** Adresse sans identifiants ni valeur de paramètre sensible (`api_key`, `token`, `password`…), sûre pour un message ou un log. */

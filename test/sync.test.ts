@@ -12,6 +12,7 @@ import {
   seasons4k,
   sessions,
 } from '../src/server/db/schema.ts';
+import { MINUTE_MS } from '../src/server/lib/time.ts';
 import { startJob } from '../src/server/services/jobs.ts';
 import { createSession, SESSION_TTL_MS, validateSession } from '../src/server/services/sessions.ts';
 import { setSetting } from '../src/server/services/settings.ts';
@@ -527,6 +528,39 @@ describe('planification', () => {
     await vi.advanceTimersByTimeAsync(LIGHT_SCAN_INTERVAL_MS);
     await vi.waitFor(() => expect(db.select().from(jobRuns).all()).toHaveLength(3));
     expect(FULL_SCAN_INTERVAL_MS).toBe(DAY_MS);
+  });
+
+  it('fréquence changée sans redémarrage : le balayage léger suit le nouvel intervalle, sans minuteur de plus', async () => {
+    const { db, sync } = await setup();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    let lightMs = LIGHT_SCAN_INTERVAL_MS;
+    const scheduler = startScheduler(sync, db, { intervals: () => ({ lightMs, fullMs: FULL_SCAN_INTERVAL_MS }) });
+    cleanups.push(() => scheduler.stop());
+    const timers = vi.getTimerCount();
+
+    lightMs = 5 * MINUTE_MS;
+    scheduler.reschedule();
+    expect(vi.getTimerCount()).toBe(timers);
+    expect(scheduler.nextLightAt()).toBeLessThanOrEqual(Date.now() + 5 * MINUTE_MS);
+    await vi.advanceTimersByTimeAsync(5 * MINUTE_MS);
+    await vi.waitFor(() => expect(db.select().from(jobRuns).all().length).toBeGreaterThanOrEqual(1));
+    expect(db.select().from(jobRuns).all()[0]?.job).toBe(SCAN_JOBS.light);
+  });
+
+  it('prochain balayage complet : un tour après l’échéance (dernier succès + fréquence), jamais avant', async () => {
+    const { db, sync } = await setup();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const fullMs = 6 * 3600 * 1000;
+    const scheduler = startScheduler(sync, db, { intervals: () => ({ lightMs: LIGHT_SCAN_INTERVAL_MS, fullMs }) });
+    cleanups.push(() => scheduler.stop());
+    const startedAt = new Date(Math.floor(Date.now() / 1000) * 1000 - 3600 * 1000);
+    db.insert(jobRuns).values({ job: SCAN_JOBS.full, status: 'success', startedAt, finishedAt: startedAt }).run();
+
+    const due = startedAt.getTime() + fullMs;
+    const next = scheduler.nextFullAt();
+    expect(next).toBeGreaterThanOrEqual(due);
+    expect(next - due).toBeLessThan(LIGHT_SCAN_INTERVAL_MS);
+    expect((next - scheduler.nextLightAt()) % LIGHT_SCAN_INTERVAL_MS).toBe(0);
   });
 
   it('arrêté à la fermeture de l’appli ; désactivé par défaut (tests)', async () => {

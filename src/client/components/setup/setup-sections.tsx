@@ -11,10 +11,13 @@ import { AboutSection } from './about-section';
 import { ApiKeysSection } from './api-keys-section';
 import { ArrServersSection } from './arr-servers-section';
 import { BlocklistSection } from './blocklist-section';
+import { CacheSection } from './cache-section';
 import { type SectionId, sectionOrder } from './config';
 import { DiscordSection } from './discord-section';
 import { GeneralSection } from './general-section';
 import { IntegrationSection } from './integration-section';
+import { JobsSection } from './jobs-section';
+import { LogsSection } from './logs-section';
 import { MembersSection } from './members-section';
 import { arrServersQuery, settingQuery } from './queries';
 import { RulesSection } from './rules-section';
@@ -75,6 +78,9 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <TraktSection section="trakt" open={open === 'trakt'} onToggle={() => toggle('trakt')} />
           <ApiKeysSection section="api" open={open === 'api'} onToggle={() => toggle('api')} />
           <BlocklistSection section="blocklist" open={open === 'blocklist'} onToggle={() => toggle('blocklist')} />
+          <JobsSection section="jobs" open={open === 'jobs'} onToggle={() => toggle('jobs')} />
+          <CacheSection section="cache" open={open === 'cache'} onToggle={() => toggle('cache')} />
+          <LogsSection section="logs" open={open === 'logs'} onToggle={() => toggle('logs')} />
           <GeneralSection section="general" open={open === 'general'} onToggle={() => toggle('general')} />
           <AboutSection section="about" open={open === 'about'} onToggle={() => toggle('about')} />
         </>

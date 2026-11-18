@@ -1,8 +1,11 @@
 import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type Database from 'better-sqlite3';
+import { JOB } from '../../shared/jobs.ts';
+import type { Db } from '../db/index.ts';
 import { startPeriodic } from '../lib/periodic.ts';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '../lib/time.ts';
+import { type JobLog, launchJob } from './jobs.ts';
 
 /** Copies conservées par défaut (`BACKUP_KEEP`) ; 0 désactive la sauvegarde quotidienne. */
 export const DEFAULT_BACKUP_KEEP = 7;
@@ -48,20 +51,53 @@ export async function backupDatabase(
   return target;
 }
 
-/** Sauvegardes quotidiennes dans le processus du serveur (`schedule` seulement) ; `keep` = 0 : rien n'est planifié. */
-export function startBackups(sqlite: Database.Database, dataDir: string, keep: number, now: () => number = Date.now) {
+/**
+ * Sauvegarde quotidienne de la base, tâche `backup` de `job_runs` (verrou, dernier résultat). `keep` = 0 : désactivée.
+ * `launch` fait une copie tout de suite (« Lancer maintenant »), `null` si une copie est déjà en cours ; `start`
+ * planifie le contrôle horaire dans le processus du serveur (`schedule` seulement).
+ */
+export function createBackups(
+  db: Db,
+  dataDir: string,
+  keep: number,
+  { now = Date.now, log }: { now?: () => number; log?: JobLog } = {},
+) {
   const dir = backupsDir(dataDir);
-  const due = () => {
+  /** Date de la copie la plus récente, `null` s'il n'y en a pas (ou pas encore de dossier). */
+  const newestAt = (): number | null => {
     try {
       const newest = backupFiles(dir).sort().pop();
-      return !newest || now() - statSync(join(dir, newest)).mtimeMs >= DAY_MS;
+      return newest ? statSync(join(dir, newest)).mtimeMs : null;
     } catch {
-      return true; // dossier pas encore créé
+      return null;
     }
   };
-  if (keep === 0) return { stop: async () => {} };
-  return startPeriodic('Sauvegarde planifiée', () => (due() ? backupDatabase(sqlite, dir, { keep, now }) : undefined), {
-    firstDelayMs: FIRST_CHECK_DELAY_MS,
-    intervalMs: CHECK_INTERVAL_MS,
-  });
+  /** Jamais avec `keep` = 0 : la purge des anciennes copies les supprimerait toutes. */
+  const launch = () =>
+    keep > 0
+      ? launchJob(
+          db,
+          JOB.backup,
+          async () => `Copie ${basename(await backupDatabase(db.$client, dir, { keep, now }))} écrite`,
+          log,
+        )
+      : null;
+  const start = () => {
+    const periodic = startPeriodic(
+      'Sauvegarde planifiée',
+      () => {
+        const newest = newestAt();
+        return newest === null || now() - newest >= DAY_MS ? (launch() ?? undefined) : undefined;
+      },
+      { firstDelayMs: FIRST_CHECK_DELAY_MS, intervalMs: CHECK_INTERVAL_MS },
+    );
+    return {
+      stop: periodic.stop,
+      /** Prochaine copie : un jour après la dernière, au premier contrôle horaire suivant. */
+      nextRunAt: () => Math.max(periodic.nextRunAt(), (newestAt() ?? 0) + DAY_MS),
+    };
+  };
+  return { enabled: keep > 0, launch, start };
 }
+
+export type Backups = ReturnType<typeof createBackups>;

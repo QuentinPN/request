@@ -207,16 +207,16 @@ describe('messages Discord des évènements', () => {
   });
 
   it('échec de Discord : l’action du membre réussit, l’erreur est journalisée sans l’adresse', async () => {
-    const { as, sent } = await setup({ reply: 500 });
-    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { app, as, sent } = await setup({ reply: 500 });
     const response = await (await as('member')).post('/api/requests', { type: 'movie', tmdbId: 603 });
     expect(response.statusCode).toBe(201);
 
     // Un seul appel : pas de nouvelle tentative.
     expect(await sent()).toHaveLength(1);
-    expect(log).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(log.mock.calls)).not.toContain(TOKEN);
-    expect(JSON.stringify(log.mock.calls)).not.toContain('discord.com');
+    const { entries } = app.logs.list({ level: 'error', q: '', limit: 10 });
+    expect(entries).toHaveLength(1);
+    expect(JSON.stringify(entries)).not.toContain(TOKEN);
+    expect(JSON.stringify(entries)).not.toContain('discord.com');
   });
 });
 
