@@ -374,7 +374,7 @@ describe('connexion Plex par code PIN', () => {
     const { app, plexTv } = await plexApp();
     const { cookie, authUrl } = await startPin(app);
     expect(authUrl).toContain('code=CODE-PIN');
-    expect(cookie).not.toContain('77');
+    expect(cookie).not.toContain('CODE-PIN'); // pas l'id « 77 » : une valeur aléatoire peut le contenir
 
     const pending = await check(app, cookie);
     expect(pending.json()).toEqual({ status: 'pending' });

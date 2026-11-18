@@ -56,6 +56,21 @@ Priorités : **P0** bloquant, **P1** élevée, **P2** normale, **P3** confort. S
 - [x] **6.2** (P2) Import facultatif des demandes de Seerr (Réglages › Importer depuis Seerr : aperçu, puis import idempotent)
 - [ ] **6.3** (P0) Déploiement sur le mini-PC à côté de Seerr, essai avec de vrais membres, puis arrêt de Seerr (avec l'accord du propriétaire)
 
+## Phase 7 — Fonctions après le MVP
+
+Fonctions de « Plus tard » (PRODUCT.md), livrées en une PR par lot vers `dev`. Choix du propriétaire du 2026-11-17 : pas de maquettes, les nouvelles pages dérivent de la direction validée (captures 1440 et 390 px à la place) ; un seul serveur multimédia au choix ; 4K pris en charge.
+
+- [x] **7.1** (P0) Socle : migration `0010_phase7.sql` (serveurs Radarr/Sonarr, saisons 4K, signalements, liste de souhaits, abonnements push, blocages, clés d'API), types Zod et droits partagés, réglages → tests de migration sur base existante, contraintes et index (PR #38)
+- [x] **7.2** (P1) Plusieurs Radarr/Sonarr et demandes 4K : liste de serveurs dans l'assistant et les Réglages, serveur choisi à l'approbation, statut 4K à part, webhooks par serveur → faux serveurs, e2e ; captures `docs/captures/7.2` (PR #43)
+- [x] **7.3** (P1) Serveur multimédia au choix, Emby, Jellyfin ou Plex (un seul actif) : connexion, membres, disponibilité, « Ajoutés récemment », lien, code PIN plex.tv → faux serveurs de chaque type ; captures `docs/captures/7.3` (PR #46)
+- [x] **7.4** (P1) Signalements de problèmes : depuis la fiche d'un titre disponible, page « Signalements », fil de commentaires, résolution et réouverture, notifications → tests de droits et de notifications ; captures `docs/captures/7.4` (PR #42)
+- [x] **7.5** (P2) Liste de souhaits « Ma liste », import Trakt (Client ID dans les Réglages) et Letterboxd (`watchlist.csv`) : aperçu puis import idempotent → faux Trakt et TMDB ; captures `docs/captures/7.5` (PR #41)
+- [x] **7.6** (P2) Notifications par courriel (SMTP) et push web, application installable (PWA) : un seul service de distribution après validation, aucun cache d'API → faux SMTP et push, e2e ; captures `docs/captures/7.6` (PR #44)
+- [x] **7.7** (P2) Page « Statistiques » (gestionnaires et propriétaire, `canViewStats`) : totaux, demandes par mois, membres et titres les plus actifs, délais moyens, calculés en SQL par un seul endpoint → tests de calcul ; captures `docs/captures/7.7` (PR #39)
+- [x] **7.8** (P3) Clé d'API publique : clés nommées montrées une seule fois et hachées, `X-Api-Key` qui agit comme le propriétaire créateur, limite des échecs, [docs/API.md](docs/API.md) → tests d'authentification ; captures `docs/captures/7.8` (PR #40)
+- [x] **7.9** (P2) Ajustements des demandes : demander pour un membre, hors quota, blocage de titres et de mots-clés TMDB, masquage dans Découvrir des titres disponibles ou déjà demandés → tests de droits et de quotas ; captures `docs/captures/7.9` (PR #45)
+- [x] **7.10** (P2) Navigation allégée : menu « Plus » sur la pilule, cinq onglets au plus sur mobile, cloche dans l'en-tête → e2e axe ; captures `docs/captures/7.10` (PR #47)
+
 ## Après le MVP
 
-Voir « Plus tard » dans PRODUCT.md, à prioriser après quelques semaines d'usage réel.
+La phase 7 a livré toutes les fonctions de « Plus tard » (PRODUCT.md, « Fonctions après le MVP »). Il ne reste que ce qui dépend du propriétaire et des instances réelles : voir CURRENT_STATUS.md.

@@ -46,9 +46,9 @@ docker run --rm -v request_data:/data alpine sh -c \
 
 ### Assistant du premier lancement
 
-Ouvrez `https://<DOMAIN>`. Tant qu'aucun propriétaire n'existe, l'assistant guide la configuration : Emby (adresse et clé), Radarr, Sonarr, TMDB, règles de demande, puis la connexion d'un administrateur Emby, qui devient propriétaire.
+Ouvrez `https://<DOMAIN>`. Tant qu'aucun propriétaire n'existe, l'assistant guide la configuration : serveur multimédia (Emby, Jellyfin ou Plex : adresse et clé ou jeton), Radarr, Sonarr, TMDB, règles de demande, puis la connexion d'un administrateur du serveur multimédia (propriétaire du serveur pour Plex), qui devient propriétaire.
 
-Radarr, Sonarr et Emby tournent sur l'hôte : dans l'assistant, utilisez `http://host.docker.internal:<port>` (déclaré dans `compose.yml`). S'ils sont dans un autre réseau Docker, rattachez-y le service `request` (ou l'inverse) et utilisez le nom de leur conteneur.
+Radarr, Sonarr et le serveur multimédia tournent sur l'hôte : dans l'assistant, utilisez `http://host.docker.internal:<port>` (déclaré dans `compose.yml`). S'ils sont dans un autre réseau Docker, rattachez-y le service `request` (ou l'inverse) et utilisez le nom de leur conteneur.
 
 ### Webhooks Radarr et Sonarr
 

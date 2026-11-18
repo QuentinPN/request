@@ -42,7 +42,8 @@ const insertServer = (db: Db, type: string, is4k: number, isDefault: number, tag
     tags,
   );
 
-describe('migration 0010 (phase 7) sur une base existante', () => {
+// Ces tests rejouent toutes les migrations : plus de 5 s sur le runner de la CI, d'où un délai explicite de 20 s.
+describe('migration 0010 (phase 7) sur une base existante', { timeout: 20_000 }, () => {
   const radarr = { url: 'http://radarr:7878', qualityProfileId: 4, rootFolderPath: '/films' };
   const sonarr = { url: 'http://sonarr:8989', qualityProfileId: 2, rootFolderPath: '/series', languageProfileId: 1 };
 
