@@ -85,5 +85,5 @@ Tailles minimales : mot-symbole 16 px de haut (`h-[1.3em]` sur un texte de 13 px
 - Contraste WCAG AA, focus visible, navigation au clavier complète, libellés pour lecteurs d'écran.
 - États de chargement (squelettes de même taille), vide et erreur (« Réessayer ») sur chaque liste.
 - `prefers-reduced-motion` et `prefers-reduced-transparency` respectés (déjà dans les tokens).
-- Vérifier à 1440 px et 390 px. Captures avant/après pour tout changement visuel.
+- Vérifier visuellement à 1440 px et 390 px tout changement d'interface. Captures enregistrées dans `docs/captures/` seulement pour une nouvelle page, une refonte ou sur demande.
 - Pas de dégradés violets génériques, pas d'emoji dans l'interface, pas de faux indicateurs. Auditer chaque écran avec le skill `unslop`.

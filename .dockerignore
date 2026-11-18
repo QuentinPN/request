@@ -8,8 +8,6 @@ data
 .env
 .env.*
 test-results
-playwright-report
 *.log
-e2e
 docs
 *.md
