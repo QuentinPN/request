@@ -3,6 +3,7 @@ import { requestStatuses } from '@shared/status.ts';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
+import { accountBack } from '@/components/back-button';
 import { Page } from '@/components/page';
 import { QueryState } from '@/components/query-state';
 import { Avatar } from '@/components/shell/avatar';
@@ -59,13 +60,13 @@ export function StatistiquesPage() {
   const query = useQuery({ ...statsQuery(), enabled: allowed });
   if (!allowed)
     return (
-      <Page title="Statistiques">
+      <Page title="Statistiques" back={accountBack}>
         <EmptyState title="Accès réservé" description="Les statistiques sont réservées aux gestionnaires." />
       </Page>
     );
 
   return (
-    <Page title="Statistiques">
+    <Page title="Statistiques" back={accountBack}>
       <QueryState query={query} skeleton={skeleton} errorMessage="Les statistiques n’ont pas pu être chargées.">
         {(stats) => {
           const approval = delaySummary(stats.delays.approval);

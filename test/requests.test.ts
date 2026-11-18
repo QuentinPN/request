@@ -663,6 +663,21 @@ describe('quotas', () => {
     expect((await client.get('/api/requests/quota')).json().exempt).toBe(exempt);
   });
 
+  it('« Sans quota » : un membre hors quotas, sans changer de rôle ; le retirer rétablit le quota', async () => {
+    const { as, db } = await setup();
+    const member = await as('member');
+    const limits = { movies: { limit: 0, days: 7 }, seasons: { limit: 0, days: 7 } };
+    setQuotaOverride(db, member.user.id, { ...limits, unlimited: true });
+
+    expect((await member.get('/api/requests/quota')).json().exempt).toBe(true);
+    expect((await member.post('/api/requests', { type: 'movie', tmdbId: 603 })).statusCode).toBe(201);
+    expect((await member.post('/api/requests', { type: 'tv', tmdbId: 1396, seasons: [1] })).statusCode).toBe(201);
+
+    setQuotaOverride(db, member.user.id, limits);
+    expect((await member.get('/api/requests/quota')).json().exempt).toBe(false);
+    expect((await member.post('/api/requests', { type: 'tv', tmdbId: 1396, seasons: [2] })).statusCode).toBe(409);
+  });
+
   it('refusées et annulées ne comptent pas', async () => {
     const { as, db } = await setup();
     const member = await as('member');
@@ -962,6 +977,32 @@ describe('listes, fiche d’une demande et compteurs', () => {
     expect((await owner.get('/api/requests?status=declined')).json().results).toMatchObject([{ tmdbId: 5000 }]);
     expect((await owner.get('/api/requests?mine=true')).json()).toMatchObject({ page: 1, totalPages: 0, results: [] });
     expect((await owner.get('/api/requests?status=perdu')).statusCode).toBe(400);
+  });
+
+  it('?userId= : un gestionnaire lit les demandes d’un membre, un membre ne lit jamais celles d’un autre', async () => {
+    const { as, db } = await setup();
+    const ann = await as('member', 'ann');
+    const bob = await as('member', 'bob');
+    const manager = await as('manager', 'gestionnaire');
+    seedRequest(db, { userId: ann.user.id, tmdbId: 1 });
+    seedRequest(db, { userId: ann.user.id, tmdbId: 2 });
+    seedRequest(db, { userId: bob.user.id, tmdbId: 3 });
+    const tmdbIds = (page: RequestPage) => page.results.map((r) => r.tmdbId).sort();
+    const read = async (client: typeof manager, query: string) =>
+      (await client.get(`/api/requests${query}`)).json<RequestPage>();
+
+    const forAnn = await read(manager, `?userId=${ann.user.id}`);
+    expect(tmdbIds(forAnn)).toEqual([1, 2]);
+    expect(forAnn.totals.pending).toBe(2);
+    expect(tmdbIds(await read(manager, ''))).toEqual([1, 2, 3]);
+    expect(tmdbIds(await read(manager, '?userId=inconnu'))).toEqual([]);
+    // `mine` l'emporte : le gestionnaire n'a aucune demande à lui.
+    expect(tmdbIds(await read(manager, `?mine=true&userId=${ann.user.id}`))).toEqual([]);
+
+    // Un membre qui passe l'identifiant d'un autre ne reçoit que les siennes.
+    expect(tmdbIds(await read(bob, `?userId=${ann.user.id}`))).toEqual([3]);
+    expect(tmdbIds(await read(bob, `?mine=true&userId=${ann.user.id}`))).toEqual([3]);
+    expect((await manager.get('/api/requests?userId=')).statusCode).toBe(400);
   });
 
   it('filtres : plusieurs statuts séparés par des virgules, un titre (type + tmdbId) ; totaux par statut du périmètre', async () => {

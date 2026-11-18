@@ -17,7 +17,14 @@ import {
   UsersError,
   upsertFromEmby,
 } from '../src/server/services/users.ts';
-import { capabilitiesOf, quotaOverrideSchema, roleLabels, roles } from '../src/shared/roles.ts';
+import {
+  assignableRoles,
+  capabilitiesOf,
+  isQuotaExempt,
+  quotaOverrideSchema,
+  roleLabels,
+  roles,
+} from '../src/shared/roles.ts';
 
 const emby = (id: string, isEmbyAdmin = false) => ({ id, name: `Nom ${id}`, avatar: null, isEmbyAdmin });
 const hour = 3600_000;
@@ -153,6 +160,19 @@ describe('membres', () => {
     });
     expect(quotaOverrideSchema.safeParse({ movies: { limit: -1, days: 7 } }).success).toBe(false);
     expect(quotaOverrideSchema.safeParse({ seasons: { limit: 2, days: 0 } }).success).toBe(false);
+  });
+
+  it('« Sans quota » : `unlimited` ne vaut que `true`, et s’ajoute à l’exemption du rôle', () => {
+    expect(quotaOverrideSchema.parse({ unlimited: true })).toEqual({ movies: null, seasons: null, unlimited: true });
+    expect(quotaOverrideSchema.safeParse({ unlimited: false }).success).toBe(false);
+    expect(isQuotaExempt(capabilitiesOf('member'), null)).toBe(false);
+    expect(isQuotaExempt(capabilitiesOf('member'), { movies: null, seasons: null })).toBe(false);
+    expect(isQuotaExempt(capabilitiesOf('member'), { movies: null, seasons: null, unlimited: true })).toBe(true);
+    expect(isQuotaExempt(capabilitiesOf('manager'), null)).toBe(true);
+  });
+
+  it('le rôle propriétaire ne s’attribue pas', () => {
+    expect(assignableRoles).toEqual(['member', 'auto_approve', 'manager']);
   });
 });
 

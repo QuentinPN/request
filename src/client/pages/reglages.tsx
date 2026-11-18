@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { accountBack } from '@/components/back-button';
 import { Page } from '@/components/page';
 import { BlocklistSection } from '@/components/setup/blocklist-section';
 import { SetupSections } from '@/components/setup/setup-sections';
@@ -12,7 +13,7 @@ export function ReglagesPage() {
   const isOwner = useViewer()?.capabilities.isOwner === true;
   const [open, setOpen] = useState(true);
   return (
-    <Page title="Réglages">
+    <Page title="Réglages" back={accountBack}>
       <div className="max-w-[760px]">
         {isOwner ? (
           <SetupSections wizard={false} />

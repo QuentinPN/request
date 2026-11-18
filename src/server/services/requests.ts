@@ -18,7 +18,7 @@ import {
 } from 'drizzle-orm';
 import type { z } from 'zod';
 import { arrLabel } from '../../shared/arr-servers.ts';
-import { keyOf, type MediaDetails, type MediaType, type Season } from '../../shared/media.ts';
+import { keyOf, type MediaDetails, type MediaType } from '../../shared/media.ts';
 import {
   type ApproveRequestInput,
   type BatchResult,
@@ -34,11 +34,14 @@ import {
   type RequestQuota,
   type RequestView,
   type requestListQuerySchema,
+  statusIn,
+  uncoveredSeasons,
 } from '../../shared/requests.ts';
-import { capabilitiesOf, type QuotaRule } from '../../shared/roles.ts';
+import { capabilitiesOf, isQuotaExempt, type QuotaRule } from '../../shared/roles.ts';
 import { DEFAULT_SERIES_TYPE, settingSchemas } from '../../shared/settings.ts';
 import {
   activeRequestStatuses,
+  lockedRequestStatuses,
   preSendRequestStatuses,
   type RequestEventType,
   type RequestStatus,
@@ -262,10 +265,6 @@ const ownActive = (
     )
     .get();
 
-/** Statut d'un titre ou d'une saison dans la qualité demandée (4K : serveurs 4K seuls). */
-const statusIn = (item: Pick<MediaDetails | Season, 'status' | 'fourK'>, is4k: boolean) =>
-  is4k ? item.fourK?.status : item.status;
-
 /**
  * Saisons à demander : celles choisies (`'all'` : toutes les saisons régulières déjà diffusées), moins celles déjà
  * disponibles dans cette qualité. Une saison inconnue de TMDB, les spéciaux ou une saison pas encore diffusée → 400 ;
@@ -423,9 +422,9 @@ export function createRequests(
     return { ...rule, used, remaining: Math.max(0, rule.limit - used) };
   }
 
-  /** Propriétaire et gestionnaires sont hors quotas. */
+  /** Propriétaire et gestionnaires sont hors quotas, comme un membre « Sans quota » (`quotaOverride.unlimited`). */
   function assertQuota(tx: Pick<Db, 'select'>, { user, capabilities }: Owner, kind: QuotaKind, wanted: number) {
-    if (capabilities.quotaExempt) return;
+    if (isQuotaExempt(capabilities, user.quotaOverride)) return;
     const rule = quotaRules(user)[kind];
     const { remaining } = usage(tx, user, kind, rule);
     if (wanted > remaining) {
@@ -454,7 +453,7 @@ export function createRequests(
     return {
       movies: usage(db, user, 'movies', rules.movies),
       seasons: usage(db, user, 'seasons', rules.seasons),
-      exempt: capabilities.quotaExempt,
+      exempt: isQuotaExempt(capabilities, user.quotaOverride),
     };
   }
 
@@ -815,7 +814,7 @@ export function createRequests(
           .where(activeOn(mediaId, is4k))
           .all();
         const covered = new Set(active.map((s) => s.n));
-        const missing = wanted.filter((n) => !covered.has(n));
+        const missing = uncoveredSeasons(wanted, covered);
         if (missing.length === 0) {
           // Double clic : sa propre demande contient déjà toutes ces saisons.
           const mine = new Set(active.filter((s) => s.requestId === own?.id).map((s) => s.n));
@@ -823,7 +822,8 @@ export function createRequests(
           throw new HttpError(409, 'Ces saisons sont déjà demandées');
         }
         // Une seule demande en cours par membre et par titre : tant qu'elle attend, les nouvelles saisons s'y ajoutent.
-        if (own && own.status !== 'pending') throw new HttpError(409, 'Une demande est déjà en cours pour ce titre');
+        if (own && lockedRequestStatuses.includes(own.status))
+          throw new HttpError(409, 'Une demande est déjà en cours pour ce titre');
         if (!own) {
           checkQuota('seasons', missing.length);
           return insert(missing);
@@ -863,8 +863,9 @@ export function createRequests(
   /** Une page, et le nombre de demandes par statut du périmètre (le total de la page s'en déduit). */
   async function list(viewer: SessionViewer, query: ListQuery): Promise<RequestPage> {
     const onlyMine = query.mine || !viewer.capabilities.canManageRequests;
+    const userId = onlyMine ? viewer.user.id : query.userId;
     const scope: ListScope = {
-      ...(onlyMine && { userId: viewer.user.id }),
+      ...(userId !== undefined && { userId }),
       ...(query.type && { title: { type: query.type, tmdbId: query.tmdbId } }),
     };
     const totals = Object.fromEntries(requestStatuses.map((s) => [s, 0])) as RequestPage['totals'];

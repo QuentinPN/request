@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCanGoBack, useNavigate, useParams, useRouter } from '@tanstack/react-router';
+import { useParams } from '@tanstack/react-router';
 import { cn } from 'cn';
-import { ChevronLeft, Film, Play, User, X } from 'lucide-react';
+import { Film, Play, User, X } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
+import { BackButton } from '@/components/back-button';
 import { ReportIssueButton } from '@/components/issues/report-sheet';
 import { BlockedPill, BlockTitleButton } from '@/components/media/block-button';
 import { MediaRail, Rail, SectionHeading } from '@/components/media/rail';
@@ -34,22 +35,6 @@ import {
   type WatchProvider,
 } from '../../shared/media.ts';
 import { IntrouvablePage } from './introuvable.tsx';
-
-function BackButton() {
-  const router = useRouter();
-  const canGoBack = useCanGoBack();
-  const navigate = useNavigate();
-  return (
-    <button
-      type="button"
-      aria-label="Retour"
-      className={roundButton}
-      onClick={() => (canGoBack ? router.history.back() : void navigate({ to: '/' }))}
-    >
-      <ChevronLeft aria-hidden className="size-5" />
-    </button>
-  );
-}
 
 const posterBox = 'hidden w-[200px] shrink-0 md:block lg:w-[260px]';
 

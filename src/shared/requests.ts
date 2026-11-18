@@ -3,7 +3,13 @@ import type { ArrServerSummary } from './arr-servers.ts';
 import { type MediaSummary, type MediaType, mediaTypeSchema, type Paged, type Season } from './media.ts';
 import { profileId, rootFolderPath, type SeriesType, seriesTypes } from './settings.ts';
 import type { ArrTestResult } from './setup.ts';
-import { type RequestEventType, type RequestStatus, requestStatusSchema } from './status.ts';
+import {
+  isRequestableStatus,
+  type MediaStatus,
+  type RequestEventType,
+  type RequestStatus,
+  requestStatusSchema,
+} from './status.ts';
 
 // --- Adresses de l'API ---
 
@@ -27,6 +33,43 @@ export const isoDay = (at: number | Date = Date.now()) => new Date(at).toISOStri
 /** Saison diffusée à `day` (`isoDay`) : au moins un épisode et une date de diffusion passée. */
 export const isAiredSeason = (season: Pick<Season, 'episodeCount' | 'airDate'>, day: string) =>
   season.episodeCount > 0 && !!season.airDate && season.airDate <= day;
+
+/** Statut d'un titre ou d'une saison dans la qualité demandée (normale, ou 4K : serveurs 4K seuls). */
+export const statusIn = (item: { status?: MediaStatus; fourK?: { status?: MediaStatus } }, is4k: boolean) =>
+  is4k ? item.fourK?.status : item.status;
+
+/**
+ * Saisons qu'un membre peut encore demander : régulières (pas les spéciaux), diffusées, ni disponibles, ni en
+ * téléchargement, ni déjà demandées (le statut d'une saison fusionne bibliothèque et demandes), dans cette qualité.
+ */
+export const requestableSeasons = (seasons: readonly Season[], day: string, is4k = false) =>
+  seasons.filter((s) => s.seasonNumber > 0 && isAiredSeason(s, day) && isRequestableStatus(statusIn(s, is4k)));
+
+/** Saisons voulues que ne couvre encore aucune demande en cours (numéros de saison des demandes actives). */
+export const uncoveredSeasons = (wanted: readonly number[], covered: ReadonlySet<number>) =>
+  wanted.filter((n) => !covered.has(n));
+
+/**
+ * « Demander » se propose pour un titre : un film, ou un titre dont on ne connaît pas les saisons (affiche, bande), tant
+ * que son statut le permet ; une série dont on connaît les saisons (fiche) aussi quand une saison reste demandable, même
+ * si une autre est déjà demandée (le statut du titre dit alors « Demandé »). Un titre disponible ne se demande jamais.
+ */
+export function isRequestable(
+  media: {
+    type: MediaType;
+    status?: MediaStatus;
+    fourK?: { status?: MediaStatus };
+    seasons?: readonly Season[];
+  },
+  day: string,
+  is4k = false,
+) {
+  const status = statusIn(media, is4k);
+  if (media.type === 'movie' || !media.seasons) return isRequestableStatus(status);
+  return (
+    status !== 'available' && (isRequestableStatus(status) || requestableSeasons(media.seasons, day, is4k).length > 0)
+  );
+}
 
 // --- Entrées (validées côté serveur, réutilisables par les formulaires) ---
 
@@ -98,8 +141,8 @@ const statusList = z
   .transform((value) => [...new Set(value.split(','))])
   .pipe(z.array(requestStatusSchema).min(1));
 /**
- * `?status=&type=&tmdbId=&mine=&page=` ; un membre sans droit d'approbation ne voit que ses demandes, quel que soit
- * `mine`. `tmdbId` ne va pas sans `type` (un même id TMDB désigne un film et une série différents).
+ * `?status=&type=&tmdbId=&mine=&userId=&page=` ; un membre sans droit d'approbation ne voit que ses demandes, quels que
+ * soient `mine` et `userId` ; un gestionnaire lit celles d'un membre avec `userId` (`mine` l'emporte). `tmdbId` ne va pas sans `type` (un même id TMDB désigne un film et une série différents).
  */
 export const requestListQuerySchema = z
   .object({
@@ -107,6 +150,7 @@ export const requestListQuerySchema = z
     type: mediaTypeSchema.optional(),
     tmdbId: z.coerce.number().pipe(tmdbId).optional(),
     mine: z.stringbool().default(false),
+    userId: z.string().min(1).optional(),
     page: z.coerce.number().int().positive().default(1),
   })
   .refine((query) => query.tmdbId === undefined || query.type !== undefined, { path: ['type'] });
@@ -116,16 +160,19 @@ export interface RequestListFilter {
   type?: MediaType;
   tmdbId?: number;
   mine?: boolean;
+  /** Demandes d'un membre (gestionnaires seulement). */
+  userId?: string;
   page?: number;
 }
 
-/** Seule écriture de la requête de la liste : `?status=a,b&type=&tmdbId=&mine=&page=`. */
-export function requestListParams({ status, type, tmdbId, mine, page }: RequestListFilter): URLSearchParams {
+/** Seule écriture de la requête de la liste : `?status=a,b&type=&tmdbId=&mine=&userId=&page=`. */
+export function requestListParams({ status, type, tmdbId, mine, userId, page }: RequestListFilter): URLSearchParams {
   const params = new URLSearchParams();
   if (status?.length) params.set('status', status.join(','));
   if (type) params.set('type', type);
   if (tmdbId !== undefined) params.set('tmdbId', String(tmdbId));
   if (mine) params.set('mine', 'true');
+  if (userId) params.set('userId', userId);
   if (page !== undefined) params.set('page', String(page));
   return params;
 }

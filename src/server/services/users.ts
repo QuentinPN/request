@@ -108,7 +108,7 @@ export function listUsers(db: Db): User[] {
 }
 
 /** Change le rôle d'un membre ; le dernier propriétaire ne peut pas être rétrogradé. */
-export function setRole(db: Db, id: string, role: Role, now = new Date()): User {
+export function setRole(db: Pick<Db, 'transaction'>, id: string, role: Role, now = new Date()): User {
   return db.transaction(
     (tx) => {
       const user = tx.select().from(users).where(eq(users.id, id)).get();
@@ -123,7 +123,7 @@ export function setRole(db: Db, id: string, role: Role, now = new Date()): User 
 }
 
 /** Modifie un membre et le renvoie ; membre inconnu → `not_found`. */
-function updateUser(db: Db, id: string, values: Partial<typeof users.$inferInsert>): User {
+function updateUser(db: Pick<Db, 'update'>, id: string, values: Partial<typeof users.$inferInsert>): User {
   const user = db.update(users).set(values).where(eq(users.id, id)).returning().get();
   if (!user) throw new UsersError('not_found', 'Membre introuvable');
   return user;
@@ -133,7 +133,12 @@ function updateUser(db: Db, id: string, values: Partial<typeof users.$inferInser
  * Enregistre les quotas propres au membre, ou `null` pour revenir aux quotas par défaut. La valeur est déjà
  * validée par `memberUpdateSchema` (qui reprend `quotaOverrideSchema`) : un seul endroit valide.
  */
-export function setQuotaOverride(db: Db, id: string, quotaOverride: QuotaOverride | null, now = new Date()): User {
+export function setQuotaOverride(
+  db: Pick<Db, 'update'>,
+  id: string,
+  quotaOverride: QuotaOverride | null,
+  now = new Date(),
+): User {
   return updateUser(db, id, { quotaOverride, updatedAt: now });
 }
 

@@ -12,6 +12,18 @@ export const roleLabels: Record<Role, string> = {
   owner: 'Propriétaire',
 };
 
+/** Une phrase par rôle, pour le choisir (Réglages › Membres). */
+export const roleDescriptions: Record<Role, string> = {
+  member: 'Ses demandes attendent l’approbation d’un gestionnaire ; il est soumis aux quotas.',
+  auto_approve: 'Ses demandes sont approuvées et envoyées sans validation ; il reste soumis aux quotas.',
+  manager: 'Administre : approuve les demandes, gère signalements et blocages, hors quotas.',
+  owner: 'Gère aussi les réglages et les membres. Unique, il ne se modifie pas ici.',
+};
+
+/** Rôles que le propriétaire peut attribuer : le propriétaire, lui, n'est ni attribué ni modifié depuis l'appli. */
+export const assignableRoles = roles.filter((r): r is Exclude<Role, 'owner'> => r !== 'owner');
+export const assignableRoleSchema = z.enum(assignableRoles);
+
 export type Capabilities = {
   canRequest: boolean;
   /** Ses demandes sont approuvées sans validation. */
@@ -63,9 +75,19 @@ export function capabilitiesOf(role: Role): Capabilities {
 export const quotaRuleSchema = z.object({ limit: z.number().int().min(0), days: z.number().int().min(1) });
 export type QuotaRule = z.output<typeof quotaRuleSchema>;
 
-/** Quotas propres à un membre ; `null` = valeur par défaut des réglages. */
+/**
+ * Quotas propres à un membre ; `null` = valeur par défaut des réglages. `unlimited` : hors quotas, quel que soit son
+ * rôle (absent pour la plupart : le JSON stocké avant cette option reste valide).
+ */
 export const quotaOverrideSchema = z.object({
   movies: quotaRuleSchema.nullable().default(null),
   seasons: quotaRuleSchema.nullable().default(null),
+  unlimited: z.literal(true).optional(),
 });
 export type QuotaOverride = z.output<typeof quotaOverrideSchema>;
+
+/** Hors quotas : par son rôle (gestionnaire, propriétaire) ou par l'option « Sans quota » du membre. */
+export const isQuotaExempt = (
+  { quotaExempt }: Pick<Capabilities, 'quotaExempt'>,
+  override: Partial<QuotaOverride> | null,
+): boolean => quotaExempt || override?.unlimited === true;

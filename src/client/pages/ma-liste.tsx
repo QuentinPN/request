@@ -2,6 +2,7 @@ import { plural } from '@shared/text.ts';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Upload, X } from 'lucide-react';
 import { useState } from 'react';
+import { accountBack } from '@/components/back-button';
 import { PosterGrid } from '@/components/media/poster-grid';
 import { Notice } from '@/components/notice';
 import { Page } from '@/components/page';
@@ -39,7 +40,7 @@ export function MaListePage() {
   const total = query.data?.pages[0]?.total;
 
   return (
-    <Page title="Ma liste">
+    <Page title="Ma liste" back={accountBack}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground">
           {total === undefined ? '' : total === 0 ? 'Aucun titre pour l’instant' : plural(total, 'titre', 'titres')}

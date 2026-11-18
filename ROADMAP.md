@@ -71,6 +71,23 @@ Fonctions de « Plus tard » (PRODUCT.md), livrées en une PR par lot vers `dev`
 - [x] **7.9** (P2) Ajustements des demandes : demander pour un membre, hors quota, blocage de titres et de mots-clés TMDB, masquage dans Découvrir des titres disponibles ou déjà demandés → tests de droits et de quotas ; captures `docs/captures/7.9` (PR #45)
 - [x] **7.10** (P2) Navigation allégée : menu « Plus » sur la pilule, cinq onglets au plus sur mobile, cloche dans l'en-tête → e2e axe ; captures `docs/captures/7.10` (PR #47)
 
+## Phase 8 — Parité avec Seerr
+
+Audit du 2026-11-18 fait sur le code de Seerr (branche `develop` : `server/lib/permissions.ts`, `src/components/Settings/*`, agents de notification) et vérifié dans `src/`. Hors périmètre, par décision : connexion locale, plusieurs serveurs multimédias, réglages réseau (proxy, DNS), langue d'interface autre que le français. Ce qui dépasse déjà Seerr : cloche, sauvegarde, statistiques, désactivation des membres retirés du serveur.
+
+- [x] **8.0** (P0) Navigation et membres : bouton « Retour » partagé, onglet parent actif ; correction de la demande de nouvelles saisons d'une série déjà demandée ; édition du rôle et du quota d'un membre (approbation auto, gestionnaire, quota propre ou illimité) ; demandes d'un membre visibles par les gestionnaires (`/demandes?membre=`)
+- [ ] **8.1** (P1) Réglages › Général et À propos : titre de l'appli, version et vérification de mise à jour, compteurs (médias, demandes), fuseau, dossier de données → pas de migration
+- [ ] **8.2** (P1) Tâches, cache et journaux : liste des tâches (`job_runs`) avec dernière et prochaine exécution, « Lancer maintenant », fréquence modifiable ; taille et vidage du cache d'images ; journaux récents filtrables → migration seulement si la fréquence est stockée
+- [ ] **8.3** (P1) Envoi à Radarr/Sonarr : les tags du serveur sont stockés mais jamais envoyés (à corriger) ; option « taguer avec le nom du membre » ; « rechercher à l'ajout » réglable (aujourd'hui toujours activé) ; adresse externe du serveur (lien vers Radarr/Sonarr) ; profil et dossier anime à part
+- [ ] **8.4** (P2) Permissions fines, à décider avec le propriétaire : remplacer les 4 rôles par des droits par membre (demander film / série / 4K, approbation auto film / série / 4K, gérer demandes, membres et signalements séparément), droits par défaut des nouveaux membres, édition en masse → migration avec reprise des rôles actuels ; lot seul, il touche tous les contrôles de droits
+- [ ] **8.5** (P2) Notifications : agents ntfy, Telegram et webhook générique (puis Gotify, Pushover, Slack si utiles), type « demande approuvée automatiquement », choix des types par agent et par membre
+- [ ] **8.6** (P2) Catalogue : pages personne (filmographie) et collection (« compléter la saga »), filtres Films/Séries (année, note, tri, plateforme), rangées par studio et par chaîne, rangée « Demandes récentes »
+- [ ] **8.7** (P3) Découvrir personnalisable (ordre, masquage, rangées sur mesure), région et langue TMDB réglables au lieu de `fr-FR` codé en dur, région de streaming
+- [ ] **8.8** (P3) Membres : suppression d'un membre, demande « avancée » par le membre (serveur, profil, dossier ; après 8.4), modification d'une demande en attente, règles de surcharge par genre ou mot-clé (Seerr `OverrideRule`)
+- [ ] **8.9** (P3, à valider) Demande automatique depuis « Ma liste », vote sur les demandes
+
+Parallélisme : 8.1, 8.2, 8.3, 8.5 et 8.6 touchent des fichiers disjoints et peuvent partir ensemble ; 8.4 seul, puis 8.8 et 8.9 qui en dépendent ; 8.7 après 8.6.
+
 ## Après le MVP
 
 La phase 7 a livré toutes les fonctions de « Plus tard » (PRODUCT.md, « Fonctions après le MVP »). Il ne reste que ce qui dépend du propriétaire et des instances réelles : voir CURRENT_STATUS.md.
