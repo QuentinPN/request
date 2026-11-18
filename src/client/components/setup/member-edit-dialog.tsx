@@ -1,17 +1,22 @@
 import type { Member } from '@shared/auth.ts';
 import {
+  type AssignableRole,
   assignableRoles,
+  type Capabilities,
   capabilitiesOf,
+  effectivePermissions,
+  memberEditRefusal,
+  permissionOverridesOf,
   type QuotaOverride,
+  quotaEditRefusal,
   type Role,
-  roleDescriptions,
   roleLabels,
+  rolePermissions,
 } from '@shared/roles.ts';
 import { settingSchemas } from '@shared/settings.ts';
 import { plural } from '@shared/text.ts';
 import { useQuery } from '@tanstack/react-query';
-import { type ComponentProps, type FormEvent, type ReactNode, useId, useState } from 'react';
-import { ChoiceRow } from '@/components/choice-row';
+import { type FormEvent, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { errorMessage } from '@/lib/http';
 import { useUpdateMember } from '@/lib/requests';
+import { ChoiceRowWithHint, PermissionFields, RoleChoices } from './member-permissions';
 import { settingQuery } from './queries';
 import { type QuotaDraft, QuotaFields, type QuotaKey, quotaDraftOf, quotaRulesOf } from './quota-fields';
 
@@ -38,44 +44,44 @@ const quotaModes: { mode: QuotaMode; label: string; hint?: string }[] = [
 const modeOf = (override: QuotaOverride | null): QuotaMode =>
   override?.unlimited ? 'unlimited' : override?.movies || override?.seasons ? 'custom' : 'default';
 
-const isAssignable = (role: Role): role is (typeof assignableRoles)[number] =>
-  (assignableRoles as readonly Role[]).includes(role);
-
-/** Choix unique avec son explication (rôle, quotas). */
-function ChoiceRowWithHint({
-  label,
-  hint,
-  ...props
-}: Omit<ComponentProps<typeof ChoiceRow>, 'children' | 'className'> & { label: string; hint?: ReactNode }) {
-  return (
-    <ChoiceRow className="items-start py-2.5 [&>input]:mt-0.5" {...props}>
-      <span className="flex flex-col gap-0.5">
-        <span className="font-semibold">{label}</span>
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-      </span>
-    </ChoiceRow>
-  );
-}
+const isAssignable = (role: Role): role is AssignableRole => (assignableRoles as readonly Role[]).includes(role);
 
 /**
- * Rôle et quotas d'un membre (propriétaire). Le rôle donne l'approbation automatique (« Approbation auto ») ou
- * l'administration (« Gestionnaire », hors quotas) ; le quota est celui par défaut, un quota propre ou aucun.
+ * Rôle, droits et quotas d'un membre (droit « Gérer les membres »). Le rôle est un préréglage des droits
+ * (approbation automatique, gestion) ; « Avancé » les ajuste un par un, seul l'écart au rôle est enregistré. Le quota
+ * est celui par défaut, un quota propre ou aucun. Les règles contre l'escalade (`memberEditRefusal`) sont vérifiées
+ * avant l'envoi, comme le fera le serveur.
  */
-export function MemberEditDialog({ member, onClose }: { member: Member; onClose: () => void }) {
+export function MemberEditDialog({
+  member,
+  actor,
+  onClose,
+}: {
+  member: Member;
+  actor: Capabilities;
+  onClose: () => void;
+}) {
   const id = useId();
-  const defaults = useQuery(settingQuery('rules')).data?.defaultQuota ?? settingSchemas.rules.parse({}).defaultQuota;
-  const [role, setRole] = useState<(typeof assignableRoles)[number]>(
-    isAssignable(member.role) ? member.role : 'member',
-  );
+  // Les quotas par défaut sont un réglage du propriétaire : les autres voient ceux d'origine.
+  const rules = useQuery({ ...settingQuery('rules'), enabled: actor.isOwner });
+  const defaults = rules.data?.defaultQuota ?? settingSchemas.rules.parse({}).defaultQuota;
+  const current = isAssignable(member.role) ? member.role : 'member';
+  const [role, setRole] = useState<AssignableRole>(current);
+  const granted = effectivePermissions(member);
+  const [permissions, setPermissions] = useState(granted);
   const [mode, setMode] = useState<QuotaMode>(modeOf(member.quotaOverride));
   const [draft, setDraft] = useState<QuotaDraft>(() => ({
     movies: quotaDraftOf(member.quotaOverride?.movies ?? defaults.movies),
     seasons: quotaDraftOf(member.quotaOverride?.seasons ?? defaults.seasons),
   }));
   const save = useUpdateMember();
-  const exempt = capabilitiesOf(role).quotaExempt;
-  const rules = quotaRulesOf(draft);
-  const invalid = !exempt && mode === 'custom' && !(rules.movies.success && rules.seasons.success);
+  const overrides = permissionOverridesOf(role, permissions);
+  const exempt = capabilitiesOf({ role, permissions: overrides }).quotaExempt;
+  const quotaRefusal = quotaEditRefusal(actor);
+  const quotaLocked = exempt || quotaRefusal !== null;
+  const refusal = memberEditRefusal(actor, member, { role, permissions: overrides });
+  const quotaRules = quotaRulesOf(draft);
+  const invalid = !quotaLocked && mode === 'custom' && !(quotaRules.movies.success && quotaRules.seasons.success);
 
   const change = (apply: () => void) => {
     apply();
@@ -86,18 +92,18 @@ export function MemberEditDialog({ member, onClose }: { member: Member; onClose:
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (invalid) return;
-    // Hors quotas par son rôle : les quotas enregistrés restent tels quels (ils reviennent si le rôle change).
-    const quotaOverride: QuotaOverride | null | undefined = exempt
+    if (invalid || refusal) return;
+    // Hors quotas par son rôle, ou quotas fermés à `actor` : les quotas enregistrés restent tels quels (ils reviennent si le rôle change).
+    const quotaOverride: QuotaOverride | null | undefined = quotaLocked
       ? undefined
       : mode === 'default'
         ? null
         : mode === 'unlimited'
           ? { movies: null, seasons: null, unlimited: true }
-          : rules.movies.success && rules.seasons.success
-            ? { movies: rules.movies.data, seasons: rules.seasons.data }
+          : quotaRules.movies.success && quotaRules.seasons.success
+            ? { movies: quotaRules.movies.data, seasons: quotaRules.seasons.data }
             : undefined;
-    save.mutate({ id: member.id, update: { role, quotaOverride } }, { onSuccess: onClose });
+    save.mutate({ id: member.id, update: { role, permissions: overrides, quotaOverride } }, { onSuccess: onClose });
   };
 
   const defaultHint = `Actuellement : ${plural(defaults.movies.limit, 'film', 'films')} sur ${plural(defaults.movies.days, 'jour', 'jours')}, ${plural(defaults.seasons.limit, 'saison', 'saisons')} sur ${plural(defaults.seasons.days, 'jour', 'jours')}.`;
@@ -108,28 +114,29 @@ export function MemberEditDialog({ member, onClose }: { member: Member; onClose:
         <DialogHeader>
           <DialogTitle>Modifier {member.name}</DialogTitle>
           <DialogDescription>
-            Son rôle et ses quotas de demandes. Le changement vaut dès sa prochaine action.
+            Son rôle, ses droits et ses quotas de demandes. Le changement vaut dès sa prochaine action.
           </DialogDescription>
         </DialogHeader>
         <form noValidate onSubmit={onSubmit} className="flex min-h-0 flex-col gap-5">
           {/* Seul le contenu défile : Enregistrer reste visible sans faire défiler. */}
           <div className="-mx-1 grid min-h-0 gap-5 overflow-y-auto px-1 py-1">
-            <fieldset className="grid gap-2">
-              <legend className="mb-2 text-[13px] font-semibold">Rôle</legend>
-              {assignableRoles.map((r) => (
-                <ChoiceRowWithHint
-                  key={r}
-                  name={`${id}-role`}
-                  checked={role === r}
-                  onSelect={() => change(() => setRole(r))}
-                  label={roleLabels[r]}
-                  hint={roleDescriptions[r]}
-                />
-              ))}
-            </fieldset>
-            <fieldset className="grid gap-2" disabled={exempt}>
+            <RoleChoices
+              name={`${id}-role`}
+              value={role}
+              current={current}
+              actor={actor}
+              onChange={(r) =>
+                change(() => {
+                  // Un rôle est un préréglage : le choisir remet ses droits.
+                  setRole(r);
+                  setPermissions(rolePermissions(r));
+                })
+              }
+            />
+            <fieldset className="grid gap-2" disabled={quotaLocked}>
               <legend className="mb-2 text-[13px] font-semibold">Quotas</legend>
-              {exempt && (
+              {quotaRefusal && <p className="text-sm text-muted-foreground">{quotaRefusal}.</p>}
+              {!quotaRefusal && exempt && (
                 <p className="text-sm text-muted-foreground">
                   Le rôle {roleLabels[role]} est hors quotas : rien à régler ici.
                 </p>
@@ -138,28 +145,36 @@ export function MemberEditDialog({ member, onClose }: { member: Member; onClose:
                 <ChoiceRowWithHint
                   key={m}
                   name={`${id}-quota`}
-                  checked={!exempt && mode === m}
-                  disabled={exempt}
+                  checked={!quotaLocked && mode === m}
+                  disabled={quotaLocked}
                   onSelect={() => change(() => setMode(m))}
                   label={label}
-                  hint={m === 'default' ? defaultHint : hint}
+                  hint={m === 'default' ? (actor.isOwner ? defaultHint : undefined) : hint}
                 />
               ))}
-              {!exempt && mode === 'custom' && (
+              {!quotaLocked && mode === 'custom' && (
                 <QuotaFields id={id} draft={draft} onChange={edit} className="mt-2 sm:grid-cols-1" />
               )}
             </fieldset>
-            {save.isError && (
-              <Notice tone="error" role="alert">
-                {errorMessage(save.error, 'Le membre n’a pas pu être modifié.')}
-              </Notice>
-            )}
+            <PermissionFields
+              role={role}
+              value={permissions}
+              granted={granted}
+              actor={actor}
+              onChange={(next) => change(() => setPermissions(next))}
+            />
           </div>
+          {/* Hors de la zone qui défile : le refus reste visible à côté d'Enregistrer. */}
+          {(refusal || save.isError) && (
+            <Notice tone="error" role="alert">
+              {refusal ?? errorMessage(save.error, 'Le membre n’a pas pu être modifié.')}
+            </Notice>
+          )}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={onClose} disabled={save.isPending}>
               Annuler
             </Button>
-            <Button type="submit" disabled={save.isPending || invalid}>
+            <Button type="submit" disabled={save.isPending || invalid || refusal !== null}>
               {save.isPending ? 'Enregistrement…' : 'Enregistrer'}
             </Button>
           </DialogFooter>

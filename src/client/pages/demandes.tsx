@@ -26,7 +26,7 @@ import { useMediaServerName } from '@/lib/media-server';
 import {
   ALL_MEMBERS,
   formatDay,
-  membersQuery,
+  memberOptionsQuery,
   myRequestsQuery,
   onBehalfLabel,
   requestCountsQuery,
@@ -258,7 +258,7 @@ function RequestList({
 function MemberScopePicker({ value, viewerId }: { value: string; viewerId?: string }) {
   const id = useId();
   const navigate = useNavigate();
-  const members = useQuery(membersQuery);
+  const members = useQuery(memberOptionsQuery);
   const others = (members.data ?? []).filter((m) => m.id !== viewerId);
   return (
     <div className="max-w-sm">
@@ -296,7 +296,7 @@ export function DemandesPage() {
   const { membre } = useSearch({ strict: false });
   // Un membre sans droit de gestion ne lit que les siennes : le paramètre est ignoré (le serveur le fait aussi).
   const member = canManage && membre !== viewer?.id ? membre : undefined;
-  const members = useQuery({ ...membersQuery, enabled: member !== undefined && member !== ALL_MEMBERS });
+  const members = useQuery({ ...memberOptionsQuery, enabled: member !== undefined && member !== ALL_MEMBERS });
   const scope: Scope =
     member === undefined
       ? { own: true }

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { Bookmark, BookmarkCheck, Plus } from 'lucide-react';
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type ReactNode, useId } from 'react';
 import { imageUrl, type MediaDetails, type MediaSummary } from '../../../shared/media.ts';
 import { errorMessage } from '../../lib/http.ts';
 import { inWatchlistQuery, useSetInWatchlist } from '../../lib/watchlist.ts';
@@ -11,6 +11,7 @@ import {
   useOwnRequestInFlight,
   useRequest4kAction,
   useRequestAction,
+  useRequestRefusal,
 } from '../requests/request-sheet.tsx';
 import { Button } from '../ui/button.tsx';
 
@@ -61,16 +62,33 @@ export function GlassPill({ children }: { children: ReactNode }) {
   );
 }
 
-/** « Demander » du hero et de la fiche : ouvre la feuille de demande (rien si le titre n'est pas demandable). */
+/**
+ * « Demander » du hero et de la fiche : ouvre la feuille de demande (rien si le titre n'est pas demandable ; désactivé,
+ * avec la raison, si le membre n'a pas le droit de demander ce type).
+ */
 export function RequestButton({ media, className }: { media: RequestableMedia; className?: string }) {
   const onRequest = useRequestAction(media);
   const inFlight = useOwnRequestInFlight(media, false);
+  const refusal = useRequestRefusal(media);
+  const refusalId = useId();
   if (inFlight)
     return (
       <Notice tone="info" className="basis-full">
         Votre demande précédente est en cours de traitement : vous pourrez demander d’autres saisons une fois qu’elle
         aura été envoyée.
       </Notice>
+    );
+  if (refusal)
+    return (
+      <span className={cn('flex flex-wrap items-center gap-x-3 gap-y-1', className)}>
+        <Button size="lg" disabled aria-describedby={refusalId} className="w-full sm:w-auto">
+          <Plus data-icon="inline-start" />
+          Demander
+        </Button>
+        <span id={refusalId} className="text-sm text-muted-foreground">
+          {refusal}
+        </span>
+      </span>
     );
   if (!onRequest) return null;
   return (

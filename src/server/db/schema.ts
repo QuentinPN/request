@@ -1,35 +1,52 @@
 import { sql } from 'drizzle-orm';
 import { check, customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import type { z } from 'zod';
 import { arrKinds } from '../../shared/arr-servers.ts';
 import { issueStatuses, issueTypes } from '../../shared/issues.ts';
 import { jobRunStatuses } from '../../shared/jobs.ts';
 import { mediaTypes } from '../../shared/media.ts';
 import { notificationKinds } from '../../shared/notifications.ts';
-import { type QuotaOverride, quotaOverrideSchema, roles } from '../../shared/roles.ts';
+import {
+  type PermissionOverrides,
+  permissionOverridesSchema,
+  type QuotaOverride,
+  quotaOverrideSchema,
+  roles,
+} from '../../shared/roles.ts';
 import { minimumAvailabilities, seriesTypes } from '../../shared/settings.ts';
 import { mediaStatuses, preSendRequestStatuses, requestEventTypes, requestStatuses } from '../../shared/status.ts';
 import { watchlistSources } from '../../shared/watchlist.ts';
 import { enumCheck, inLiterals } from './checks.ts';
 
 /**
- * JSON validé à la lecture par `quotaOverrideSchema` : une valeur illisible ou hors schéma (base éditée à la main,
- * ancien format) vaut `null` (quotas par défaut) et est journalisée, au lieu de faire échouer la connexion
+ * Colonne JSON validée à la lecture par `schema` : une valeur illisible ou hors schéma (base éditée à la main,
+ * ancien format) vaut `null` (valeur par défaut) et est journalisée, au lieu de faire échouer la connexion
  * ou la liste des membres.
  */
-const quotaOverrideJson = customType<{ data: QuotaOverride | null; driverData: string }>({
-  dataType: () => 'text',
-  toDriver: (value) => JSON.stringify(value),
-  fromDriver: (stored) => {
-    try {
-      const parsed = quotaOverrideSchema.safeParse(JSON.parse(stored));
-      if (parsed.success) return parsed.data;
-    } catch {
-      // JSON invalide : traité comme un format inconnu, ci-dessous.
-    }
-    console.error('quota_override illisible en base : quotas par défaut appliqués');
-    return null;
-  },
-});
+const tolerantJson = <T>(schema: z.ZodType<T>, unreadable: string) =>
+  customType<{ data: T | null; driverData: string }>({
+    dataType: () => 'text',
+    toDriver: (value) => JSON.stringify(value),
+    fromDriver: (stored) => {
+      try {
+        const parsed = schema.safeParse(JSON.parse(stored));
+        if (parsed.success) return parsed.data;
+      } catch {
+        // JSON invalide : traité comme un format inconnu, ci-dessous.
+      }
+      console.error(unreadable);
+      return null;
+    },
+  });
+
+const quotaOverrideJson = tolerantJson<QuotaOverride>(
+  quotaOverrideSchema,
+  'quota_override illisible en base : quotas par défaut appliqués',
+);
+const permissionsJson = tolerantJson<PermissionOverrides>(
+  permissionOverridesSchema,
+  'permissions illisibles en base : droits du rôle appliqués',
+);
 
 /** Réglages clé/valeur : `value` est du JSON validé par Zod, les champs secrets y sont chiffrés. */
 export const settings = sqliteTable('settings', {
@@ -59,10 +76,15 @@ export const users = sqliteTable(
     email: text(),
     emailNotifications: integer({ mode: 'boolean' }).notNull().default(true),
     pushNotifications: integer({ mode: 'boolean' }).notNull().default(true),
+    permissions: permissionsJson(),
   },
   (table) => [
     enumCheck('users_role_check', table.role, roles),
     check('users_quota_override_json_check', sql`${table.quotaOverride} IS NULL OR json_valid(${table.quotaOverride})`),
+    check(
+      'users_permissions_json_check',
+      sql`${table.permissions} IS NULL OR (json_valid(${table.permissions}) AND json_type(${table.permissions}) = 'object')`,
+    ),
   ],
 );
 

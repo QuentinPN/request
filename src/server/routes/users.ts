@@ -1,17 +1,35 @@
+import { isDeepStrictEqual } from 'node:util';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { type Member, memberUpdateSchema, USERS_IMPORT_PATH, USERS_PATH, userPath } from '../../shared/auth.ts';
-import { ofMediaServer } from '../../shared/settings.ts';
+import {
+  type Member,
+  type MemberOption,
+  membersBulkUpdateSchema,
+  memberUpdateSchema,
+  USERS_BULK_PATH,
+  USERS_DEFAULTS_PATH,
+  USERS_IMPORT_PATH,
+  USERS_PATH,
+  userPath,
+} from '../../shared/auth.ts';
+import { permissionOverridesOf, quotaEditRefusal } from '../../shared/roles.ts';
+import { ofMediaServer, settingSchemas } from '../../shared/settings.ts';
+import { users } from '../db/schema.ts';
 import { labelOf } from '../integrations/media-server.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
-import { ownerOnly, requireCapability } from '../plugins/auth.ts';
+import { ownerOnly, requireCapability, viewerOf } from '../plugins/auth.ts';
 import { revokeAllForUser } from '../services/sessions.ts';
+import { setSetting } from '../services/settings.ts';
 import {
+  applyAccessChange,
   getUser,
   importFromEmby,
   listUsers,
+  type MemberDefaults,
+  memberDefaultsOf,
   setQuotaOverride,
-  setRole,
   toMember,
+  toMemberOption,
   UsersError,
 } from '../services/users.ts';
 
@@ -26,39 +44,85 @@ export function usersRoutes(app: FastifyInstance) {
   const { db } = app.data;
   const members = () => listUsers(db).map(toMember);
 
-  app.get(USERS_PATH, { preHandler: requireCapability('canManageRequests') }, async (): Promise<Member[]> => members());
+  // Liste des membres : gestion des demandes (filtre par membre), demande pour autrui (choix du membre), Membres.
+  // Droits et quotas des membres : pour qui gère les membres seulement ; les autres ne reçoivent que `MemberOption`.
+  app.get(
+    USERS_PATH,
+    { preHandler: requireCapability('canManageRequests', 'canRequestOnBehalf', 'canManageUsers') },
+    async (req): Promise<Member[] | MemberOption[]> =>
+      req.viewer?.capabilities.canManageUsers ? members() : listUsers(db).map(toMemberOption),
+  );
 
-  /** Crée les comptes actifs du serveur multimédia absents de l'appli ; jamais de promotion (voir importFromEmby). */
-  app.post(USERS_IMPORT_PATH, { preHandler: requireCapability('canManageUsers') }, async (): Promise<Member[]> => {
+  const canManageUsers = { preHandler: requireCapability('canManageUsers') };
+
+  /**
+   * Crée les comptes actifs du serveur multimédia absents de l'appli, avec les droits par défaut ; jamais de promotion
+   * (voir importFromEmby).
+   */
+  app.post(USERS_IMPORT_PATH, canManageUsers, async (): Promise<Member[]> => {
     const embyUsers = await app.mediaServers.require().listUsers();
+    const defaults = memberDefaultsOf(app.data);
     db.transaction((tx) => {
       for (const u of embyUsers) {
-        if (!u.isDisabled) importFromEmby(tx, { id: u.id, name: u.name, avatar: u.avatarUrl });
+        if (!u.isDisabled) importFromEmby(tx, { id: u.id, name: u.name, avatar: u.avatarUrl }, new Date(), defaults);
       }
     });
     return members();
   });
 
-  app.put<IdParams>(
-    userPath(':id'),
-    { preHandler: requireCapability('canManageUsers') },
-    async (req): Promise<Member> => {
-      const { id } = req.params;
-      const { role, quotaOverride } = parseRequest(memberUpdateSchema, req.body);
-      const user = getUser(db, id);
+  /**
+   * Rôle, droits et quotas d'un membre, en une transaction : si un changement est refusé, rien n'est écrit. Garde contre
+   * l'escalade (`memberEditRefusal`) pour tout changement, quotas compris : le propriétaire n'est jamais modifié ici.
+   */
+  app.put<IdParams>(userPath(':id'), canManageUsers, async (req): Promise<Member> => {
+    const { id } = req.params;
+    const { quotaOverride, ...access } = parseRequest(memberUpdateSchema, req.body);
+    const actor = viewerOf(req).capabilities;
+    const updated = db.transaction((tx) => {
+      const user = tx.select().from(users).where(eq(users.id, id)).get();
       if (!user) throw new UsersError('not_found', 'Membre introuvable');
-      // Le propriétaire n'est jamais modifié ici (ni rôle ni quotas) ; le rôle « propriétaire » est refusé par le schéma.
-      if (user.role === 'owner') throw new HttpError(403, 'Le propriétaire ne se modifie pas depuis l’appli');
-      // Une seule transaction : si l'un des deux changements échoue (dernier propriétaire…), rien n'est écrit.
-      const updated = db.transaction((tx) => {
-        let next = user;
-        if (role !== undefined) next = setRole(tx, id, role);
-        if (quotaOverride !== undefined) next = setQuotaOverride(tx, id, quotaOverride);
-        return next;
-      });
-      return toMember(updated);
-    },
-  );
+      const next = applyAccessChange(tx, actor, user, access);
+      // Un quota inchangé (le client renvoie celui qu'il a lu) n'est pas un réglage.
+      if (quotaOverride !== undefined && !isDeepStrictEqual(quotaOverride, user.quotaOverride ?? null)) {
+        const refusal = quotaEditRefusal(actor);
+        if (refusal) throw new UsersError('forbidden', refusal);
+      }
+      return quotaOverride !== undefined ? setQuotaOverride(tx, id, quotaOverride) : next;
+    });
+    return toMember(updated);
+  });
+
+  /**
+   * Plusieurs membres d'un coup : un rôle (son préréglage) et des droits accordés ou retirés, en une transaction. Un
+   * seul membre refusé (garde contre l'escalade, inconnu) et rien n'est écrit ; le refus nomme le membre.
+   */
+  app.post(USERS_BULK_PATH, canManageUsers, async (req): Promise<Member[]> => {
+    const { ids, role, permissions: changes } = parseRequest(membersBulkUpdateSchema, req.body);
+    const actor = viewerOf(req).capabilities;
+    db.transaction((tx) => {
+      for (const id of new Set(ids)) {
+        const user = tx.select().from(users).where(eq(users.id, id)).get();
+        if (!user) throw new UsersError('not_found', 'Membre introuvable');
+        try {
+          applyAccessChange(tx, actor, user, { role, changes });
+        } catch (error) {
+          if (error instanceof UsersError) throw new UsersError(error.code, `${user.name} : ${error.message}`);
+          throw error;
+        }
+      }
+    });
+    return members();
+  });
+
+  /** « Droits par défaut » des nouveaux membres : propriétaire seulement (un défaut « Gestionnaire » serait une escalade). */
+  app.get(USERS_DEFAULTS_PATH, ownerOnly, async (): Promise<MemberDefaults> => memberDefaultsOf(app.data));
+
+  app.put(USERS_DEFAULTS_PATH, ownerOnly, async (req): Promise<MemberDefaults> => {
+    const { role, permissions } = parseRequest(settingSchemas.memberDefaults, req.body);
+    const stored = { role, permissions: permissions && permissionOverridesOf(role, permissions) };
+    setSetting(db, app.data.cryptoKey, 'memberDefaults', stored);
+    return stored;
+  });
 
   /** « Déconnecter partout » : révoque toutes les sessions du membre (propriétaire seulement). */
   app.delete<IdParams>(userPath(':id', 'sessions'), ownerOnly, async (req, reply) => {

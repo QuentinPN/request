@@ -1,19 +1,28 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterEach } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { type Data, type Db, migrationsFolder, openDataDir } from '../src/server/db/index.ts';
+import { users } from '../src/server/db/schema.ts';
 import { SESSION_COOKIE } from '../src/server/plugins/auth.ts';
 import { saveArrServer } from '../src/server/services/arr-servers.ts';
 import { createSession } from '../src/server/services/sessions.ts';
-import { setRole, type User, upsertFromEmby } from '../src/server/services/users.ts';
+import { type User, upsertFromEmby } from '../src/server/services/users.ts';
 import { type ArrServerInput, arrKindLabels, arrServerInputSchema } from '../src/shared/arr-servers.ts';
 import { CSRF_HEADERS } from '../src/shared/auth.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { SETUP_TOKEN_HEADER } from '../src/shared/setup.ts';
 import { type FakeRoutes, startFakeServer } from './fake-server.ts';
+
+/** Fixe le rôle d'un membre en base (aucun chemin de l'appli ne le fait : le propriétaire vient de l'amorçage). */
+export function setRole(db: Pick<Db, 'update'>, id: string, role: Role): User {
+  const user = db.update(users).set({ role }).where(eq(users.id, id)).returning().get();
+  if (!user) throw new Error(`Membre introuvable : ${id}`);
+  return user;
+}
 
 /** Crée des dossiers temporaires, supprimés après chaque test du fichier appelant. */
 export function trackTempDirs() {

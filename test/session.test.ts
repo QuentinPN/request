@@ -8,7 +8,7 @@ const viewer = (role: Role): Viewer => ({
   id: 'u',
   name: 'U',
   role,
-  capabilities: capabilitiesOf(role),
+  capabilities: capabilitiesOf({ role, permissions: null }),
   avatarUrl: null,
 });
 const services = (saved: boolean) => ({ mediaServer: saved, tmdb: saved, radarr: saved, sonarr: saved, rules: saved });

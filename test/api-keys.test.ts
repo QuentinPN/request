@@ -5,9 +5,8 @@ import { sha256Hex } from '../src/server/crypto.ts';
 import { apiKeys } from '../src/server/db/schema.ts';
 import { API_KEY_LIMIT } from '../src/server/plugins/auth.ts';
 import { LAST_USED_REFRESH_MS } from '../src/server/services/api-keys.ts';
-import { setRole } from '../src/server/services/users.ts';
 import { API_KEYS_PATH, type ApiKey, type ApiKeyCreated, apiKeyPath } from '../src/shared/api-keys.ts';
-import { loginAs, loginAsOwner, trackApps } from './helpers.ts';
+import { loginAs, loginAsOwner, setRole, trackApps } from './helpers.ts';
 
 const newApp = trackApps();
 const UNTRUSTED = '203.0.113.7';

@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { X } from 'lucide-react';
 import { createContext, type FormEvent, type ReactNode, useCallback, useContext, useId, useRef, useState } from 'react';
-import type { Member } from '../../../shared/auth.ts';
+import type { MemberOption } from '../../../shared/auth.ts';
 import type { MediaDetails, MediaSummary, Season } from '../../../shared/media.ts';
 import {
   type CreateRequestInput,
@@ -14,7 +14,7 @@ import {
   type RequestQuota,
   requestableSeasons,
 } from '../../../shared/requests.ts';
-import { capabilitiesOf } from '../../../shared/roles.ts';
+import { autoApproves, requestRefusal } from '../../../shared/roles.ts';
 import { lockedRequestStatuses } from '../../../shared/status.ts';
 import { plural } from '../../../shared/text.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
@@ -24,7 +24,7 @@ import { errorMessage } from '../../lib/http.ts';
 import { useMediaServerName } from '../../lib/media-server.ts';
 import {
   arrName,
-  membersQuery,
+  memberOptionsQuery,
   myRequestsForQuery,
   requestProgress,
   requestQuotaQuery,
@@ -48,8 +48,9 @@ export type RequestableMedia = MediaSummary | MediaDetails;
 
 /**
  * Action « Demander » d'un titre : ouvre la feuille de demande. `undefined` si le membre n'a pas le droit de demander
- * ou si le titre n'est pas demandable (disponible, en cours, déjà demandé, ou série dont toutes les saisons le sont) :
- * le bouton ne s'affiche pas. Seule la fiche connaît les saisons : ailleurs, une série déjà demandée reste fermée.
+ * ce type (voir `useRequestRefusal`) ou si le titre n'est pas demandable (disponible, en cours, déjà demandé, ou série
+ * dont toutes les saisons le sont) : le bouton ne s'affiche pas. Seule la fiche connaît les saisons : ailleurs, une série
+ * déjà demandée reste fermée.
  */
 export function useRequestAction(media: RequestableMedia | undefined): (() => void) | undefined {
   const open = useContext(RequestSheetContext);
@@ -60,11 +61,22 @@ export function useRequestAction(media: RequestableMedia | undefined): (() => vo
     !media ||
     media.blocked ||
     inFlight ||
-    !viewer?.capabilities.canRequest ||
+    !viewer ||
+    requestRefusal(viewer.capabilities, { type: media.type, is4k: false }) ||
     !isRequestable(media, isoDay())
   )
     return undefined;
   return () => open(media, false);
+}
+
+/**
+ * Raison pour laquelle le membre ne peut pas demander ce titre demandable (droit de son type, `requestRefusal`), ou
+ * `null` : le bouton « Demander » s'affiche alors désactivé, avec cette raison.
+ */
+export function useRequestRefusal(media: RequestableMedia | undefined): string | null {
+  const viewer = useViewer();
+  if (!viewer || !media || media.blocked || !isRequestable(media, isoDay())) return null;
+  return requestRefusal(viewer.capabilities, { type: media.type, is4k: false });
 }
 
 /**
@@ -78,7 +90,8 @@ export function useOwnRequestInFlight(media: RequestableMedia | undefined, is4k:
     media?.type === 'tv' &&
     'seasons' in media &&
     !!media.seasons &&
-    !!viewer?.capabilities.canRequest &&
+    !!viewer &&
+    !requestRefusal(viewer.capabilities, { type: 'tv', is4k }) &&
     isRequestable(media, isoDay(), is4k);
   const mine = useQuery({ ...myRequestsForQuery({ type: 'tv', tmdbId: media?.tmdbId ?? 0 }), enabled });
   return (
@@ -88,11 +101,15 @@ export function useOwnRequestInFlight(media: RequestableMedia | undefined, is4k:
 }
 
 /**
- * La 4K se demande seulement si un serveur 4K du type existe (`fourK` présent), si le membre en a le droit et si la
- * version 4K n'est ni disponible, ni en cours, ni déjà demandée.
+ * La 4K se demande seulement si un serveur 4K du type existe (`fourK` présent), si le membre a le droit de demander ce
+ * type en 4K et si la version 4K n'est ni disponible, ni en cours, ni déjà demandée.
  */
 const can4k = (viewer: ReturnType<typeof useViewer>, media: MediaDetails | undefined): media is MediaDetails =>
-  !!media?.fourK && !media.blocked && !!viewer?.capabilities.canRequest4k && isRequestable(media, isoDay(), true);
+  !!media?.fourK &&
+  !media.blocked &&
+  !!viewer &&
+  !requestRefusal(viewer.capabilities, { type: media.type, is4k: true }) &&
+  isRequestable(media, isoDay(), true);
 
 /** Action « Demander en 4K » de la fiche (voir `can4k`) : ouvre la feuille en 4K. */
 export function useRequest4kAction(media: MediaDetails | undefined): (() => void) | undefined {
@@ -182,7 +199,7 @@ function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; 
   const viewer = useViewer();
   const [is4k, setIs4k] = useState(opened4k);
   // Gestionnaires : pour qui (`null` : soi-même) et hors quota.
-  const [forUser, setForUser] = useState<Member | null>(null);
+  const [forUser, setForUser] = useState<MemberOption | null>(null);
   const [quotaExempt, setQuotaExempt] = useState(false);
   // Choix de la version quand les deux se demandent ; ouverte en 4K depuis la fiche, la version normale peut être déjà là.
   const choice = can4k(viewer, details.data) && isRequestable(details.data, isoDay());
@@ -250,19 +267,19 @@ function ManagerOptions({
   quotaExempt,
   onQuotaExempt,
 }: {
-  forUser: Member | null;
-  onForUser: (member: Member | null) => void;
+  forUser: MemberOption | null;
+  onForUser: (member: MemberOption | null) => void;
   quotaExempt: boolean;
   onQuotaExempt: (exempt: boolean) => void;
 }) {
   const capabilities = useViewer()?.capabilities;
   // Même requête que le corps de la feuille (en cache) : « Hors quota » n'a de sens que si le quota compte.
   const quota = useQuery(requestQuotaQuery(forUser?.id));
-  if (!capabilities?.canRequestOnBehalf && !capabilities?.canManageRequests) return null;
+  if (!capabilities?.canRequestOnBehalf && !capabilities?.canRequestQuotaExempt) return null;
   return (
     <div className="grid gap-3">
       {capabilities.canRequestOnBehalf && <MemberPicker value={forUser} onChange={onForUser} />}
-      {capabilities.canManageRequests && quota.data?.exempt === false && (
+      {capabilities.canRequestQuotaExempt && quota.data?.exempt === false && (
         <CheckboxRow
           checked={quotaExempt}
           onChange={onQuotaExempt}
@@ -282,10 +299,16 @@ function ManagerOptions({
 const MEMBER_RESULTS = 5;
 
 /** Sélecteur du membre pour qui demander : « Moi », puis une recherche par nom parmi les membres de l'appli. */
-function MemberPicker({ value, onChange }: { value: Member | null; onChange: (member: Member | null) => void }) {
+function MemberPicker({
+  value,
+  onChange,
+}: {
+  value: MemberOption | null;
+  onChange: (member: MemberOption | null) => void;
+}) {
   const id = useId();
   const viewer = useViewer();
-  const members = useQuery(membersQuery);
+  const members = useQuery(memberOptionsQuery);
   const [search, setSearch] = useState('');
   const term = search.trim().toLocaleLowerCase('fr');
   const others = (members.data ?? []).filter((m) => m.id !== viewer?.id);
@@ -366,7 +389,7 @@ function RequestBody({
   is4k: boolean;
   onClose: () => void;
   /** Membre pour qui demander (`null` : soi-même) : son quota et son approbation automatique s'appliquent. */
-  forUser: Member | null;
+  forUser: MemberOption | null;
   quotaExempt: boolean;
 }) {
   const day = isoDay();
@@ -379,13 +402,15 @@ function RequestBody({
   const submitting = useRef(false);
   const quota = useQuery(requestQuotaQuery(forUser?.id));
   const viewer = useViewer();
-  const capabilities = forUser ? capabilitiesOf(forUser.role) : viewer?.capabilities;
+  const capabilities = forUser ?? viewer?.capabilities;
+  // Pour un autre membre : ses droits à lui (le serveur refuse sinon, 403).
+  const refusal = capabilities ? requestRefusal(capabilities, { type: media.type, is4k }) : null;
 
   const isTv = media.type === 'tv';
   const wanted = isTv ? selected.size : 1;
   const usage = quota.data && !quota.data.exempt ? quota.data[isTv ? 'seasons' : 'movies'] : undefined;
   const overQuota = !quotaExempt && usage !== undefined && wanted > usage.remaining;
-  const disabled = wanted === 0 || overQuota || mutation.isPending;
+  const disabled = wanted === 0 || overQuota || refusal !== null || mutation.isPending;
 
   if (mutation.data) return <RequestSent request={mutation.data} media={media} onClose={onClose} />;
 
@@ -439,9 +464,14 @@ function RequestBody({
         isTv={isTv}
         wanted={wanted}
         arr={arrName(media.type, is4k)}
-        autoApprove={!!capabilities?.[is4k ? 'autoApprove4k' : 'autoApprove']}
+        autoApprove={!!capabilities && autoApproves(capabilities, { type: media.type, is4k })}
         member={forUser?.name ?? null}
       />
+      {refusal && (
+        <Notice tone="error" role="alert">
+          {forUser ? `${forUser.name} : ${refusal}.` : `${refusal}.`}
+        </Notice>
+      )}
       {mutation.error && (
         <Notice tone="error" role="alert">
           {errorMessage(mutation.error, 'La demande n’a pas pu être envoyée.')}

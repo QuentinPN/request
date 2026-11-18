@@ -37,7 +37,7 @@ import {
   statusIn,
   uncoveredSeasons,
 } from '../../shared/requests.ts';
-import { capabilitiesOf, isQuotaExempt, type QuotaRule } from '../../shared/roles.ts';
+import { autoApproves, capabilitiesOf, isQuotaExempt, type QuotaRule, requestRefusal } from '../../shared/roles.ts';
 import { DEFAULT_SERIES_TYPE, settingSchemas } from '../../shared/settings.ts';
 import {
   activeRequestStatuses,
@@ -445,7 +445,7 @@ export function createRequests(
 
   /**
    * Membre `forUserId` vu par `viewer` : lui-même, ou un autre membre (droit « Demander pour un autre », sinon 403 ;
-   * inconnu → 404), avec les droits de son rôle.
+   * inconnu → 404), avec ses droits (rôle et remplacements).
    */
   function ownerFor(viewer: SessionViewer, forUserId: string | undefined): Owner {
     if (forUserId === undefined || forUserId === viewer.user.id) return viewer;
@@ -453,7 +453,7 @@ export function createRequests(
       throw new HttpError(403, 'Vous ne pouvez pas demander à la place d’un autre membre');
     const user = getUser(db, forUserId);
     if (!user) throw new HttpError(404, 'Membre introuvable');
-    return { user, capabilities: capabilitiesOf(user.role) };
+    return { user, capabilities: capabilitiesOf(user) };
   }
 
   /** Quota du membre connecté, ou d'un autre membre (`forUserId`, voir `ownerFor`). */
@@ -735,14 +735,15 @@ export function createRequests(
 
   /**
    * Crée la demande (`created: true`), ou renvoie celle déjà en cours du membre (double clic, `created: false`).
-   * Vérification du quota et insertion dans la même transaction. Rôle à approbation automatique (4K : approbation
-   * automatique 4K) → approuvée et envoyée aussitôt. Une demande 4K suppose le droit et un serveur 4K du type ; elle
+   * Droit de demander ce type (et la 4K) du membre à qui elle sera, sinon 403 (`requestRefusal`). Vérification du quota
+   * et insertion dans la même transaction. Approbation automatique de son type (4K : approbation automatique 4K,
+   * `autoApproves`) → approuvée et envoyée aussitôt. Une demande 4K suppose le droit et un serveur 4K du type ; elle
    * compte dans le quota comme une autre. Un titre bloqué (liste ou mot-clé) est refusé (403), pour tous.
    *
    * Pour un autre membre (`forUserId`, droit « Demander pour un autre ») : la demande est à lui. Son quota, ses droits
    * (4K, approbation automatique, en son nom) et sa demande en cours s'appliquent ; il est prévenu
    * (`requested_on_behalf`) et `created_by` garde l'auteur, acteur de l'évènement `requested`. « Hors quota »
-   * (`quotaExempt`, gestionnaires) saute le quota et marque la demande. Des saisons ajoutées à une demande en attente
+   * (`quotaExempt`, droit « Demander hors quota ») saute le quota et marque la demande. Des saisons ajoutées à une demande en attente
    * lui donnent l'exemption de l'ajout : hors quota, toute la demande l'est ; sinon elle ne l'est plus et le quota compte
    * toutes ses saisons. Un ajout pour autrui fusionné prévient le membre et renseigne `created_by` s'il est vide ; une
    * demande qui ne change rien (film déjà demandé, saisons déjà dedans) ne prévient personne.
@@ -751,17 +752,18 @@ export function createRequests(
     viewer: SessionViewer,
     input: CreateInput,
   ): Promise<{ request: RequestDetail; created: boolean }> {
-    if (input.quotaExempt && !viewer.capabilities.canManageRequests)
-      throw new HttpError(403, 'Seul un gestionnaire peut mettre une demande hors quota');
+    if (input.quotaExempt && !viewer.capabilities.canRequestQuotaExempt)
+      throw new HttpError(403, 'Vous ne pouvez pas mettre une demande hors quota');
     const owner = ownerFor(viewer, input.forUserId);
     const { user, capabilities } = owner;
     const author = viewer.user;
     const onBehalf = user.id !== author.id;
     const exempt = input.quotaExempt === true;
     const { is4k } = input;
+    const refusal = requestRefusal(capabilities, input);
+    if (refusal) throw new HttpError(403, onBehalf ? `${refusal} (${user.name})` : refusal);
     assertTitleNotBlocked(db, input);
     if (is4k) {
-      if (!capabilities.canRequest4k) throw new HttpError(403, 'Vous ne pouvez pas demander en 4K');
       if (!hasArrServer(db, arrKindOf(input.type), true))
         throw new HttpError(409, `Aucun serveur ${arrLabel(arrKindOf(input.type), true)} n’est configuré`);
     }
@@ -866,8 +868,7 @@ export function createRequests(
     );
 
     // Approbation automatique d'après les droits du membre, en son nom : il n'est pas prévenu de « sa » approbation.
-    const autoApprove = is4k ? capabilities.autoApprove4k : capabilities.autoApprove;
-    if (autoApprove && rowOf(outcome.id)?.status === 'pending') {
+    if (autoApproves(capabilities, input) && rowOf(outcome.id)?.status === 'pending') {
       try {
         return { request: await approve(outcome.id, user, {}, true), created: outcome.created };
       } catch (error) {

@@ -15,7 +15,7 @@ const viewerAs = (role: Role) => ({
   id: role,
   name: role,
   role,
-  capabilities: capabilitiesOf(role),
+  capabilities: capabilitiesOf({ role, permissions: null }),
   avatarUrl: null,
 });
 const guard = (path: string, setup: SetupState, role: Role | null) =>

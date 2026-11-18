@@ -7,7 +7,16 @@ import {
 } from '@tanstack/react-query';
 import { z } from 'zod';
 import { arrKindOf, arrLabel } from '../../shared/arr-servers.ts';
-import { type Member, type MemberUpdate, USERS_PATH, userPath } from '../../shared/auth.ts';
+import {
+  type Member,
+  type MemberOption,
+  type MembersBulkUpdate,
+  type MemberUpdate,
+  USERS_BULK_PATH,
+  USERS_DEFAULTS_PATH,
+  USERS_PATH,
+  userPath,
+} from '../../shared/auth.ts';
 import type { MediaKey, MediaType } from '../../shared/media.ts';
 import {
   type CreateRequestInput,
@@ -23,6 +32,7 @@ import {
   requestListParams,
   requestPath,
 } from '../../shared/requests.ts';
+import type { Setting } from '../../shared/settings.ts';
 import {
   type ActiveRequestStatus,
   activeRequestStatuses,
@@ -98,13 +108,19 @@ export const requestQuotaQuery = (userId?: string) =>
       ),
   });
 
-/** Membres de l'appli (gestionnaires) : sélecteur de la feuille de demande pour autrui. */
+/** Membres de l'appli, droits et quotas compris : Réglages › Membres (le serveur le réserve à qui gère les membres). */
 export const membersQuery = queryOptions({
   queryKey: ['users'],
   queryFn: ({ signal }) => apiGet<Member[]>(USERS_PATH, undefined, signal),
 });
 
-/** Rôle et quotas d'un membre (propriétaire) ; le quota du membre et la liste sont relus ensuite. */
+/** Membres à choisir : sélecteur de la feuille de demande pour autrui, filtre des demandes (vue réduite). */
+export const memberOptionsQuery = queryOptions({
+  queryKey: [...membersQuery.queryKey, 'options'],
+  queryFn: ({ signal }) => apiGet<MemberOption[]>(USERS_PATH, undefined, signal),
+});
+
+/** Rôle, droits et quotas d'un membre (droit « Gérer les membres ») ; son quota et la liste sont relus ensuite. */
 export function useUpdateMember() {
   const client = useQueryClient();
   return useMutation({
@@ -117,6 +133,33 @@ export function useUpdateMember() {
       void client.invalidateQueries({ queryKey: membersQuery.queryKey });
       void client.invalidateQueries({ queryKey: requestKeys.quota(member.id) });
     },
+  });
+}
+
+/** Rôle et droits de plusieurs membres en une fois ; la liste renvoyée remplace celle en cache. */
+export function useBulkUpdateMembers() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (update: MembersBulkUpdate) => apiSend<Member[]>('POST', USERS_BULK_PATH, update),
+    onSuccess: (members) => {
+      client.setQueryData(membersQuery.queryKey, members);
+      void client.invalidateQueries({ queryKey: requestKeys.all });
+    },
+  });
+}
+
+/** « Droits par défaut » des nouveaux membres (propriétaire). */
+export const memberDefaultsQuery = queryOptions({
+  queryKey: ['member-defaults'],
+  queryFn: ({ signal }) => apiGet<Setting<'memberDefaults'>>(USERS_DEFAULTS_PATH, undefined, signal),
+});
+
+export function useSaveMemberDefaults() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (defaults: Setting<'memberDefaults'>) =>
+      apiSend<Setting<'memberDefaults'>>('PUT', USERS_DEFAULTS_PATH, defaults),
+    onSuccess: (saved) => client.setQueryData(memberDefaultsQuery.queryKey, saved),
   });
 }
 

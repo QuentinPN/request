@@ -14,7 +14,7 @@ import {
   type notificationListQuerySchema,
   type RequestNotificationKind,
 } from '../../shared/notifications.ts';
-import { type Capabilities, capabilitiesOf, type Role, roles } from '../../shared/roles.ts';
+import { autoApproves, type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
 import type { RequestEventType } from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
 import { issueComments, issues, media, notifications, requests, users } from '../db/schema.ts';
@@ -102,17 +102,16 @@ const RECIPIENTS: Record<RequestNotificationKind, 'requester' | 'managers'> = {
   declined: 'requester',
   available: 'requester',
 };
-const rolesWith = (capability: keyof Capabilities) => roles.filter((role) => capabilitiesOf(role)[capability]);
-const managerRoles = rolesWith('canManageRequests');
-const issueManagerRoles = rolesWith('canManageIssues');
-
-/** Membres de ces rôles (gestionnaires des demandes ou des signalements) : destinataires des notifications « à traiter ». */
-const memberIdsWithRoles = (tx: Pick<Db, 'select'>, withRoles: readonly Role[]) =>
+/**
+ * Membres qui ont ce droit (gérer les demandes ou les signalements) : destinataires des notifications « à traiter ».
+ * Droits évalués membre par membre (rôle et remplacements) : la table des membres reste petite.
+ */
+const memberIdsWith = (tx: Pick<Db, 'select'>, capability: keyof Capabilities) =>
   tx
-    .select({ id: users.id })
+    .select({ id: users.id, role: users.role, permissions: users.permissions })
     .from(users)
-    .where(inArray(users.role, withRoles))
     .all()
+    .filter((u) => capabilitiesOf(u)[capability])
     .map((u) => u.id);
 
 /** Une notification de l'appli, pour chacun de ses destinataires. */
@@ -203,24 +202,32 @@ export function onRequestEvent(listener: RequestEventListener): () => void {
  * Notifications d'un évènement de demande, écrites dans sa transaction : liées à la transition (elle-même
  * idempotente), un webhook rejoué n'en crée pas de nouvelles. Le membre qui agit n'est jamais prévenu de sa propre
  * action (approbation automatique, refus par un gestionnaire de sa propre demande). Une nouvelle demande ne prévient
- * les gestionnaires que si elle attend une approbation : pas pour un rôle à approbation automatique, ni pour des
- * saisons ajoutées à une demande déjà en attente (évènement `requested` avec détail). Les agents (Discord, ntfy, Telegram, webhook) sont
+ * les gestionnaires que si elle attend une approbation : pas pour une demande approuvée automatiquement
+ * (`autoApproves`), ni pour des saisons ajoutées à une demande déjà en attente (évènement `requested` avec détail). Les agents (Discord, ntfy, Telegram, webhook) sont
  * prévenus de ces mêmes évènements, sans l'exclusion de l'acteur : un salon n'est pas un destinataire.
  */
 export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: RequestEventFact) {
   const { type: kind, requestId, actorId, detail, at, auto } = event;
   if (!isRequestNotificationKind(kind)) return;
   const request = tx
-    .select({ userId: requests.userId, role: users.role })
+    .select({
+      userId: requests.userId,
+      role: users.role,
+      permissions: users.permissions,
+      type: media.type,
+      is4k: requests.is4k,
+    })
     .from(requests)
     .innerJoin(users, eq(users.id, requests.userId))
+    .innerJoin(media, eq(media.id, requests.mediaId))
     .where(eq(requests.id, requestId))
     .get();
   if (!request) return;
-  if (kind === 'requested' && (detail !== null || capabilitiesOf(request.role).autoApprove)) return;
+  // Même règle que l'approbation automatique de `requests.create` (`autoApproves`) : elle prévient à sa place.
+  if (kind === 'requested' && (detail !== null || autoApproves(capabilitiesOf(request), request))) return;
   const agentEvent = { ...event, kind: auto ? ('auto_approved' as const) : kind };
   for (const listener of requestEventListeners) listener(agentEvent);
-  const recipients = RECIPIENTS[kind] === 'requester' ? [request.userId] : memberIdsWithRoles(tx, managerRoles);
+  const recipients = RECIPIENTS[kind] === 'requester' ? [request.userId] : memberIdsWith(tx, 'canManageRequests');
   notify(tx, { kind, recipients, actorId, requestId, detail, at });
 }
 
@@ -251,7 +258,7 @@ export interface IssueEventFact {
 export function notifyIssueEvent(tx: Pick<Db, 'select' | 'insert'>, { issueId, kind, actorId, at }: IssueEventFact) {
   const issue = tx.select({ userId: issues.userId }).from(issues).where(eq(issues.id, issueId)).get();
   if (!issue) return;
-  const managers = memberIdsWithRoles(tx, issueManagerRoles);
+  const managers = memberIdsWith(tx, 'canManageIssues');
   let to: string[];
   if (kind === 'issue_created') to = managers;
   else if (kind === 'issue_commented') {

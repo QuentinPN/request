@@ -118,7 +118,7 @@ function sessionToken(req: FastifyRequest): string | null {
 function readViewer(req: FastifyRequest): SessionViewer | null {
   const token = sessionToken(req);
   const user = token ? validateSession(req.server.data.db, token) : null;
-  return user ? { user, capabilities: capabilitiesOf(user.role), via: 'session' } : null;
+  return user ? { user, capabilities: capabilitiesOf(user), via: 'session' } : null;
 }
 
 // --- Clé d'API ---
@@ -165,7 +165,7 @@ function authenticateWithApiKey(
   const secret = req.headers[API_KEY_HEADER];
   const user = typeof secret === 'string' ? authenticateApiKey(req.server.data.db, secret) : null;
   if (user) {
-    req.viewer = { user, capabilities: capabilitiesOf(user.role), via: 'apiKey' };
+    req.viewer = { user, capabilities: capabilitiesOf(user), via: 'apiKey' };
     return undefined;
   }
   return refuseCounted(
@@ -206,11 +206,17 @@ export function viewerOf(req: FastifyRequest): SessionViewer {
   return req.viewer;
 }
 
-/** preHandler : 403 si le membre n'a pas ce droit (sauf route d'amorçage encore ouverte, avec le jeton d'installation). */
-export const requireCapability = (capability: keyof Capabilities) => async (req: FastifyRequest) => {
-  if (isBootstrap(req)) return;
-  if (!req.viewer?.capabilities[capability]) throw new HttpError(403, 'Accès refusé');
-};
+/**
+ * preHandler : 403 si le membre n'a aucun de ces droits (sauf route d'amorçage encore ouverte, avec le jeton
+ * d'installation).
+ */
+export const requireCapability =
+  (...capabilities: [keyof Capabilities, ...(keyof Capabilities)[]]) =>
+  async (req: FastifyRequest) => {
+    if (isBootstrap(req)) return;
+    if (!capabilities.some((capability) => req.viewer?.capabilities[capability]))
+      throw new HttpError(403, 'Accès refusé');
+  };
 
 /** Options d'une route réservée au propriétaire (le serveur multimédia reste ouvert pendant l'amorçage, `isBootstrap`). */
 export const ownerOnly = { preHandler: requireCapability('isOwner') };

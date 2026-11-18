@@ -9,22 +9,17 @@ import {
   SESSION_TTL_MS,
   validateSession,
 } from '../src/server/services/sessions.ts';
-import {
-  getUser,
-  listUsers,
-  setQuotaOverride,
-  setRole,
-  UsersError,
-  upsertFromEmby,
-} from '../src/server/services/users.ts';
+import { getUser, listUsers, setQuotaOverride, upsertFromEmby } from '../src/server/services/users.ts';
 import {
   assignableRoles,
   capabilitiesOf,
   isQuotaExempt,
   quotaOverrideSchema,
+  type Role,
   roleLabels,
   roles,
 } from '../src/shared/roles.ts';
+import { setRole } from './helpers.ts';
 
 const emby = (id: string, isEmbyAdmin = false) => ({ id, name: `Nom ${id}`, avatar: null, isEmbyAdmin });
 const hour = 3600_000;
@@ -32,9 +27,13 @@ const hour = 3600_000;
 describe('rôles', () => {
   it('dérivent les droits du rôle', () => {
     expect(roles.map((r) => roleLabels[r])).toEqual(['Membre', 'Approbation auto', 'Gestionnaire', 'Propriétaire']);
-    expect(capabilitiesOf('member')).toEqual({
+    const of = (role: Role) => capabilitiesOf({ role, permissions: null });
+    expect(of('member')).toEqual({
       canRequest: true,
-      autoApprove: false,
+      canRequestMovies: true,
+      canRequestTv: true,
+      autoApproveMovies: false,
+      autoApproveTv: false,
       canManageRequests: false,
       canManageUsers: false,
       isOwner: false,
@@ -43,11 +42,15 @@ describe('rôles', () => {
       autoApprove4k: false,
       canManageIssues: false,
       canRequestOnBehalf: false,
+      canRequestQuotaExempt: false,
+      canAdvancedRequest: false,
+      canAutoRequestWatchlist: false,
       canManageBlocklist: false,
       canViewStats: false,
     });
-    expect(capabilitiesOf('auto_approve')).toMatchObject({
-      autoApprove: true,
+    expect(of('auto_approve')).toMatchObject({
+      autoApproveMovies: true,
+      autoApproveTv: true,
       autoApprove4k: true,
       canManageRequests: false,
       canManageIssues: false,
@@ -59,15 +62,17 @@ describe('rôles', () => {
       canManageBlocklist: true,
       canViewStats: true,
     };
-    expect(capabilitiesOf('manager')).toMatchObject({
-      autoApprove: true,
+    expect(of('manager')).toMatchObject({
+      autoApproveMovies: true,
+      autoApproveTv: true,
       canManageRequests: true,
+      canRequestQuotaExempt: true,
       canManageUsers: false,
       quotaExempt: true,
       ...managerRights,
     });
-    expect(capabilitiesOf('owner')).toMatchObject(managerRights);
-    expect(capabilitiesOf('owner')).toMatchObject({
+    expect(of('owner')).toMatchObject(managerRights);
+    expect(of('owner')).toMatchObject({
       canManageRequests: true,
       canManageUsers: true,
       isOwner: true,
@@ -127,19 +132,6 @@ describe('membres', () => {
     expect(upsertFromEmby(db, emby('a', false)).role).toBe('owner');
   });
 
-  it('protège le dernier propriétaire', () => {
-    const db = openDb(':memory:');
-    upsertFromEmby(db, emby('a', true));
-    upsertFromEmby(db, emby('b'));
-    expect(() => setRole(db, 'a', 'manager')).toThrow(UsersError);
-    expect(getUser(db, 'a')?.role).toBe('owner');
-
-    setRole(db, 'b', 'owner');
-    expect(setRole(db, 'a', 'manager').role).toBe('manager');
-    expect(() => setRole(db, 'b', 'member')).toThrowError('Il doit rester au moins un propriétaire');
-    expect(() => setRole(db, 'inconnu', 'member')).toThrowError('Membre introuvable');
-  });
-
   it('enregistre et efface les quotas propres au membre', () => {
     const db = openDb(':memory:');
     upsertFromEmby(db, emby('a'));
@@ -165,10 +157,18 @@ describe('membres', () => {
   it('« Sans quota » : `unlimited` ne vaut que `true`, et s’ajoute à l’exemption du rôle', () => {
     expect(quotaOverrideSchema.parse({ unlimited: true })).toEqual({ movies: null, seasons: null, unlimited: true });
     expect(quotaOverrideSchema.safeParse({ unlimited: false }).success).toBe(false);
-    expect(isQuotaExempt(capabilitiesOf('member'), null)).toBe(false);
-    expect(isQuotaExempt(capabilitiesOf('member'), { movies: null, seasons: null })).toBe(false);
-    expect(isQuotaExempt(capabilitiesOf('member'), { movies: null, seasons: null, unlimited: true })).toBe(true);
-    expect(isQuotaExempt(capabilitiesOf('manager'), null)).toBe(true);
+    expect(isQuotaExempt(capabilitiesOf({ role: 'member', permissions: null }), null)).toBe(false);
+    expect(isQuotaExempt(capabilitiesOf({ role: 'member', permissions: null }), { movies: null, seasons: null })).toBe(
+      false,
+    );
+    expect(
+      isQuotaExempt(capabilitiesOf({ role: 'member', permissions: null }), {
+        movies: null,
+        seasons: null,
+        unlimited: true,
+      }),
+    ).toBe(true);
+    expect(isQuotaExempt(capabilitiesOf({ role: 'manager', permissions: null }), null)).toBe(true);
   });
 
   it('le rôle propriétaire ne s’attribue pas', () => {

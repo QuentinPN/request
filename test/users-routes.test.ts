@@ -23,15 +23,28 @@ const put = (app: FastifyInstance, id: string, payload: object, headers: Record<
   app.inject({ method: 'PUT', url: `/api/users/${id}`, headers, payload });
 
 describe('GET /api/users', () => {
-  it('ouvert aux gestionnaires, fermé aux membres', async () => {
+  it('complète pour qui gère les membres, réduite pour un gestionnaire, fermée aux membres', async () => {
     const app = await newApp();
+    const owner = await loginAs(app, 'owner');
     const manager = await loginAs(app, 'manager');
     const member = await loginAs(app, 'member');
-    const res = await app.inject({ method: 'GET', url: '/api/users', headers: manager.headers });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toContainEqual(
+    const full = await app.inject({ method: 'GET', url: '/api/users', headers: owner.headers });
+    expect(full.json()).toContainEqual(
       expect.objectContaining({ id: member.user.id, role: 'member', quotaOverride: null, avatarUrl: null }),
     );
+    const res = await app.inject({ method: 'GET', url: '/api/users', headers: manager.headers });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toContainEqual({
+      id: member.user.id,
+      name: `Nom ${member.user.id}`,
+      avatarUrl: null,
+      canRequestMovies: true,
+      canRequestTv: true,
+      canRequest4k: true,
+      autoApproveMovies: false,
+      autoApproveTv: false,
+      autoApprove4k: false,
+    });
     expect((await app.inject({ method: 'GET', url: '/api/users', headers: member.headers })).statusCode).toBe(403);
   });
 });

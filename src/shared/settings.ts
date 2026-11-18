@@ -5,7 +5,7 @@ import { blockedKeywordSchema } from './blocklist.ts';
 import { discoverLayoutSchema } from './discover-layout.ts';
 import { JOB, jobIntervalSchema } from './jobs.ts';
 import { AGENT_EVENTS_VERSION, agentEventKinds, notificationKinds } from './notifications.ts';
-import { quotaRuleSchema } from './roles.ts';
+import { assignableRoleSchema, permissionOverridesSchema, quotaRuleSchema } from './roles.ts';
 import { tmdbLocaleSchema } from './tmdb-locale.ts';
 
 /** Adresse d'un service telle qu'enregistrée : sans `/` final. */
@@ -228,6 +228,14 @@ export const settingSchemas = {
   }),
   /** Titre de l'appli : onglet du navigateur, courriels et messages d'essai (jamais le logo). Pas un secret. */
   general: z.object({ appTitle: appTitleSchema.default(DEFAULT_APP_TITLE) }),
+  /**
+   * « Droits par défaut » (propriétaire) : rôle et remplacements de droits donnés à un membre à sa création (première
+   * connexion, import). `permissions` : écart au préréglage du rôle, comme `users.permissions`.
+   */
+  memberDefaults: z.object({
+    role: assignableRoleSchema.default('member'),
+    permissions: permissionOverridesSchema.nullable().default(null),
+  }),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;
@@ -257,6 +265,7 @@ export const secretFields = {
   tmdbLocale: [],
   jobs: [],
   general: [],
+  memberDefaults: [],
 } as const satisfies { [K in SettingKey]: readonly (keyof Setting<K>)[] };
 
 export type SecretField<K extends SettingKey> = (typeof secretFields)[K][number];
