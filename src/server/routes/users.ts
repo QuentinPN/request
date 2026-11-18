@@ -45,12 +45,18 @@ export function usersRoutes(app: FastifyInstance) {
     async (req): Promise<Member> => {
       const { id } = req.params;
       const { role, quotaOverride } = parseRequest(memberUpdateSchema, req.body);
-      // Le rôle d'abord : s'il est refusé (dernier propriétaire), rien n'est modifié.
-      if (role !== undefined) setRole(db, id, role);
-      if (quotaOverride !== undefined) setQuotaOverride(db, id, quotaOverride);
       const user = getUser(db, id);
       if (!user) throw new UsersError('not_found', 'Membre introuvable');
-      return toMember(user);
+      // Le propriétaire n'est jamais modifié ici (ni rôle ni quotas) ; le rôle « propriétaire » est refusé par le schéma.
+      if (user.role === 'owner') throw new HttpError(403, 'Le propriétaire ne se modifie pas depuis l’appli');
+      // Une seule transaction : si l'un des deux changements échoue (dernier propriétaire…), rien n'est écrit.
+      const updated = db.transaction((tx) => {
+        let next = user;
+        if (role !== undefined) next = setRole(tx, id, role);
+        if (quotaOverride !== undefined) next = setQuotaOverride(tx, id, quotaOverride);
+        return next;
+      });
+      return toMember(updated);
     },
   );
 

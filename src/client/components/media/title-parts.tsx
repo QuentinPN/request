@@ -5,7 +5,13 @@ import { Fragment, type ReactNode } from 'react';
 import { imageUrl, type MediaDetails, type MediaSummary } from '../../../shared/media.ts';
 import { errorMessage } from '../../lib/http.ts';
 import { inWatchlistQuery, useSetInWatchlist } from '../../lib/watchlist.ts';
-import { useRequest4kAction, useRequestAction } from '../requests/request-sheet.tsx';
+import { Notice } from '../notice.tsx';
+import {
+  type RequestableMedia,
+  useOwnRequestInFlight,
+  useRequest4kAction,
+  useRequestAction,
+} from '../requests/request-sheet.tsx';
 import { Button } from '../ui/button.tsx';
 
 // Pièces communes au hero de Découvrir et à la fiche titre (maquettes R-Decouvrir et R-Fiche).
@@ -56,8 +62,16 @@ export function GlassPill({ children }: { children: ReactNode }) {
 }
 
 /** « Demander » du hero et de la fiche : ouvre la feuille de demande (rien si le titre n'est pas demandable). */
-export function RequestButton({ media, className }: { media: MediaSummary; className?: string }) {
+export function RequestButton({ media, className }: { media: RequestableMedia; className?: string }) {
   const onRequest = useRequestAction(media);
+  const inFlight = useOwnRequestInFlight(media, false);
+  if (inFlight)
+    return (
+      <Notice tone="info" className="basis-full">
+        Votre demande précédente est en cours de traitement : vous pourrez demander d’autres saisons une fois qu’elle
+        aura été envoyée.
+      </Notice>
+    );
   if (!onRequest) return null;
   return (
     <Button size="lg" onClick={onRequest} className={className}>

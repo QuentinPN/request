@@ -50,6 +50,9 @@ export const preSendRequestStatuses = [
   'failed',
 ] as const satisfies readonly ActiveRequestStatus[];
 
+/** Demandes d'avant l'envoi qu'on ne complète plus : la propre demande du membre en bloque une nouvelle (409). */
+export const lockedRequestStatuses: readonly RequestStatus[] = ['approved', 'failed'];
+
 /**
  * Faits de la frise d'une demande (`request_events`, ajout seulement) : `retried` marque la relance d'un envoi en
  * échec, suivie d'un nouveau `sent` ou `failed` ; `available` sera posé par la synchronisation (5.1).
@@ -82,3 +85,6 @@ export type Availability = z.infer<typeof availabilitySchema>;
  */
 export const titleAvailabilitySchema = availabilitySchema.extend({ embyItemId: z.string().optional() });
 export type TitleAvailability = z.infer<typeof titleAvailabilitySchema>;
+
+/** Un titre ou une saison se demande tant qu'il n'est ni complet, ni en cours d'arrivée, ni déjà demandé. */
+export const isRequestableStatus = (status?: MediaStatus) => !status || status === 'partial' || status === 'declined';

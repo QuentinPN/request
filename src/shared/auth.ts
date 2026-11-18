@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { type Capabilities, type QuotaOverride, quotaOverrideSchema, type Role, roleSchema } from './roles.ts';
+import {
+  assignableRoleSchema,
+  type Capabilities,
+  type QuotaOverride,
+  quotaOverrideSchema,
+  type Role,
+} from './roles.ts';
 
 /**
  * Protection CSRF : toute requête d'écriture vers `/api` porte cet en-tête (valeur `1`).
@@ -48,7 +54,9 @@ export interface Member {
 }
 
 export const memberUpdateSchema = z.object({
-  role: roleSchema.optional(),
+  /** Jamais `owner` : le propriétaire n'est ni attribué ni modifié depuis l'appli. */
+  role: assignableRoleSchema.optional(),
   /** `null` : revenir aux quotas par défaut. */
   quotaOverride: quotaOverrideSchema.nullable().optional(),
 });
+export type MemberUpdate = z.input<typeof memberUpdateSchema>;

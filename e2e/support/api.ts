@@ -8,7 +8,7 @@ import {
   type ArrServer,
   type ArrServerInput,
 } from '../../src/shared/arr-servers.ts';
-import { type Member, userPath, type Viewer } from '../../src/shared/auth.ts';
+import { type Member, type MemberUpdate, memberUpdateSchema, userPath, type Viewer } from '../../src/shared/auth.ts';
 import {
   BLOCKED_KEYWORDS_PATH,
   BLOCKED_TITLES_PATH,
@@ -137,6 +137,8 @@ type MockState = {
   members: Member[];
   /** Ids des membres déconnectés partout (Réglages › Membres : `DELETE /api/users/:id/sessions`). */
   signedOut: string[];
+  /** Modifications de rôle et de quotas reçues (Réglages › Membres : `PUT /api/users/:id`) ; elles s'appliquent à `members`. */
+  memberUpdates: { id: string; body: MemberUpdate }[];
   /** Titres et mots-clés bloqués (Réglages › Blocages) ; blocage, déblocage et mots-clés s'y appliquent. */
   blocklist: Blocklist;
   /** Mots-clés TMDB que trouve la recherche (filtrés par nom). */
@@ -162,6 +164,7 @@ export class ApiMock {
     apiKeys: [],
     members: [],
     signedOut: [],
+    memberUpdates: [],
     blocklist: { titles: [], keywords: [] },
     keywordResults: [],
     discover: { hideAvailable: false, hideRequested: false },
@@ -222,6 +225,14 @@ export class ApiMock {
       return json(route, 204);
     }
     if (method === 'GET' && pathname === '/api/users') return json(route, 200, state.members);
+    const edited = state.members.find((m) => userPath(m.id) === decodeURIComponent(pathname));
+    if (method === 'PUT' && edited) {
+      const body = memberUpdateSchema.parse(route.request().postDataJSON());
+      state.memberUpdates.push({ id: edited.id, body });
+      if (body.role !== undefined) edited.role = body.role;
+      if (body.quotaOverride !== undefined) edited.quotaOverride = body.quotaOverride;
+      return json(route, 200, edited);
+    }
     const signedOut = state.members.find((m) => userPath(m.id, 'sessions') === pathname);
     if (method === 'DELETE' && signedOut) {
       state.signedOut.push(signedOut.id);

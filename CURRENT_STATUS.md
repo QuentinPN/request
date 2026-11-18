@@ -17,13 +17,13 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 - **Statuts** calculés côté serveur (disponible, partiel, en téléchargement, 4K à part), épisodes présents/attendus par saison, lien « Regarder dans » le serveur choisi.
 - **Demandes** : feuille de demande (film, saisons, 4K, pour un autre membre, hors quota), Mes demandes, bande « Vos demandes en cours », frise ; Approbations (tableau + panneau, cartes sur mobile) avec choix du serveur, du profil et du dossier, refus motivé, relance des échecs ; envoi à Radarr/Sonarr ; blocage de titres et de mots-clés.
 - **Autour des demandes** : signalements avec commentaires, liste de souhaits « Ma liste » avec import Trakt et Letterboxd, statistiques, clés d'API (`X-Api-Key`, docs/API.md).
-- **Membres** : Réglages › Membres (propriétaire) liste les membres et offre « Déconnecter partout » (révoque toutes leurs sessions, confirmation, captures `docs/captures/7.11`).
+- **Membres** : Réglages › Membres (propriétaire) liste les membres : « Modifier » (rôle Membre, Approbation auto ou Gestionnaire ; quotas par défaut, propres au membre ou « Sans quota »), « Voir ses demandes » (`/demandes?membre=`, gestionnaires) et « Déconnecter partout » (captures `docs/captures/7.11` et `docs/captures/membres`).
 - **Synchronisation** : webhooks Radarr/Sonarr (par serveur), balayage léger (10 min) et complet (24 h, purges), passage automatique des demandes à « disponible ».
 - **Notifications** : cloche, Discord, courriel et push web (distribution unique après validation) ; application installable (PWA).
-- **Navigation** : pilule avec menu « Plus » (ordinateur), cinq onglets au plus (mobile).
+- **Navigation** : pilule avec menu « Plus » (ordinateur), cinq onglets au plus (mobile), bouton « Retour » partagé sur les pages ouvertes depuis Compte, la fiche et les plateformes (repli sûr sans historique).
 - **Production** : Dockerfile, `compose.yml` durci + Caddy, sauvegarde quotidienne de la base, guide [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).
 - **Base** : SQLite (WAL), migrations 0000 à 0010, modèle dans `docs/DATA_MODEL.md`.
-- **Tests** : 691 unitaires et de routes (faux serveurs Emby, Jellyfin, Plex, Radarr, Sonarr, TMDB, Trakt, Discord, SMTP, push, Seerr), 392 e2e Playwright (1440 et 390 px) avec axe.
+- **Tests** : 761 unitaires et de routes (faux serveurs Emby, Jellyfin, Plex, Radarr, Sonarr, TMDB, Trakt, Discord, SMTP, push, Seerr), 359 e2e Playwright (91 captures ignorées) (1440 et 390 px) avec axe.
 
 ## Risques et points de vigilance
 
@@ -39,6 +39,10 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 | Amorçage (avant propriétaire) : prise de contrôle par un tiers ou par rebinding DNS                                                                                                                                   | Prise de contrôle pendant l'installation                            | Jeton d'installation exigé (journaux du conteneur ou `SETUP_TOKEN`), limite des échecs par IP                 |
 | Clé de chiffrement `/data/secret.key`                                                                                                                                                                                 | Sauvegarde inutilisable sans elle                                   | Documenté dans DEPLOIEMENT.md ; la sauvegarder à part                                                         |
 | Restauration de sauvegarde jamais exercée                                                                                                                                                                             | Perte de données en cas d'incident                                  | À tester lors du déploiement (6.3)                                                                            |
+
+## Prochain plan
+
+Phase 8 (ROADMAP.md) : parité avec Seerr, lots 8.1 à 8.9 ; 8.4 (droits fins) attend la décision du propriétaire.
 
 ## Prochaines actions (côté propriétaire)
 

@@ -1,25 +1,13 @@
-import { type QuotaRule, quotaRuleSchema } from '@shared/roles.ts';
 import type { MaskedSetting, Setting } from '@shared/settings.ts';
 import { useQuery } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
-import { CheckboxRow, FieldHint, Input, Label } from '@/components/ui/field';
+import { CheckboxRow, FieldHint } from '@/components/ui/field';
 import { discoverSettingQuery, useSaveDiscoverSetting } from '@/lib/blocklist';
 import { useSaveSetting } from './queries';
+import { type QuotaDraft, QuotaFields, type QuotaKey, quotaDraftOf, quotaRulesOf } from './quota-fields';
 import { actionClass, SectionActions, SectionFrame, type SectionFrameProps, sectionStatus } from './section-frame';
-
-const quotas = [
-  { key: 'movies', legend: 'Films', unit: 'films' },
-  { key: 'seasons', legend: 'Saisons de séries', unit: 'saisons' },
-] as const;
-type QuotaKey = (typeof quotas)[number]['key'];
-type Draft = Record<QuotaKey, { limit: string; days: string }>;
-
-const draftOf = (rule: QuotaRule) => ({ limit: String(rule.limit), days: String(rule.days) });
-const ruleOf = (d: { limit: string; days: string }) =>
-  // Champ vide : NaN, refusé (et non 0).
-  quotaRuleSchema.safeParse({ limit: Number(d.limit || Number.NaN), days: Number(d.days || Number.NaN) });
 
 type Props = SectionFrameProps & {
   stored: MaskedSetting<'rules'>;
@@ -31,9 +19,9 @@ type Props = SectionFrameProps & {
 /** Quotas par défaut des membres, sur une fenêtre glissante (le rôle décide de l'approbation automatique). */
 export function RulesSection({ stored, saved, wizard, onSaved, ...frame }: Props) {
   const id = useId();
-  const [draft, setDraft] = useState<Draft>(() => ({
-    movies: draftOf(stored.defaultQuota.movies),
-    seasons: draftOf(stored.defaultQuota.seasons),
+  const [draft, setDraft] = useState<QuotaDraft>(() => ({
+    movies: quotaDraftOf(stored.defaultQuota.movies),
+    seasons: quotaDraftOf(stored.defaultQuota.seasons),
   }));
   const save = useSaveSetting('rules', onSaved);
   // Réglages seulement (pas l'assistant) : « Masquer dans Découvrir », enregistré avec les quotas.
@@ -41,7 +29,7 @@ export function RulesSection({ stored, saved, wizard, onSaved, ...frame }: Props
   const saveDiscover = useSaveDiscoverSetting();
   const [hide, setHide] = useState<Setting<'discover'> | null>(null);
   const hideValue = hide ?? discover.data;
-  const parsed = { movies: ruleOf(draft.movies), seasons: ruleOf(draft.seasons) };
+  const parsed = quotaRulesOf(draft);
   const invalid = !parsed.movies.success || !parsed.seasons.success;
 
   const update = (key: QuotaKey, field: 'limit' | 'days', value: string) => {
@@ -67,43 +55,7 @@ export function RulesSection({ stored, saved, wizard, onSaved, ...frame }: Props
   return (
     <SectionFrame {...frame} status={status} doneLabel="Enregistré">
       <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {quotas.map(({ key, legend, unit }) => (
-            <fieldset key={key} className="grid grid-cols-2 gap-3">
-              <legend className="mb-2 text-[13px] font-semibold">{legend}</legend>
-              <div>
-                <Label htmlFor={`${id}-${key}-limit`} className="font-normal text-muted-foreground">
-                  Nombre de {unit}
-                </Label>
-                <Input
-                  id={`${id}-${key}-limit`}
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  step={1}
-                  value={draft[key].limit}
-                  aria-invalid={!parsed[key].success || undefined}
-                  onChange={(e) => update(key, 'limit', e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor={`${id}-${key}-days`} className="font-normal text-muted-foreground">
-                  Sur (jours)
-                </Label>
-                <Input
-                  id={`${id}-${key}-days`}
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  step={1}
-                  value={draft[key].days}
-                  aria-invalid={!parsed[key].success || undefined}
-                  onChange={(e) => update(key, 'days', e.target.value)}
-                />
-              </div>
-            </fieldset>
-          ))}
-        </div>
+        <QuotaFields id={id} draft={draft} onChange={update} />
         <FieldHint className="-mt-2">
           Par membre, sur une fenêtre glissante. Un quota propre à un membre pourra remplacer ces valeurs.
         </FieldHint>

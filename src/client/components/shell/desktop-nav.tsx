@@ -6,7 +6,15 @@ import { useViewer } from '@/hooks/use-viewer';
 import { AppName } from './app-name';
 import { Avatar } from './avatar';
 import { MenuBadge, NavBadge } from './nav-badge';
-import { activeFill, activeOptions, focusRing, roundButton, useMenuActive, useNavItems } from './nav-items';
+import {
+  activeFill,
+  activeOptions,
+  focusRing,
+  roundButton,
+  useMenuActive,
+  useNavItems,
+  useSettingsActive,
+} from './nav-items';
 import { Notifications } from './notifications';
 import { searchShortcut, useOpenSearch } from './search';
 
@@ -49,6 +57,7 @@ export function DesktopNav() {
   const account = useNavItems('account');
   const openSearch = useOpenSearch();
   const viewer = useViewer();
+  const settingsActive = useSettingsActive();
 
   return (
     <header className="absolute inset-x-(--space-page) top-6 z-40 hidden grid-cols-[auto_1fr_auto] items-center gap-4 lg:grid xl:grid-cols-[1fr_auto_1fr] xl:gap-6">
@@ -81,7 +90,13 @@ export function DesktopNav() {
       <div className="flex items-center gap-3 justify-self-end">
         <Notifications />
         {account.map((item) => (
-          <Link key={item.to} to={item.to} aria-label={item.label} className={cn(roundButton, activeFill)}>
+          <Link
+            key={item.to}
+            to={item.to}
+            aria-label={item.label}
+            {...(settingsActive && { 'aria-current': 'page' as const })}
+            className={cn(roundButton, activeFill)}
+          >
             {viewer ? <Avatar viewer={viewer} /> : <item.icon aria-hidden className="size-[18px]" />}
           </Link>
         ))}

@@ -196,3 +196,63 @@ test('fiche : pas de suivi sans demande du membre pour ce titre', async ({ page 
   await expect(page.getByRole('region', { name: 'Où regarder' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Suivi de la demande' })).toHaveCount(0);
 });
+
+test('série dont la saison 1 est déjà envoyée : « Demander » reste là, la saison 1 grisée, seule la 2 se demande', async ({
+  page,
+}) => {
+  const requests = await mockRequests(page);
+  const sent: MediaDetails = {
+    ...shogun,
+    status: 'requested',
+    seasons: [
+      { seasonNumber: 1, episodeCount: 10, airDate: '2024-02-27', status: 'requested' },
+      { seasonNumber: 2, episodeCount: 10, airDate: '2025-02-27' },
+    ],
+  };
+  await mockCatalogue(page, { tv: sent });
+  requests.requests = [
+    makeRequest(mediaNamed('Shōgun'), 'sent', { seasons: [1], events: ['requested', 'approved', 'sent'] }),
+  ];
+  await page.goto(`/titre/tv/${sent.tmdbId}`);
+  await page.getByRole('button', { name: 'Demander', exact: true }).click();
+  const dialog = sheet(page);
+  const season = (n: number) => dialog.getByRole('checkbox', { name: new RegExp(`^Saison ${n} `) });
+  await expect(season(1)).toBeDisabled();
+  await expect(season(2)).toBeChecked();
+  await dialog.getByRole('button', { name: 'Demander 1 saison' }).click();
+  await expect(dialog.getByText('Demande enregistrée.')).toBeVisible();
+  expect(requests.posts).toEqual([{ type: 'tv', tmdbId: sent.tmdbId, seasons: [2] }]);
+});
+
+test('série dont toutes les saisons sont disponibles ou demandées : pas de « Demander »', async ({ page }) => {
+  await mockRequests(page);
+  const covered: MediaDetails = {
+    ...shogun,
+    status: 'requested',
+    seasons: [
+      { seasonNumber: 1, episodeCount: 10, airDate: '2024-02-27', status: 'available' },
+      { seasonNumber: 2, episodeCount: 10, airDate: '2025-02-27', status: 'requested' },
+    ],
+  };
+  await mockCatalogue(page, { tv: covered });
+  await page.goto(`/titre/tv/${covered.tmdbId}`);
+  await expect(page.getByRole('heading', { level: 1, name: covered.title })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Demander', exact: true })).toHaveCount(0);
+});
+
+test('série dont la saison 1 est approuvée pour le membre : message à la place de « Demander »', async ({ page }) => {
+  const requests = await mockRequests(page);
+  const approved: MediaDetails = {
+    ...shogun,
+    status: 'requested',
+    seasons: [
+      { seasonNumber: 1, episodeCount: 10, airDate: '2024-02-27', status: 'requested' },
+      { seasonNumber: 2, episodeCount: 10, airDate: '2025-02-27' },
+    ],
+  };
+  await mockCatalogue(page, { tv: approved });
+  requests.requests = [makeRequest(mediaNamed('Shōgun'), 'approved', { seasons: [1] })];
+  await page.goto(`/titre/tv/${approved.tmdbId}`);
+  await expect(page.getByText('Votre demande précédente est en cours de traitement', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Demander', exact: true })).toHaveCount(0);
+});

@@ -9,18 +9,28 @@ import {
   type CreateRequestInput,
   isAiredSeason,
   isoDay,
+  isRequestable,
   type RequestDetail,
   type RequestQuota,
+  requestableSeasons,
 } from '../../../shared/requests.ts';
 import { capabilitiesOf } from '../../../shared/roles.ts';
+import { lockedRequestStatuses } from '../../../shared/status.ts';
 import { plural } from '../../../shared/text.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
 import { blockLabel } from '../../lib/blocklist.ts';
 import { mediaQuery, regularSeasons, seasonMeta, seasonTitle, summaryMeta } from '../../lib/catalogue.ts';
 import { errorMessage } from '../../lib/http.ts';
 import { useMediaServerName } from '../../lib/media-server.ts';
-import { arrName, membersQuery, requestProgress, requestQuotaQuery, useCreateRequest } from '../../lib/requests.ts';
-import { canRequest } from '../../lib/status.ts';
+import {
+  arrName,
+  membersQuery,
+  myRequestsForQuery,
+  requestProgress,
+  requestQuotaQuery,
+  useCreateRequest,
+} from '../../lib/requests.ts';
+import { ChoiceRow } from '../choice-row.tsx';
 import { StatusPill } from '../media/status-pill.tsx';
 import { Notice } from '../notice.tsx';
 import { Avatar } from '../shell/avatar.tsx';
@@ -33,16 +43,48 @@ import { RequestThumb } from './request-progress.tsx';
 
 const RequestSheetContext = createContext<((media: MediaSummary, is4k: boolean) => void) | null>(null);
 
+/** Titre de la fiche (saisons connues) ou d'une affiche, d'un hero, d'une liste (résumé seul) : voir `isRequestable`. */
+export type RequestableMedia = MediaSummary | MediaDetails;
+
 /**
  * Action « Demander » d'un titre : ouvre la feuille de demande. `undefined` si le membre n'a pas le droit de demander
- * ou si le titre n'est pas demandable (disponible, en cours, déjà demandé) : le bouton ne s'affiche pas.
+ * ou si le titre n'est pas demandable (disponible, en cours, déjà demandé, ou série dont toutes les saisons le sont) :
+ * le bouton ne s'affiche pas. Seule la fiche connaît les saisons : ailleurs, une série déjà demandée reste fermée.
  */
-export function useRequestAction(media: MediaSummary | undefined): (() => void) | undefined {
+export function useRequestAction(media: RequestableMedia | undefined): (() => void) | undefined {
   const open = useContext(RequestSheetContext);
   const viewer = useViewer();
-  if (!open || !media || media.blocked || !viewer?.capabilities.canRequest || !canRequest(media.status))
+  const inFlight = useOwnRequestInFlight(media, false);
+  if (
+    !open ||
+    !media ||
+    media.blocked ||
+    inFlight ||
+    !viewer?.capabilities.canRequest ||
+    !isRequestable(media, isoDay())
+  )
     return undefined;
   return () => open(media, false);
+}
+
+/**
+ * Le membre a déjà une demande approuvée ou échouée pour cette série dans cette qualité : le serveur refuse d'en
+ * ajouter une autre tant qu'elle n'est pas envoyée. Lue seulement pour une série aux saisons connues (fiche) quand
+ * « Demander » se proposerait. Tant qu'elle charge, on la suppose en cours : le bouton reste caché (pas de 409).
+ */
+export function useOwnRequestInFlight(media: RequestableMedia | undefined, is4k: boolean): boolean {
+  const viewer = useViewer();
+  const enabled =
+    media?.type === 'tv' &&
+    'seasons' in media &&
+    !!media.seasons &&
+    !!viewer?.capabilities.canRequest &&
+    isRequestable(media, isoDay(), is4k);
+  const mine = useQuery({ ...myRequestsForQuery({ type: 'tv', tmdbId: media?.tmdbId ?? 0 }), enabled });
+  return (
+    enabled &&
+    (mine.isPending || !!mine.data?.results.some((r) => r.is4k === is4k && lockedRequestStatuses.includes(r.status)))
+  );
 }
 
 /**
@@ -50,13 +92,14 @@ export function useRequestAction(media: MediaSummary | undefined): (() => void) 
  * version 4K n'est ni disponible, ni en cours, ni déjà demandée.
  */
 const can4k = (viewer: ReturnType<typeof useViewer>, media: MediaDetails | undefined): media is MediaDetails =>
-  !!media?.fourK && !media.blocked && !!viewer?.capabilities.canRequest4k && canRequest(media.fourK.status);
+  !!media?.fourK && !media.blocked && !!viewer?.capabilities.canRequest4k && isRequestable(media, isoDay(), true);
 
 /** Action « Demander en 4K » de la fiche (voir `can4k`) : ouvre la feuille en 4K. */
 export function useRequest4kAction(media: MediaDetails | undefined): (() => void) | undefined {
   const open = useContext(RequestSheetContext);
   const viewer = useViewer();
-  if (!open || !can4k(viewer, media)) return undefined;
+  const inFlight = useOwnRequestInFlight(media, true);
+  if (!open || inFlight || !can4k(viewer, media)) return undefined;
   return () => open(media, true);
 }
 
@@ -142,7 +185,7 @@ function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; 
   const [forUser, setForUser] = useState<Member | null>(null);
   const [quotaExempt, setQuotaExempt] = useState(false);
   // Choix de la version quand les deux se demandent ; ouverte en 4K depuis la fiche, la version normale peut être déjà là.
-  const choice = canRequest(media.status) && can4k(viewer, details.data);
+  const choice = can4k(viewer, details.data) && isRequestable(details.data, isoDay());
   // Changer de version repart d'une sélection neuve (les saisons manquantes ne sont pas les mêmes).
   const bodyProps = { media, is4k, onClose, forUser, quotaExempt };
   let body: ReactNode;
@@ -250,21 +293,12 @@ function MemberPicker({ value, onChange }: { value: Member | null; onChange: (me
     ? others.filter((m) => m.name.toLocaleLowerCase('fr').includes(term)).slice(0, MEMBER_RESULTS)
     : [];
   const shown = value && !found.some((m) => m.id === value.id) ? [value, ...found] : found;
-  const option =
-    'flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] bg-muted px-3 py-2 text-sm has-checked:ring-2 has-checked:ring-ring has-focus-visible:ring-3 has-focus-visible:ring-ring';
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-2 text-[13px] font-semibold text-muted-foreground">Demander pour</legend>
-      <label className={option}>
-        <input
-          type="radio"
-          name={id}
-          className="size-4 accent-(--accent-play)"
-          checked={value === null}
-          onChange={() => onChange(null)}
-        />
+      <ChoiceRow name={id} checked={value === null} onSelect={() => onChange(null)}>
         Moi
-      </label>
+      </ChoiceRow>
       <div>
         <Label htmlFor={`${id}-search`} className="sr-only">
           Rechercher un membre
@@ -287,17 +321,10 @@ function MemberPicker({ value, onChange }: { value: Member | null; onChange: (me
         <p className="text-sm text-muted-foreground">Aucun membre ne correspond à « {search.trim()} ».</p>
       )}
       {shown.map((member) => (
-        <label key={member.id} className={option}>
-          <input
-            type="radio"
-            name={id}
-            className="size-4 accent-(--accent-play)"
-            checked={value?.id === member.id}
-            onChange={() => onChange(member)}
-          />
+        <ChoiceRow key={member.id} name={id} checked={value?.id === member.id} onSelect={() => onChange(member)}>
           <Avatar viewer={member} className="size-7 text-[11px]" />
           <span className="truncate">{member.name}</span>
-        </label>
+        </ChoiceRow>
       ))}
     </fieldset>
   );
@@ -326,9 +353,6 @@ function QualityChoice({ is4k, onChange }: { is4k: boolean; onChange: (is4k: boo
   );
 }
 
-/** Une saison se demande si elle est diffusée et ni disponible, ni en cours, ni déjà demandée (règles du serveur). */
-const isRequestable = (season: Season, day: string) => isAiredSeason(season, day) && canRequest(season.status);
-
 function RequestBody({
   media,
   details,
@@ -348,7 +372,7 @@ function RequestBody({
   const day = isoDay();
   // Demande 4K : les saisons déjà là, en cours ou demandées le sont en 4K, la version normale ne compte pas.
   const seasons = details ? regularSeasons(details.seasons).map((s) => (is4k ? seasonIn4k(s) : s)) : [];
-  const missing = seasons.filter((s) => isRequestable(s, day)).map((s) => s.seasonNumber);
+  const missing = requestableSeasons(seasons, day).map((s) => s.seasonNumber);
   // « Toutes les saisons manquantes » présélectionné.
   const [selected, setSelected] = useState<Set<number>>(() => new Set(missing));
   const mutation = useCreateRequest();

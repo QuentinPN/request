@@ -14,6 +14,7 @@ import { AppShell } from '@/components/shell/app-shell';
 import { ErrorState, LoadingState } from '@/components/states';
 import { genreSearchSchema } from '@/lib/catalogue';
 import { issueSearchSchema } from '@/lib/issues';
+import { requestsSearchSchema } from '@/lib/requests';
 import { guardRedirect, safeReturnPath, setupStateQuery, viewerQuery } from '@/lib/session';
 import { IntrouvablePage } from '@/pages/introuvable';
 
@@ -100,7 +101,11 @@ const routeTree = rootRoute.addChildren([
     }),
     createRoute(page('/titre/$type/$id', () => import('@/pages/fiche'), 'FichePage')),
     createRoute(page('/plateforme/$type/$id', () => import('@/pages/plateforme'), 'PlateformePage')),
-    createRoute(page('/demandes', () => import('@/pages/demandes'), 'DemandesPage')),
+    // `?membre=` : un gestionnaire lit les demandes d'un membre (lien de Réglages › Membres).
+    createRoute({
+      ...page('/demandes', () => import('@/pages/demandes'), 'DemandesPage'),
+      validateSearch: requestsSearchSchema,
+    }),
     createRoute(page('/ma-liste', () => import('@/pages/ma-liste'), 'MaListePage')),
     createRoute(page('/approbations', () => import('@/pages/approbations'), 'ApprobationsPage')),
     createRoute({

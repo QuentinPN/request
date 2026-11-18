@@ -61,6 +61,12 @@ export function useMenuActive(): boolean {
   return items.some((item) => matchRoute({ to: item.to, fuzzy: true }));
 }
 
+/** Vrai sur « Réglages » : ouvert depuis Compte, absent de la navigation (bouton rond de l'ordinateur, onglet Compte du mobile). */
+export function useSettingsActive(): boolean {
+  const matchRoute = useMatchRoute();
+  return Boolean(matchRoute({ to: '/reglages', fuzzy: true }));
+}
+
 // « / » ne doit être actif que sur l'accueil, pas sur toutes les pages.
 export const activeOptions = (to: NavItem['to']) => ({ exact: to === '/' });
 

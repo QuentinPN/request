@@ -1,7 +1,4 @@
-import type { Availability, MediaStatus } from '../../shared/status.ts';
-
-/** Une demande est possible tant que le titre n'est ni complet, ni en cours d'arrivée, ni déjà demandé. */
-export const canRequest = (status?: MediaStatus) => !status || status === 'partial' || status === 'declined';
+import type { Availability } from '../../shared/status.ts';
 
 /** Progression du téléchargement en pourcentage entier ; `undefined` hors téléchargement ou sans valeur du serveur. */
 export function downloadPercent({ status, progress }: Availability): number | undefined {

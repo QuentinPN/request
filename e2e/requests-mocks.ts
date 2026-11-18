@@ -205,6 +205,8 @@ export class RequestsMock {
   quota = quotaOf(7, 3);
   /** Quotas lus : `moi`, ou l'id du membre pour qui la feuille demande. */
   quotaReads: string[] = [];
+  /** Requêtes de liste reçues (`?status=…&userId=…`), pour vérifier le périmètre demandé. */
+  listReads: string[] = [];
   /** Corps des POST /api/requests reçus. */
   posts: CreateRequestInput[] = [];
   /** Réponse d'erreur à servir aux créations. */
@@ -289,10 +291,12 @@ export class RequestsMock {
       // Même contrat que le serveur : la requête est lue par le schéma partagé.
       const query = requestListQuerySchema.safeParse(Object.fromEntries(url.searchParams));
       if (!query.success) return json(400, { error: 'Requête invalide' });
-      const { status, type, tmdbId, mine, page } = query.data;
+      const { status, type, tmdbId, mine, userId, page } = query.data;
+      this.listReads.push(url.search);
       const scope = this.requests.filter(
         (r) =>
           (!mine || r.requester.id === quentin.id) &&
+          (userId === undefined || r.requester.id === userId) &&
           (!type || r.type === type) &&
           (tmdbId === undefined || r.tmdbId === tmdbId),
       );
