@@ -11,6 +11,17 @@ describe('createRateLimiter', () => {
     expect(hit('a', 1000)).toBeNull();
   });
 
+  it('peek signale la limite sans rien compter', () => {
+    const { hit, peek } = createRateLimiter({ limit: 2, windowMs: 1000 });
+    expect(peek('a', 0)).toBeNull();
+    for (let i = 0; i < 5; i++) expect(peek('a', 0)).toBeNull();
+    hit('a', 0);
+    hit('a', 100);
+    expect(peek('a', 200)).toEqual({ retryAfterMs: 800 });
+    expect(peek('a', 200)).toEqual({ retryAfterMs: 800 });
+    expect(peek('a', 1000)).toBeNull();
+  });
+
   it('purge les clés expirées', () => {
     const limiter = createRateLimiter({ limit: 5, windowMs: 1000 });
     for (let i = 0; i < 50; i++) limiter.hit(`ip-${i}`, 0);

@@ -2,9 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { DISCORD_SETTINGS_PATH, DISCORD_TEST_PATH } from '../../shared/discord.ts';
 import { type MaskedSetting, settingSchemas } from '../../shared/settings.ts';
-import { IntegrationError } from '../integrations/http.ts';
-import { HttpError, parseRequest } from '../lib/api-errors.ts';
-import { requireCapability } from '../plugins/auth.ts';
+import { asTestResult, HttpError, parseRequest } from '../lib/api-errors.ts';
+import { ownerOnly } from '../plugins/auth.ts';
 import type { DiscordService } from '../services/discord.ts';
 import { getSetting, maskSetting, setSetting, withStoredSecrets } from '../services/settings.ts';
 
@@ -14,7 +13,6 @@ const testInputSchema = z.object({ webhookUrl: settingSchemas.discord.shape.webh
 /** Notifications Discord (propriétaire seulement) : l'adresse du webhook, un secret, ne sort jamais du serveur. */
 export function discordRoutes(app: FastifyInstance, discord: DiscordService) {
   const { db, cryptoKey } = app.data;
-  const ownerOnly = { preHandler: requireCapability('isOwner') };
   const stored = () => getSetting(db, cryptoKey, 'discord');
 
   app.get(
@@ -32,12 +30,7 @@ export function discordRoutes(app: FastifyInstance, discord: DiscordService) {
     const { webhookUrl } = parseRequest(testInputSchema, req.body ?? {});
     const url = webhookUrl ?? stored()?.webhookUrl;
     if (!url) throw new HttpError(409, 'Aucun webhook enregistré');
-    try {
-      await discord.test(url);
-    } catch (error) {
-      if (error instanceof IntegrationError) throw new HttpError(422, error.message);
-      throw error;
-    }
+    await asTestResult(() => discord.test(url));
     return { ok: true };
   });
 }

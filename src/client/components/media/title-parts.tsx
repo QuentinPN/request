@@ -1,8 +1,11 @@
+import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
-import { Plus } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Plus } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
-import { imageUrl, type MediaSummary } from '../../../shared/media.ts';
-import { useRequestAction } from '../requests/request-sheet.tsx';
+import { imageUrl, type MediaDetails, type MediaSummary } from '../../../shared/media.ts';
+import { errorMessage } from '../../lib/http.ts';
+import { inWatchlistQuery, useSetInWatchlist } from '../../lib/watchlist.ts';
+import { useRequest4kAction, useRequestAction } from '../requests/request-sheet.tsx';
 import { Button } from '../ui/button.tsx';
 
 // Pièces communes au hero de Découvrir et à la fiche titre (maquettes R-Decouvrir et R-Fiche).
@@ -61,6 +64,49 @@ export function RequestButton({ media, className }: { media: MediaSummary; class
       <Plus data-icon="inline-start" />
       Demander
     </Button>
+  );
+}
+
+/** « Demander en 4K » de la fiche, à côté de « Demander » (voir `useRequest4kAction`). */
+export function Request4kButton({ media, className }: { media: MediaDetails; className?: string }) {
+  const onRequest = useRequest4kAction(media);
+  if (!onRequest) return null;
+  return (
+    <Button size="lg" variant="secondary" onClick={onRequest} className={className}>
+      <Plus data-icon="inline-start" />
+      Demander en 4K
+    </Button>
+  );
+}
+
+/**
+ * « Ajouter à ma liste » / « Dans ma liste » de la fiche : un clic ajoute ou retire le titre de la liste de souhaits du
+ * membre. Une erreur du serveur s'affiche sous les boutons (la ligne d'actions passe à la ligne).
+ */
+export function WatchlistButton({ media, className }: { media: MediaSummary; className?: string }) {
+  const item = { type: media.type, tmdbId: media.tmdbId };
+  const query = useQuery(inWatchlistQuery(item));
+  const set = useSetInWatchlist(item);
+  const inList = query.data?.inList ?? false;
+  const Icon = inList ? BookmarkCheck : Bookmark;
+  return (
+    <>
+      <Button
+        variant="secondary"
+        size="lg"
+        className={cn('border-input', className)}
+        disabled={query.isPending || set.isPending}
+        onClick={() => set.mutate(!inList)}
+      >
+        <Icon data-icon="inline-start" />
+        {inList ? 'Dans ma liste' : 'Ajouter à ma liste'}
+      </Button>
+      {set.isError && (
+        <p role="alert" className="basis-full text-sm text-(--text-danger)">
+          {errorMessage(set.error, 'La liste n’a pas pu être modifiée.')}
+        </p>
+      )}
+    </>
   );
 }
 

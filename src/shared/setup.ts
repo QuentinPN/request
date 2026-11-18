@@ -1,32 +1,59 @@
 import { z } from 'zod';
-import { type IntegrationKey, integrationKeys, type SettingKey } from './settings.ts';
+import { arrKinds } from './arr-servers.ts';
+import { type IntegrationKey, integrationKeys, type MediaServerKind, type SettingKey } from './settings.ts';
+import { settingsPathOf } from './settings-path.ts';
 
-/** Les cinq sections de l'assistant, dans l'ordre de la page. */
-export const setupSections = [...integrationKeys, 'rules'] as const satisfies readonly SettingKey[];
+/** Sections de l'assistant enregistrées comme réglages (`/api/settings/:service`). */
+export const settingSections = [...integrationKeys, 'rules'] as const satisfies readonly SettingKey[];
+export type SettingSection = (typeof settingSections)[number];
+export const settingSectionSchema = z.enum(settingSections);
+
+/**
+ * Les cinq sections de l'assistant, dans l'ordre de la page. Radarr et Sonarr sont des serveurs (`arr_servers`) : leur
+ * section est faite dès qu'un serveur du type existe.
+ */
+export const setupSections = [...integrationKeys, ...arrKinds, 'rules'] as const;
 export type SetupSection = (typeof setupSections)[number];
-export const setupSectionSchema = z.enum(setupSections);
 export const integrationKeySchema = z.enum(integrationKeys as [IntegrationKey, ...IntegrationKey[]]);
+
+export const SETUP_STATE_PATH = '/api/setup/state';
+/** Réglage d'une section de l'assistant. */
+export const settingPath = (key: SettingSection | ':service') => settingsPathOf(key);
+export const setupTestPath = (key: IntegrationKey | ':service') => `/api/setup/${key}/test`;
+/**
+ * Jeton d'installation, exigé sans session sur le test et l'enregistrement du serveur multimédia tant qu'aucun
+ * propriétaire n'existe : écrit dans les journaux du serveur au démarrage (ou `SETUP_TOKEN`).
+ */
+export const SETUP_TOKEN_HEADER = 'x-setup-token';
 
 export interface SetupState {
   /** Section enregistrée au moins une fois. */
   services: Record<SetupSection, boolean>;
-  /** Un propriétaire existe : l'amorçage public d'Emby est fermé. */
+  /**
+   * Serveur multimédia choisi (Emby, Jellyfin ou Plex), `null` tant qu'aucun n'est enregistré. Public : l'écran de
+   * connexion s'y adapte (identifiants ou bouton Plex) avant toute session.
+   */
+  mediaServerKind: MediaServerKind | null;
+  /** Un propriétaire existe : l'amorçage du serveur multimédia (avec le jeton d'installation) est fermé. */
   hasOwner: boolean;
+  /** Des membres existent : le type du serveur multimédia est figé (le serveur refuse de le changer, 409). */
+  hasMembers: boolean;
   /** Toutes les sections enregistrées et un propriétaire désigné. */
   complete: boolean;
 }
 
-export interface EmbyLibrary {
+/** Bibliothèque d'un serveur multimédia (section Plex), classée films, séries ou autre. */
+export interface MediaLibrary {
   id: string;
   name: string;
   type: 'movies' | 'tvshows' | 'other';
 }
 
-export interface EmbyTestResult {
+export interface MediaServerTestResult {
   serverName: string;
   version: string;
   serverId: string;
-  libraries: EmbyLibrary[];
+  libraries: MediaLibrary[];
 }
 
 export interface ArrTestResult {
@@ -42,7 +69,7 @@ export interface SonarrTestResult extends ArrTestResult {
 
 /** Réponse d'un test de connexion réussi, par service. */
 export interface TestResults {
-  emby: EmbyTestResult;
+  mediaServer: MediaServerTestResult;
   tmdb: { ok: true };
   radarr: ArrTestResult;
   sonarr: SonarrTestResult;

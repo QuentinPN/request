@@ -26,14 +26,23 @@ export const useUnreadCount = () => useNotifications().data?.unread ?? 0;
 
 // --- Ordinateur : cloche ronde à droite de la pilule, panneau en popover (maquette R-Decouvrir : point d'accent) ---
 
+/** Cloche et point d'accent des non lues, communs au popover de l'ordinateur et au bouton du mobile. */
+function BellIcon({ unread }: { unread: number }) {
+  return (
+    <>
+      <Bell aria-hidden className="size-[18px]" />
+      {unread > 0 && <span aria-hidden className="absolute top-2.5 right-[11px] size-2 rounded-full bg-brand" />}
+    </>
+  );
+}
+
 export function Notifications() {
   const [open, setOpen] = useState(false);
   const unread = useUnreadCount();
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger aria-label={bellLabel('Notifications', unread)} className={cn(roundButton, 'relative')}>
-        <Bell aria-hidden className="size-[18px]" />
-        {unread > 0 && <span aria-hidden className="absolute top-2.5 right-[11px] size-2 rounded-full bg-brand" />}
+        <BellIcon unread={unread} />
       </PopoverTrigger>
       <PopoverContent align="end" sideOffset={8} className="w-[380px] gap-0 p-0">
         <NotificationsPanel
@@ -45,7 +54,25 @@ export function Notifications() {
   );
 }
 
-// --- Mobile : feuille posée en bas de l'écran, ouverte par l'onglet de la barre ---
+// --- Mobile : feuille posée en bas de l'écran, ouverte par la cloche de l'en-tête (la barre d'onglets est réservée aux pages) ---
+
+export function NotificationsButton() {
+  const [open, setOpen] = useState(false);
+  const unread = useUnreadCount();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={bellLabel('Notifications', unread)}
+        className={cn(roundButton, 'relative')}
+      >
+        <BellIcon unread={unread} />
+      </button>
+      <NotificationsSheet open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
 
 export function NotificationsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (

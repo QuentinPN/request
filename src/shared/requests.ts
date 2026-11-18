@@ -1,8 +1,20 @@
 import { z } from 'zod';
+import type { ArrServerSummary } from './arr-servers.ts';
 import { type MediaSummary, type MediaType, mediaTypeSchema, type Paged, type Season } from './media.ts';
-import { profileId, rootFolderPath, type Setting, seriesTypes } from './settings.ts';
+import { profileId, rootFolderPath, type SeriesType, seriesTypes } from './settings.ts';
 import type { ArrTestResult } from './setup.ts';
 import { type RequestEventType, type RequestStatus, requestStatusSchema } from './status.ts';
+
+// --- Adresses de l'API ---
+
+export const REQUESTS_PATH = '/api/requests';
+export const REQUEST_QUOTA_PATH = `${REQUESTS_PATH}/quota`;
+export const REQUEST_COUNTS_PATH = `${REQUESTS_PATH}/counts`;
+export const REQUEST_BATCH_PATH = `${REQUESTS_PATH}/batch`;
+export const sendOptionsPath = (type: MediaType | ':type') => `${REQUESTS_PATH}/send-options/${type}`;
+/** Une demande, ou l'une de ses actions. */
+export const requestPath = (id: number | ':id', action?: 'approve' | 'decline' | 'retry' | 'cancel') =>
+  `${REQUESTS_PATH}/${id}${action ? `/${action}` : ''}`;
 
 // --- Saisons demandables ---
 
@@ -22,13 +34,29 @@ const tmdbId = z.number().int().positive();
 const seasonNumber = z.number().int().min(0);
 const requestId = z.number().int().positive();
 
+/** Demande en 4K : envoyée à un serveur 4K, statut 4K à part (`media.status_4k`). */
+const is4k = z.boolean().default(false);
+
+/**
+ * Hors quota : la demande ne compte pas dans le quota du membre (gestionnaires seulement, à la demande et à
+ * l'approbation).
+ */
+const quotaExempt = z.boolean().optional();
+
+/**
+ * Champs communs aux films et aux séries : `forUserId` demande à la place de ce membre (droit « Demander pour un
+ * autre » : la demande est à lui, quota et notifications compris), `quotaExempt` la met hors quota.
+ */
+const requestOptions = { is4k, forUserId: z.string().min(1).optional(), quotaExempt };
+
 /** Film, ou saisons d'une série (`'all'`, par défaut : toutes les saisons diffusées encore manquantes). */
 export const createRequestSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('movie'), tmdbId }),
+  z.strictObject({ type: z.literal('movie'), tmdbId, ...requestOptions }),
   z.strictObject({
     type: z.literal('tv'),
     tmdbId,
     seasons: z.union([z.literal('all'), z.array(seasonNumber).min(1).max(100)]).default('all'),
+    ...requestOptions,
   }),
 ]);
 export type CreateRequestInput = z.input<typeof createRequestSchema>;
@@ -41,13 +69,17 @@ const declineReason = z
   .max(DECLINE_REASON_MAX, `Motif trop long (${DECLINE_REASON_MAX} caractères au plus)`);
 
 export const declineRequestSchema = z.object({ reason: declineReason });
-export type DeclineRequestInput = z.input<typeof declineRequestSchema>;
 
-/** Choix de l'approbateur avant envoi ; chaque champ absent prend la valeur des réglages Radarr/Sonarr. */
+/**
+ * Choix de l'approbateur avant envoi ; chaque champ absent prend la valeur du serveur. `serverId` : serveur du bon type
+ * et de la bonne qualité (4K ou non), par défaut celui de la demande, sinon le serveur par défaut.
+ */
 export const approveRequestSchema = z.object({
+  serverId: z.number().int().positive().optional(),
   qualityProfileId: profileId.optional(),
   rootFolderPath: rootFolderPath.optional(),
   seriesType: z.enum(seriesTypes).optional(),
+  quotaExempt,
 });
 export type ApproveRequestInput = z.input<typeof approveRequestSchema>;
 
@@ -115,13 +147,21 @@ export interface RequestView {
   status: RequestStatus;
   /** Saisons demandées (séries), triées ; vide pour un film. */
   seasons: number[];
+  /** Membre à qui la demande appartient (quota, notifications). */
   requester: RequestPerson;
+  /** Gestionnaire qui l'a faite à sa place (« Demandée par X pour Y ») ; `null` : le membre lui-même. */
+  createdBy: RequestPerson | null;
+  /** Hors quota : ne compte pas dans le quota du membre. */
+  quotaExempt: boolean;
   /** Qui a approuvé ou refusé ; `null` tant que la demande est en attente. */
   decidedBy: RequestPerson | null;
   declineReason: string | null;
   qualityProfileId: number | null;
   rootFolder: string | null;
-  seriesType: Setting<'sonarr'>['seriesType'] | null;
+  seriesType: SeriesType | null;
+  is4k: boolean;
+  /** Serveur Radarr/Sonarr choisi à l'approbation ; `null` = serveur par défaut au moment de l'envoi. */
+  server: { id: number; name: string } | null;
   /** ISO 8601. */
   createdAt: string;
   updatedAt: string;
@@ -153,17 +193,28 @@ export interface RequestPage extends Paged<RequestView> {
 }
 
 /**
- * Profils de qualité et dossiers racines de Radarr ou Sonarr, avec les valeurs par défaut des réglages : ce qu'un
- * approbateur peut choisir avant l'envoi (ni adresse, ni clé).
+ * Serveurs du type et de la qualité de la demande, puis profils de qualité et dossiers racines de l'un d'eux (`serverId`,
+ * le serveur par défaut sauf choix), avec ses valeurs par défaut : ce qu'un approbateur peut choisir avant l'envoi (ni
+ * adresse, ni clé).
  */
 export interface SendOptions {
+  servers: ArrServerSummary[];
+  serverId: number;
   qualityProfiles: ArrTestResult['qualityProfiles'];
   rootFolders: ArrTestResult['rootFolders'];
   defaultProfileId: number;
   defaultFolder: string;
 }
 
+/** `?userId=` : quota d'un autre membre (droit « Demander pour un autre »), pour la feuille de demande. */
+export const quotaQuerySchema = z.object({ userId: z.string().min(1).optional() });
+
 export const sendOptionsParamsSchema = z.object({ type: mediaTypeSchema });
+/** `?is4k=true&serverId=` : serveurs 4K, et profils/dossiers d'un serveur choisi plutôt que du serveur par défaut. */
+export const sendOptionsQuerySchema = z.object({
+  is4k: z.stringbool().default(false),
+  serverId: z.coerce.number().int().positive().optional(),
+});
 
 export interface QuotaUsage {
   limit: number;
@@ -172,7 +223,7 @@ export interface QuotaUsage {
   remaining: number;
 }
 
-/** Quota restant du membre connecté : films et saisons sur leur fenêtre glissante. */
+/** Quota restant du membre connecté (ou du membre `?userId=`) : films et saisons sur leur fenêtre glissante. */
 export interface RequestQuota {
   movies: QuotaUsage;
   seasons: QuotaUsage;

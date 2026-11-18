@@ -15,14 +15,21 @@ docker compose ps           # request doit passer « healthy »
 
 Variables (`.env`, voir `.env.example`) :
 
-| Variable             | Défaut           | Rôle                                                                                                                    |
-| -------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `DOMAIN`             | (obligatoire)    | Domaine public ; Caddy y obtient et renouvelle le certificat.                                                           |
-| `PROXY_SUBNET`       | `172.28.80.0/24` | Sous-réseau du réseau Caddy ↔ appli. Il devient `TRUST_PROXY` : l'appli ne croit `X-Forwarded-*` que de ce sous-réseau. |
-| `IMAGE_CACHE_MAX_MB` | `500`            | Taille maximale du cache d'images ; les fichiers les moins récemment vus sont supprimés au-delà.                        |
-| `BACKUP_KEEP`        | `7`              | Sauvegardes quotidiennes conservées dans `/data/backups` ; `0` désactive la sauvegarde automatique.                     |
+| Variable             | Défaut           | Rôle                                                                                                                         |
+| -------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `DOMAIN`             | (obligatoire)    | Domaine public ; Caddy y obtient et renouvelle le certificat.                                                                |
+| `PROXY_SUBNET`       | `172.28.80.0/24` | Sous-réseau du réseau Caddy ↔ appli. Il devient `TRUST_PROXY` : l'appli ne croit `X-Forwarded-*` que de ce sous-réseau.      |
+| `IMAGE_CACHE_MAX_MB` | `500`            | Taille maximale du cache d'images ; les fichiers les moins récemment vus sont supprimés au-delà.                             |
+| `BACKUP_KEEP`        | `7`              | Sauvegardes quotidiennes conservées dans `/data/backups` ; `0` désactive la sauvegarde automatique.                          |
+| `SETUP_TOKEN`        | (aléatoire)      | Jeton d'installation demandé par l'assistant tant qu'aucun propriétaire n'existe ; vide : tiré au hasard à chaque démarrage. |
 
-Variables de l'appli, déjà fixées par l'image : `PORT=3000`, `DATA_DIR=/data`. `HOST` (défaut `0.0.0.0`) n'a pas à changer.
+Variables de l'appli, déjà fixées par l'image : `PORT=3000`, `DATA_DIR=/data`. `HOST` (défaut `0.0.0.0`) n'a pas à changer. `compose.yml` fixe aussi `PUBLIC_URL=https://${DOMAIN}` : lien vers l'appli dans les courriels et contact des notifications push (hors Compose, renseignez-la à la main ; sans elle, les courriels n'ont pas de lien).
+
+### Notifications par courriel et push
+
+- **Courriel** (facultatif) : Réglages › Notifications par courriel. L'appli se connecte au serveur SMTP en sortie : le port choisi (587 STARTTLS, 465 TLS, 25 sans chiffrement) doit être ouvert en sortie depuis l'hôte (beaucoup de fournisseurs d'accès bloquent le 25 : préférez 587 ou 465 d'un service d'envoi). « Envoyer un essai » écrit à l'adresse du propriétaire, à renseigner d'abord dans Compte. Chaque membre saisit son adresse et ses choix dans Compte.
+- **Push** : rien à régler côté serveur (clés VAPID créées au premier besoin). Il exige l'appli en HTTPS (Caddy s'en charge) ; chaque membre l'active sur chacun de ses appareils dans Compte. Sur iPhone et iPad (iOS 16.4 et plus), il faut d'abord ajouter l'appli à l'écran d'accueil (Partager › Sur l'écran d'accueil).
+- **Appli installable** : Chrome, Edge et Android proposent « Installer l'application » ; le manifeste et le service worker sont servis par l'appli, sans réglage.
 
 Le conteneur est durci : système de fichiers en lecture seule (hors `/data` et `/tmp`), `cap_drop: [ALL]`, `no-new-privileges`, utilisateur `node` (uid 1000), aucun port publié (seul Caddy joint l'appli).
 
@@ -40,9 +47,17 @@ docker run --rm -v request_data:/data alpine sh -c \
 
 ### Assistant du premier lancement
 
-Ouvrez `https://<DOMAIN>`. Tant qu'aucun propriétaire n'existe, l'assistant guide la configuration : Emby (adresse et clé), Radarr, Sonarr, TMDB, règles de demande, puis la connexion d'un administrateur Emby, qui devient propriétaire.
+Ouvrez `https://<DOMAIN>`. Tant qu'aucun propriétaire n'existe, l'assistant guide la configuration : serveur multimédia (Emby, Jellyfin ou Plex : adresse et clé ou jeton), Radarr, Sonarr, TMDB, règles de demande, puis la connexion d'un administrateur du serveur multimédia (propriétaire du serveur pour Plex), qui devient propriétaire.
 
-Radarr, Sonarr et Emby tournent sur l'hôte : dans l'assistant, utilisez `http://host.docker.internal:<port>` (déclaré dans `compose.yml`). S'ils sont dans un autre réseau Docker, rattachez-y le service `request` (ou l'inverse) et utilisez le nom de leur conteneur.
+Le premier écran demande le **jeton d'installation** : sans lui, n'importe qui joignant l'appli avant vous pourrait la brancher sur son propre serveur et s'en déclarer propriétaire. Il est écrit dans les journaux au démarrage, tant qu'aucun propriétaire n'existe :
+
+```sh
+docker compose logs request | grep "Jeton d’installation"
+```
+
+Il change à chaque redémarrage, sauf si `SETUP_TOKEN` est renseigné dans `.env` : les journaux écrivent alors « celui de la variable SETUP_TOKEN » sans le répéter. Après 10 jetons faux en 5 minutes depuis une même adresse, l'assistant répond « Trop de jetons d’installation invalides », même avec le bon jeton : patientez quelques minutes. Une fois le propriétaire connecté, le jeton ne sert plus.
+
+Radarr, Sonarr et le serveur multimédia tournent sur l'hôte : dans l'assistant, utilisez `http://host.docker.internal:<port>` (déclaré dans `compose.yml`). S'ils sont dans un autre réseau Docker, rattachez-y le service `request` (ou l'inverse) et utilisez le nom de leur conteneur.
 
 ### Webhooks Radarr et Sonarr
 

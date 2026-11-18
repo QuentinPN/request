@@ -5,9 +5,14 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query';
+import { arrKindOf, arrLabel } from '../../shared/arr-servers.ts';
+import { type Member, USERS_PATH, userPath } from '../../shared/auth.ts';
 import type { MediaKey, MediaType } from '../../shared/media.ts';
 import {
   type CreateRequestInput,
+  REQUEST_COUNTS_PATH,
+  REQUEST_QUOTA_PATH,
+  REQUESTS_PATH,
   type RequestCounts,
   type RequestDetail,
   type RequestListFilter,
@@ -15,6 +20,7 @@ import {
   type RequestQuota,
   type RequestView,
   requestListParams,
+  requestPath,
 } from '../../shared/requests.ts';
 import {
   type ActiveRequestStatus,
@@ -24,8 +30,9 @@ import {
   requestStatuses,
 } from '../../shared/status.ts';
 import { mediaTypeLabel } from './catalogue.ts';
-import { apiGet, apiSend } from './http.ts';
+import { apiGet, apiSend, nextPageParam } from './http.ts';
 import { downloadPercent } from './status.ts';
+import { watchlistKeys } from './watchlist.ts';
 
 // Seules définitions des requêtes des demandes (clés et adresses), lues par la feuille, Mes demandes, Découvrir, la
 // fiche et la file d'approbation. Toutes les clés commencent par `requests` : `invalidateQueries({ queryKey:
@@ -37,13 +44,14 @@ export const requestKeys = {
   list: (filter: RequestListFilter) => ['requests', 'list', filter] as const,
   /** Mes demandes, page après page (« Charger plus »), par filtre de statuts. */
   mine: (status: readonly RequestStatus[] | undefined) => ['requests', 'mine', status ?? 'all'] as const,
-  quota: ['requests', 'quota'] as const,
+  /** Quota du membre connecté, ou d'un autre membre (feuille de demande pour autrui). */
+  quota: (userId?: string) => ['requests', 'quota', userId ?? 'moi'] as const,
   counts: ['requests', 'counts'] as const,
   detail: (id: number) => ['requests', 'detail', id] as const,
 };
 
 const fetchPage = (filter: RequestListFilter, signal?: AbortSignal) =>
-  apiGet<RequestPage>(`/api/requests?${requestListParams(filter)}`, undefined, signal);
+  apiGet<RequestPage>(`${REQUESTS_PATH}?${requestListParams(filter)}`, undefined, signal);
 
 /** Une page de demandes, filtrée côté serveur ; `totals` compte chaque statut du périmètre. */
 export const requestListQuery = (filter: RequestListFilter) =>
@@ -55,7 +63,7 @@ export const myRequestsQuery = (status?: readonly RequestStatus[]) =>
     queryKey: requestKeys.mine(status),
     queryFn: ({ pageParam, signal }) => fetchPage({ status, mine: true, page: pageParam }, signal),
     initialPageParam: 1,
-    getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
+    getNextPageParam: nextPageParam,
   });
 
 /** Demandes en cours du membre (bande de Découvrir), les plus récentes. */
@@ -68,36 +76,52 @@ export const myRequestsForQuery = ({ type, tmdbId }: MediaKey) => requestListQue
 export const totalOf = (totals: RequestPage['totals'], statuses: readonly RequestStatus[] = requestStatuses) =>
   statuses.reduce((sum, status) => sum + totals[status], 0);
 
-export const requestQuotaQuery = () =>
+/** Quota du membre connecté ; `userId` : celui d'un autre membre (droit « Demander pour un autre »). */
+export const requestQuotaQuery = (userId?: string) =>
   queryOptions({
-    queryKey: requestKeys.quota,
-    queryFn: ({ signal }) => apiGet<RequestQuota>('/api/requests/quota', undefined, signal),
+    queryKey: requestKeys.quota(userId),
+    queryFn: ({ signal }) =>
+      apiGet<RequestQuota>(
+        `${REQUEST_QUOTA_PATH}${userId ? `?${new URLSearchParams({ userId })}` : ''}`,
+        undefined,
+        signal,
+      ),
   });
+
+/** Membres de l'appli (gestionnaires) : sélecteur de la feuille de demande pour autrui. */
+export const membersQuery = queryOptions({
+  queryKey: ['users'],
+  queryFn: ({ signal }) => apiGet<Member[]>(USERS_PATH, undefined, signal),
+});
+
+/** « Déconnecter partout » (propriétaire) : ferme toutes les sessions du membre, sur tous ses appareils. */
+export const signOutMemberEverywhere = (memberId: string) =>
+  apiSend<void>('DELETE', userPath(encodeURIComponent(memberId), 'sessions'));
 
 /** Compteurs (navigation, bande de Découvrir) : relus au retour sur l'onglet, l'approbateur peut avoir attendu longtemps. */
 export const requestCountsQuery = () =>
   queryOptions({
     queryKey: requestKeys.counts,
-    queryFn: ({ signal }) => apiGet<RequestCounts>('/api/requests/counts', undefined, signal),
+    queryFn: ({ signal }) => apiGet<RequestCounts>(REQUEST_COUNTS_PATH, undefined, signal),
     refetchOnWindowFocus: true,
   });
 
 export const requestDetailQuery = (id: number) =>
   queryOptions({
     queryKey: requestKeys.detail(id),
-    queryFn: ({ signal }) => apiGet<RequestDetail>(`/api/requests/${id}`, undefined, signal),
+    queryFn: ({ signal }) => apiGet<RequestDetail>(requestPath(id), undefined, signal),
   });
 
 /** Une demande change le statut des titres : catalogue, fiches et recherche sont relus avec les demandes. */
 export function invalidateAfterRequest(client: QueryClient) {
-  for (const queryKey of [requestKeys.all, ['discover'], ['media'], ['search']])
+  for (const queryKey of [requestKeys.all, ['discover'], ['media'], ['search'], watchlistKeys.list])
     void client.invalidateQueries({ queryKey });
 }
 
 export function useCreateRequest() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateRequestInput) => apiSend<RequestDetail>('POST', '/api/requests', input),
+    mutationFn: (input: CreateRequestInput) => apiSend<RequestDetail>('POST', REQUESTS_PATH, input),
     onSuccess: () => invalidateAfterRequest(client),
   });
 }
@@ -105,13 +129,17 @@ export function useCreateRequest() {
 export function useCancelRequest() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => apiSend<RequestDetail>('POST', `/api/requests/${id}/cancel`),
+    mutationFn: (id: number) => apiSend<RequestDetail>('POST', requestPath(id, 'cancel')),
     onSuccess: () => invalidateAfterRequest(client),
   });
 }
 
-/** Service qui reçoit la demande : Radarr pour un film, Sonarr pour une série. */
-export const arrName = (type: MediaType) => (type === 'movie' ? 'Radarr' : 'Sonarr');
+/** Service qui reçoit la demande : Radarr pour un film, Sonarr pour une série (« Radarr 4K » en 4K). */
+export const arrName = (type: MediaType, is4k = false) => arrLabel(arrKindOf(type), is4k);
+
+/** Service d'une demande : son serveur s'il est connu (« Radarr 4K », « Films bis »), sinon le type. */
+export const requestArrName = (request: Pick<RequestView, 'type' | 'is4k' | 'server'>) =>
+  request.server?.name || arrName(request.type, request.is4k);
 
 export const requestStatusLabel: Record<RequestStatus, string> = {
   pending: 'En attente',
@@ -125,11 +153,13 @@ export const requestStatusLabel: Record<RequestStatus, string> = {
 
 // --- Progression d'une demande (barre en quatre étapes, pastille, frise) ---
 
-export const requestSteps = ['Demandé', 'Approuvé', 'Téléchargé', 'Dans Emby'] as const;
+/** Étapes de la barre ; la dernière porte le nom du serveur multimédia choisi (« Dans Plex »). */
+export const requestStepsOf = (serverName: string) =>
+  ['Demandé', 'Approuvé', 'Téléchargé', `Dans ${serverName}`] as const;
 export type StepState = 'done' | 'current' | 'failed' | 'todo';
 
 export interface RequestProgress {
-  /** Une valeur par étape de `requestSteps`. */
+  /** Une valeur par étape de `requestStepsOf`. */
   steps: StepState[];
   /** Teinte de la pastille, empruntée aux statuts des titres. */
   tone: MediaStatus;
@@ -154,8 +184,11 @@ const F = 'failed';
  * Seule traduction d'une demande (statut + statut du titre) en étapes : l'étape `current` est la dernière atteinte,
  * encore en cours. Refus et échec marquent l'approbation en rouge ; une demande annulée s'arrête à « Demandé ».
  */
-export function requestProgress(request: Pick<RequestView, 'status' | 'media' | 'type'>): RequestProgress {
-  const arr = arrName(request.type);
+export function requestProgress(
+  request: Pick<RequestView, 'status' | 'media' | 'type' | 'is4k' | 'server'>,
+  serverName: string,
+): RequestProgress {
+  const arr = requestArrName(request);
   const media = request.media;
   switch (request.status) {
     case 'pending':
@@ -198,7 +231,7 @@ export function requestProgress(request: Pick<RequestView, 'status' | 'media' | 
         steps: [D, D, D, D],
         tone: 'available',
         label: requestStatusLabel.available,
-        detail: 'Disponible dans Emby',
+        detail: `Disponible dans ${serverName}`,
       };
     case 'sent': {
       if (media?.status === 'available')
@@ -206,7 +239,7 @@ export function requestProgress(request: Pick<RequestView, 'status' | 'media' | 
           steps: [D, D, D, D],
           tone: 'available',
           label: requestStatusLabel.available,
-          detail: 'Disponible dans Emby',
+          detail: `Disponible dans ${serverName}`,
         };
       if (media?.status === 'downloading') {
         const percent = media ? downloadPercent(media) : undefined;
@@ -241,9 +274,25 @@ export function seasonsLabel(seasons: number[]): string {
 export const requestTitle = (request: Pick<RequestView, 'id' | 'media'>) =>
   request.media?.title ?? `Demande n° ${request.id}`;
 
-/** « Film · 2024 » ou « Série · saisons 1 et 2 ». */
-export const requestMeta = ({ type, media, seasons }: Pick<RequestView, 'type' | 'media' | 'seasons'>) =>
-  [mediaTypeLabel[type], type === 'tv' && seasons.length > 0 ? seasonsLabel(seasons) : media?.year].filter(Boolean);
+/** « Film · 2024 » ou « Série · saisons 1 et 2 », suivi de « 4K » pour une demande en 4K. */
+export const requestMeta = ({ type, media, seasons, is4k }: Pick<RequestView, 'type' | 'media' | 'seasons' | 'is4k'>) =>
+  [
+    mediaTypeLabel[type],
+    type === 'tv' && seasons.length > 0 ? seasonsLabel(seasons) : media?.year,
+    is4k && '4K',
+  ].filter(Boolean);
+
+/**
+ * « Demandée par X pour Y » d'une demande faite par un gestionnaire à la place d'un membre (« pour vous » quand Y est
+ * le membre connecté) ; `null` pour une demande du membre lui-même. Listes, panneau d'approbation et frise.
+ */
+export function onBehalfLabel(
+  { createdBy, requester }: Pick<RequestView, 'createdBy' | 'requester'>,
+  viewerId?: string,
+): string | null {
+  if (!createdBy) return null;
+  return `Demandée par ${createdBy.name} pour ${requester.id === viewerId ? 'vous' : requester.name}`;
+}
 
 /** Titre court d'une demande : « Shōgun · S1 », « Arcane · S1-2 » (cartes de Découvrir). */
 export function requestShortTitle(request: Pick<RequestView, 'id' | 'seasons' | 'media' | 'type'>): string {

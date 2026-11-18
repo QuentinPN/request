@@ -35,6 +35,18 @@ export const tvWithEverySeasonStatus: MediaDetails = {
 };
 
 /** Recherche qui ne trouve rien. */
+/** Shōgun avec un Sonarr 4K : saison 1 disponible en version normale, rien encore en 4K. */
+export const shogun4k: MediaDetails = {
+  ...fixtures.tv,
+  status: 'partial',
+  fourK: {},
+  seasons: [
+    { seasonNumber: 1, episodeCount: 10, airDate: '2024-02-27', status: 'available', fourK: {} },
+    { seasonNumber: 2, episodeCount: 10, airDate: '2025-02-27', fourK: {} },
+    { seasonNumber: 3, episodeCount: 8, airDate: '2026-02-27', fourK: {} },
+  ],
+};
+
 export const NO_RESULT_QUERY = 'zzzz';
 
 // Visuels de remplacement : aplats teintés comme dans les maquettes, déterministes par nom de fichier.

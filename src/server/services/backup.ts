@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
+import { startPeriodic } from '../lib/periodic.ts';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '../lib/time.ts';
 
 /** Copies conservées par défaut (`BACKUP_KEEP`) ; 0 désactive la sauvegarde quotidienne. */
@@ -58,25 +59,9 @@ export function startBackups(sqlite: Database.Database, dataDir: string, keep: n
       return true; // dossier pas encore créé
     }
   };
-  let current: Promise<unknown> | null = null;
-  const run = () => {
-    if (current || !due()) return;
-    current = backupDatabase(sqlite, dir, { keep, now })
-      .catch((error: unknown) => console.error('Sauvegarde planifiée', error))
-      .finally(() => {
-        current = null;
-      });
-  };
   if (keep === 0) return { stop: async () => {} };
-  const first = setTimeout(run, FIRST_CHECK_DELAY_MS);
-  const timer = setInterval(run, CHECK_INTERVAL_MS);
-  first.unref();
-  timer.unref();
-  return {
-    async stop() {
-      clearTimeout(first);
-      clearInterval(timer);
-      await current;
-    },
-  };
+  return startPeriodic('Sauvegarde planifiée', () => (due() ? backupDatabase(sqlite, dir, { keep, now }) : undefined), {
+    firstDelayMs: FIRST_CHECK_DELAY_MS,
+    intervalMs: CHECK_INTERVAL_MS,
+  });
 }

@@ -15,8 +15,7 @@ test('captures des notifications (5.2)', async ({ page }, { project }) => {
   await page.waitForLoadState('networkidle');
   await page.screenshot({ path: `${dir}/cloche-${width}.png` });
 
-  if (width === 1440) await page.getByRole('button', { name: /^Notifications/ }).click();
-  else await page.getByRole('button', { name: /^Alertes/ }).tap();
+  await page.getByRole('button', { name: /^Notifications/ }).click();
   await expect(page.getByRole('dialog', { name: 'Notifications' })).toBeVisible();
   await page.screenshot({ path: `${dir}/panneau-${width}.png` });
 });

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { notificationKinds } from '@shared/notifications.ts';
+import { requestNotificationKinds } from '@shared/notifications.ts';
 import { mockDiscord, WEBHOOK } from './discord-mocks.ts';
 import { expect, expectNoAxeViolations, field, test } from './support/api.ts';
 
@@ -40,7 +40,7 @@ test('activer : adresse, évènements choisis, test, puis enregistrement (l’ad
   await page.getByRole('button', { name: 'Enregistrer' }).click();
   await expect(page.getByText('Notifications Discord enregistrées')).toBeVisible();
   expect(discord.puts).toEqual([
-    { webhookUrl: WEBHOOK, enabled: true, events: notificationKinds.filter((k) => k !== 'declined') },
+    { webhookUrl: WEBHOOK, enabled: true, events: requestNotificationKinds.filter((k) => k !== 'declined') },
   ]);
   await expect(section(page)).toContainText('Actif');
   await expect(field(page, 'Adresse du webhook')).toHaveValue('');
@@ -58,7 +58,7 @@ test('adresse déjà enregistrée : Tester la réutilise, Enregistrer ne la renv
   await page.getByLabel('Envoyer les notifications sur Discord').uncheck();
   await page.getByRole('button', { name: 'Enregistrer' }).click();
   await expect(section(page)).toContainText('Désactivé');
-  expect(discord.puts).toEqual([{ enabled: false, events: notificationKinds }]);
+  expect(discord.puts).toEqual([{ enabled: false, events: requestNotificationKinds }]);
 });
 
 test('une adresse qui n’est pas celle d’un webhook Discord est refusée avant l’envoi', async ({ page }) => {

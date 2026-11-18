@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { ImageSize } from '../../shared/media.ts';
+import { normalizeUrl } from '../../shared/settings.ts';
 import { IntegrationError } from '../integrations/http.ts';
 import { MINUTE_MS } from '../lib/time.ts';
 
@@ -98,7 +99,7 @@ export function createImageCache({
   async function download(size: ImageSize, file: string, target: string): Promise<Buffer | null> {
     let body: Buffer;
     try {
-      const res = await fetch(`${upstreamUrl.replace(/\/+$/, '')}/${size}/${file}`, {
+      const res = await fetch(`${normalizeUrl(upstreamUrl)}/${size}/${file}`, {
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.status === 404) return null;

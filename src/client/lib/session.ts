@@ -1,5 +1,5 @@
-import type { Viewer } from '@shared/auth.ts';
-import type { SetupState } from '@shared/setup.ts';
+import { VIEWER_PATH, type Viewer } from '@shared/auth.ts';
+import { SETUP_STATE_PATH, type SetupState } from '@shared/setup.ts';
 import { type QueryClient, queryOptions } from '@tanstack/react-query';
 import { AuthRequiredError, apiGet } from './http.ts';
 
@@ -8,7 +8,7 @@ export const viewerQuery = queryOptions({
   queryKey: ['viewer'],
   queryFn: async (): Promise<Viewer | null> => {
     try {
-      return (await apiGet<{ viewer: Viewer }>('/api/auth/me')).viewer;
+      return (await apiGet<{ viewer: Viewer }>(VIEWER_PATH)).viewer;
     } catch (error) {
       if (error instanceof AuthRequiredError) return null;
       throw error;
@@ -18,7 +18,7 @@ export const viewerQuery = queryOptions({
 
 export const setupStateQuery = queryOptions({
   queryKey: ['setup-state'],
-  queryFn: () => apiGet<SetupState>('/api/setup/state'),
+  queryFn: () => apiGet<SetupState>(SETUP_STATE_PATH),
 });
 
 /** Fin de session (déconnexion ou 401) : plus de membre, et rien de ce qu'il a lu ne reste en cache. */
@@ -58,10 +58,10 @@ export function guardRedirect(
   viewer: Viewer | null,
 ): GuardRedirect | null {
   const isOwner = viewer?.capabilities.isOwner === true;
-  // Avec un propriétaire, la connexion reste ouverte même sans Emby (le serveur répond 409) : sinon /assistant renverrait ici.
-  if (path === '/connexion') return setup.services.emby || setup.hasOwner ? null : { to: '/assistant' };
+  // Avec un propriétaire, la connexion reste ouverte même sans serveur multimédia (le serveur répond 409) : sinon /assistant renverrait ici.
+  if (path === '/connexion') return setup.services.mediaServer || setup.hasOwner ? null : { to: '/assistant' };
   if (path === '/assistant') {
-    // Amorçage : sans propriétaire, l'assistant (Emby seul) est ouvert à tous.
+    // Amorçage : sans propriétaire, l'assistant (serveur multimédia seul) est ouvert à tous.
     if (!setup.hasOwner) return null;
     if (!viewer) return { to: '/connexion', retour: href };
     return isOwner ? null : { to: '/' };
@@ -70,7 +70,8 @@ export function guardRedirect(
   if (!viewer) return { to: '/connexion', retour: href };
   // Configuration inachevée : le propriétaire garde /compte pour se déconnecter.
   if (isOwner && !setup.complete && path !== '/compte') return { to: '/assistant' };
-  if (path === '/reglages' && !isOwner) return { to: '/' };
+  // Réglages : le propriétaire, et les gestionnaires des blocages (leur seule section, Blocages).
+  if (path === '/reglages' && !isOwner && viewer.capabilities.canManageBlocklist !== true) return { to: '/' };
   // Le serveur ne ferme pas la liste aux membres (ils y voient leurs demandes) : la file d'approbation n'est pas pour eux.
   if (path === '/approbations' && viewer.capabilities.canManageRequests !== true) return { to: '/' };
   return null;

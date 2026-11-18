@@ -28,7 +28,7 @@ Index : `UNIQUE(tmdb_id, type)` (badge de chaque affiche : lecture par lot `WHER
 Index : `(user_id, created_at)` (« Mes demandes » + quota), `(status, created_at)` (file d'approbation), `(media_id, status)` (statut affiché d'un titre, sert aussi la clé étrangère), `(decided_by)` partiel, `UNIQUE(external_ref)` (6.2, migration `0009_import_seerr` : simple `ALTER TABLE … ADD`, sans recréation de table ; SQLite tient les `NULL` pour distincts, un index unique ordinaire suffit).
 Liste `GET /api/requests` (filtres `status=a,b`, `type`+`tmdbId`) : une page, les totaux par statut du périmètre en un `GROUP BY` (couvert par `(status, created_at)` pour un approbateur, `(user_id, created_at)` pour un membre ; un titre passe par `media(type, tmdb_id)` en sous-requête) et la raison du dernier échec des lignes `failed` en une requête (`request_events(request_id, created_at)`). Vérifié par `EXPLAIN QUERY PLAN` (`test/requests.test.ts`) : aucun index ajouté.
 
-**`request_seasons`** — **table séparée**, pas de JSON : le quota compte des saisons, Sonarr reçoit une liste, la frise affiche l'état par saison. `request_id` FK `ON DELETE CASCADE` · `season_number` · PK `(request_id, season_number)`.
+**`request_seasons`** — **table séparée**, pas de JSON : le quota compte des saisons, Sonarr reçoit une liste, la frise affiche l'état par saison. `request_id` FK `ON DELETE CASCADE` · `season_number` · PK `(request_id, season_number)` · `created_at` (date d'ajout de la saison, migration `0011_quota_season_date` : reprise de celle de la demande pour l'existant ; table recréée à la main, un `ADD COLUMN` SQLite n'accepte pas `DEFAULT (unixepoch())`). Le quota compte chaque saison à cette date, pas à celle de la demande : des saisons ajoutées à une vieille demande en attente comptent.
 
 **`request_events`** — **table séparée** pour la frise (Demandée → Approuvée → Envoyée → Recherche → Dans Emby) : chaque étape a sa date, un acteur, éventuellement un message d'erreur (échec rejouable), et l'historique reste vrai après une relance. `id` PK · `request_id` FK `ON DELETE CASCADE` · `type` text `CHECK IN requestEventTypes` · `actor_id` FK users `SET NULL` · `detail` text · `created_at`. Index `(request_id, created_at)`. Ajout uniquement, jamais modifiée.
 
@@ -36,7 +36,7 @@ Liste `GET /api/requests` (filtres `status=a,b`, `type`+`tmdbId`) : une page, le
 
 **`job_runs`** — `id` PK · `job` text · `status` `CHECK IN ('running','success','failed')` · `started_at` · `finished_at` · `detail`. Verrou : `CREATE UNIQUE INDEX job_runs_running ON job_runs(job) WHERE status = 'running'`. Démarrer un balayage = `INSERT` ; la violation d'unicité signifie « déjà en cours ». Au démarrage du serveur, passer en `failed` les lignes `running` orphelines (crash). Index `(job, started_at)` pour « dernier balayage » (SQLite le parcourt à rebours pour `ORDER BY started_at DESC`). Fait en 3.2 : `services/jobs.ts` (`startJob` → `null` si déjà en cours, `finishJob`, `failOrphanJobs` appelé par `buildApp`).
 
-**Webhooks** : pas de table. Les webhooks Radarr/Sonarr ne font que déclencher un recalcul idempotent du statut (`media.status` dérivé de l'état courant) ; un doublon recalcule la même valeur. Les `request_events` ne sont ajoutés que si le statut change. Fait en 5.1 (`services/sync.ts`) : le titre est retrouvé par `(type, tmdb_id)`, ou `tvdb_id` pour Sonarr v3 ; un titre inconnu de l'appli est ignoré (rien de créé). Grab → `media.status = 'downloading'` (et les saisons concernées), sauf ce qui est déjà `available` : seule écriture directe du cache, remplacée par le calcul complet à sa fin de vie (1 min). Download, suppressions → liste et file du service oubliées du cache mémoire, puis recalcul de ce seul titre. Jeton : réglage `webhooks` (`{ token }`, chiffré), voir ARCHITECTURE › Sécurité.
+**Webhooks** : pas de table. Les webhooks Radarr/Sonarr ne font que déclencher un recalcul idempotent du statut (`media.status` dérivé de l'état courant) ; un doublon recalcule la même valeur. Les `request_events` ne sont ajoutés que si le statut change. Fait en 5.1 (`services/sync.ts`) : le titre est retrouvé par `(type, tmdb_id)`, ou `tvdb_id` pour Sonarr v3 ; un titre inconnu de l'appli est ignoré (rien de créé). Grab → `media.status = 'downloading'` (et les saisons concernées), sauf ce qui est déjà `available` : seule écriture directe du cache, remplacée par le calcul complet à sa fin de vie (1 min). Download, suppressions → liste et file du service oubliées du cache mémoire, puis recalcul de ce seul titre. Depuis le lot B, chaque serveur a son adresse (`?server=<id>`, Réglages › Webhooks) : Grab marque « en téléchargement » le statut normal ou 4K selon le serveur, Download n'oublie que la liste de ce serveur. Sans paramètre (ou id inconnu du type) : s'il n'y a qu'un serveur du type, c'est lui ; sinon toutes les listes du type sont oubliées et le titre recalculé, sans supposer la qualité (un Grab ne marque alors rien : la file le verra). Jeton : réglage `webhooks` (`{ token }`, chiffré), voir ARCHITECTURE › Sécurité.
 
 **`sent → available`** : `markAvailable` (`services/requests.ts`), appelée à la fin de chaque écriture du cache (`writeUpdates`, même transaction) pour les titres recalculés : fiche, webhook ou balayage, tout recalcul fait avancer les demandes. Film disponible, ou série disponible ou dont chaque saison demandée a une ligne `seasons` `available` → la demande `sent` passe `available` avec l'évènement `available` (acteur `NULL`). Une saison manquante la laisse `sent`. `WHERE status = 'sent'` : rejouée, elle ne trouve plus rien, aucun évènement en double.
 
@@ -50,18 +50,18 @@ SELECT count(*) FROM requests r JOIN media m ON m.id = r.media_id
 WHERE r.user_id = ? AND m.type = 'movie' AND r.status NOT IN ('declined','cancelled') AND r.created_at >= ?;
 -- saisons
 SELECT count(*) FROM request_seasons s JOIN requests r ON r.id = s.request_id
-WHERE r.user_id = ? AND r.status NOT IN ('declined','cancelled') AND r.created_at >= ?;
+WHERE r.user_id = ? AND r.status NOT IN ('declined','cancelled') AND s.created_at >= ?;
 ```
 
-Servies par `requests(user_id, created_at)`. Vérification et insertion dans **la même transaction** (`db.transaction`, synchrone avec better-sqlite3 : aucune course possible dans un seul processus).
+Films servis par `requests(user_id, created_at)`, saisons par `requests(user_id, created_at)` (sur `user_id`) puis la clé de `request_seasons` : aucun index ajouté. Vérification et insertion dans **la même transaction** (`db.transaction`, synchrone avec better-sqlite3 : aucune course possible dans un seul processus).
 
 ### Double clic
 
 `CREATE UNIQUE INDEX requests_active ON requests(media_id, user_id, is_4k) WHERE status IN ('pending','approved','sent','failed')` (`activeRequestStatuses` ; `failed` inclus en 4.1 : une demande en échec attend sa relance, elle ne doit pas être dupliquée) : un second POST identique ne crée rien, la demande active existante est renvoyée en 200 (pas 409). Drizzle 0.45 écrit le `where` de `onConflictDoNothing` après `DO NOTHING` (SQL invalide) : l'insertion passe par `onConflictDoUpdate({ target, targetWhere, setWhere: 0 })`, équivalent exact (`ACTIVE_CONFLICT`, `services/requests.ts`). Pour les séries, le service écarte en plus les saisons déjà couvertes par une demande active ; une nouvelle saison s'ajoute à la demande du membre tant qu'elle est en attente, sinon 409.
 
-### 4K plus tard
+### 4K
 
-Seule la colonne `requests.is_4k` (et sa présence dans l'index ci-dessus) est posée. Le jour venu : `media.status_4k`, `radarr_4k_id`/`sonarr_4k_id`, réglages d'un second serveur. Rien d'autre maintenant.
+`requests.is_4k` fait partie de `requests_active` depuis 4.1 : une demande 4K et une demande normale du même titre coexistent, sans changement d'index. Le reste est posé en phase 7 (voir § 6).
 
 ## 3. Statuts : une seule source
 
@@ -77,7 +77,7 @@ Seule la colonne `requests.is_4k` (et sa présence dans l'index ci-dessus) est p
 - Attention, recréation de table : ajouter un `CHECK` à une table existante (ex. `users.role`) fait recréer la table par drizzle-kit. `migrate()` s'exécute en transaction, où `PRAGMA foreign_keys=OFF` est sans effet : le `DROP TABLE users` supprime en cascade toutes les `sessions`. Accepté pour la tâche 1.7 (avant toute mise en production : simple déconnexion) ; après la mise en production, éditer la migration à la main pour préserver les données.
 - PRAGMA dans `openDb` : `journal_mode = WAL`, `foreign_keys = ON`, `busy_timeout = 5000` (déjà là), plus `synchronous = NORMAL` et `journal_size_limit`. `PRAGMA optimize` à la fermeture.
 - Sauvegarde : ne **pas** copier `request.db` seul pendant que le serveur tourne (le `-wal` contient les dernières écritures). Utiliser `sqlite.backup(path)` (API de sauvegarde de better-sqlite3, à chaud) ou `VACUUM INTO '/data/backups/…'` dans un job quotidien, en gardant 7 copies. Sauvegarder aussi `secret.key`, sans quoi les secrets sont illisibles.
-- Purges (job quotidien, enregistré dans `job_runs`) : sessions expirées ; notifications lues de plus de 90 jours (fait en 5.2 : `purgeReadNotifications`, au début du balayage complet `scan:full`, sur `created_at`, sans index dédié) ; `job_runs` de plus de 30 jours. Les demandes et leurs évènements sont conservés.
+- Purges (job quotidien, enregistré dans `job_runs`) : sessions expirées ; notifications lues depuis plus de 90 jours (`read_at`) ou non lues créées depuis plus de 365 jours (`created_at`) (`purgeOldNotifications`, au début du balayage complet `scan:full`, sans index dédié : parcours quotidien de la table) ; `job_runs` de plus de 30 jours. Les demandes et leurs évènements sont conservés.
 
 ```mermaid
 erDiagram
@@ -89,6 +89,15 @@ erDiagram
   requests ||--o{ request_seasons : ""
   requests ||--o{ request_events : "frise"
   requests ||--o{ notifications : ""
+  arr_servers |o--o{ requests : "cible"
+  media ||--o{ seasons_4k : ""
+  media ||--o{ issues : ""
+  users ||--o{ issues : "signale"
+  issues ||--o{ issue_comments : "fil"
+  issues ||--o{ notifications : ""
+  users ||--o{ watchlist : ""
+  users ||--o{ push_subscriptions : ""
+  users ||--o{ api_keys : "crée"
   media { int id PK
     text type
     int tmdb_id
@@ -117,3 +126,39 @@ erDiagram
 5. **5.1** — Fait : recalcul idempotent sur webhook, balayages léger et complet sous verrou `job_runs`, `sent → available`, purge des `media` oubliés (aucune migration : tables et index existaient). Reste : sauvegarde planifiée, purges des sessions expirées (`purgeExpired`, sans appelant) et des `job_runs` de plus de 30 jours (celle des notifications est faite en 5.2). _Critères_ : deux balayages simultanés → un seul démarre ; webhook rejoué → aucun évènement en double ; sauvegarde restaurable testée. Le balayage complet purge aussi les lignes `media` sans statut, sans demande et sans accès récent (par exemple plus de 30 jours) : les titres vus sur une affiche s'accumulent sinon.
 6. **5.2** — Fait : `notifications` (migration `0007_notifications`). _Critères_ : compteur non lus via l'index partiel ; texte du message testé par `kind` (`test/notifications.test.ts`, plans vérifiés par `EXPLAIN QUERY PLAN`).
 7. **6.2** — Fait : import des demandes de Seerr (`services/seerr-import.ts`). `requests_active` ne couvre ni `sent`, ni `declined`, ni `available` : sans `external_ref`, un second import dupliquerait ces demandes. Une demande déjà importée (même `external_ref`), ou en cours pour le même membre, titre et `is_4k`, n'est pas recréée (saisons ajoutées à une demande en attente). Écritures directes : un seul évènement `requested` (détail « Importée depuis Seerr », date d'origine), ni notification, ni quota, ni Radarr/Sonarr. Lots de 200 demandes par transaction ; l'aperçu (`?dryRun=1`) fait le même traitement dans une transaction annulée. _Critères_ : `test/seerr-import.test.ts`.
+8. **Phase 7, lot A** — Fait : migration `0010_phase7` (§ 6). _Critères_ : `test/phase7-db.test.ts` (données conservées sur une base 0009, reprise des réglages Radarr/Sonarr, contraintes, plans d'exécution).
+
+## 6. Phase 7 (migration `0010_phase7`)
+
+Socle de tous les lots de la phase 7, en une migration : les lots B à I n'en ajoutent pas. Générée par `drizzle-kit generate --name phase7`, puis **éditée à la main** pour ne recréer aucune table référencée (la base est en production, voir § 4) :
+
+- `media` : drizzle-kit la recréait pour un `CHECK` de plus (`DROP TABLE media` échoue sur la clé `RESTRICT` de `requests` et vide `seasons` en cascade). Remplacé par `ALTER TABLE media ADD … CONSTRAINT media_status_4k_check CHECK(…)` (contrainte de colonne, équivalente ; l'instantané `meta/` garde la forme de table, cohérente avec `schema.ts`).
+- `requests` : `ALTER TABLE … ADD … REFERENCES` sans action ; `ON DELETE SET NULL` rétabli à la main.
+- `notifications` (`CHECK` élargi, `issue_id`) : recréée par drizzle-kit, sans risque (aucune table ne la référence) ; l'`INSERT … SELECT` généré lisait `issue_id` dans l'ancienne table, colonne retirée de la copie.
+
+**`arr_servers`** (lot B) — `id` PK · `type` `CHECK IN arrKinds` (`radarr`, `sonarr`, `src/shared/arr-servers.ts`) · `name` · `url` · `api_key` (chiffrée comme les secrets des réglages : `v1:iv:tag:texte`, `secret.key`) · `is_4k` · `is_default` · `quality_profile_id` · `root_folder_path` · `minimum_availability` (Radarr, `CHECK`) · `series_type` (Sonarr, `CHECK`) · `language_profile_id` (Sonarr v3) · `tags` JSON `CHECK json_type = 'array'` · `created_at` · `updated_at`. Index unique partiel `(type, is_4k) WHERE is_default = 1` : au plus un défaut par couple. Pas d'autre index : quelques lignes.
+**Reprise des réglages** : en SQL dans la migration. Le chiffrement n'a pas de données associées (AAD) : la clé chiffrée de `settings.value.apiKey` se copie telle quelle. Une ligne `radarr` puis `sonarr` (défaut, non 4K, nommées « Radarr »/« Sonarr ») si le réglage existe et est complet ; rien sinon. Depuis le lot B, `arr_servers` est la seule source : plus rien ne lit ni n'écrit les réglages `radarr`/`sonarr` (routes `/api/settings/radarr|sonarr` supprimées). Au démarrage, `adoptLegacyArrSettings` (`services/arr-servers.ts`) reprend un ancien réglage complet encore présent : plus récent que le serveur par défaut non 4K du type (`settings.updated_at` > `arr_servers.updated_at`), il le met à jour ; sans serveur du type, il le crée ; puis il supprime la ligne `settings`. Un réglage incomplet est laissé tel quel. Serveur par défaut : le premier serveur d'un couple (type, 4K) le devient d'office, et la suppression ou le changement de couple du défaut le passe au plus ancien des restants (`ensureDefaults`). Le type et la 4K d'un serveur visé par des demandes en cours (`activeRequestStatuses`) ne changent pas (409). Supprimer un serveur rend ses demandes pas encore envoyées (en attente, approuvées, en échec) au serveur par défaut en effaçant profil et dossier, propres au serveur supprimé : une relance part avec les réglages du défaut.
+
+**`requests`** (lots B et I) — `server_id` FK → `arr_servers` `SET NULL` (`NULL` = serveur par défaut du type et de la qualité, cas de toutes les demandes existantes) · `quota_exempt` bool (exemption au cas par cas, hors quota) · `created_by` FK → users `SET NULL` (auteur d'une demande faite pour autrui ; `NULL` = le membre lui-même). Index : `(created_at)` (statistiques par mois, recherche par plage couvrante), `(server_id)` et `(created_by)` partiels (clés étrangères). `requests_active` inchangé.
+
+**`media`** (lots B et C) — `status_4k` (même `CHECK` que `status`, calculé depuis les serveurs 4K seuls) · `radarr_4k_id`, `sonarr_4k_id` (index partiels, comme les ids non 4K). `status_updated_at` date les deux statuts (un seul calcul). `radarr_id`/`sonarr_id` (et leurs pendants 4K) ne sont que des indices : id sur le serveur où le titre a été trouvé ou envoyé en dernier. Statut et progression se calculent en cherchant le titre par `tmdb_id`/`tvdb_id` dans la liste de chaque serveur du type et de la qualité (cache mémoire par serveur) ; le statut normal vient du serveur multimédia et des serveurs non 4K, le statut 4K des serveurs 4K seuls. Un serveur 4K injoignable laisse le cache 4K en l'état (le statut normal suit la règle habituelle). **Serveur multimédia** : `emby_item_id` et `users.id` gardent leur nom mais portent l'id du serveur choisi (Emby, Jellyfin, Plex) : un seul serveur à la fois, pas de renommage (drizzle-kit le traite par une question interactive et une recréation de `users` effacerait sessions et demandes).
+
+**`seasons_4k`** (lot B) — même forme que `seasons` (`media_id` FK `CASCADE`, `season_number`, `status` NOT NULL `CHECK`, `episodes_present`, `episodes_expected`, `UNIQUE(media_id, season_number)`). Table à part plutôt que des colonnes de `seasons` : une saison peut n'exister qu'en 4K (or `seasons.status` est `NOT NULL`), et le calcul normal remplace toutes les saisons d'un titre (`DELETE` puis `INSERT`) sans toucher à celles-ci.
+
+**`users`** (lot H) — `email` (nullable) · `email_notifications`, `push_notifications` bool, vrais par défaut : sans effet sans adresse (et SMTP réglé) ou sans appareil abonné. Colonnes plutôt qu'une table de préférences : deux interrupteurs par membre.
+
+**`issues`** (lot D) — `id` PK · `media_id` FK → media `RESTRICT` · `user_id` FK `CASCADE` · `type` `CHECK IN issueTypes` (`video`, `audio`, `subtitles`, `other`) · `season_number`, `episode_number` (`CHECK` : un épisode suppose sa saison) · `message` · `status` `CHECK IN ('open','resolved')` · `resolved_by` FK `SET NULL` · `resolved_at` (`CHECK` : renseigné si et seulement si `resolved` ; rouvrir l'efface) · `created_at` · `updated_at`. Index : `(status, created_at)` (liste des gestionnaires, compteur des ouverts), `(user_id, created_at)` (« Mes signalements », sans tri temporaire), `(media_id, status)` (fiche, clé étrangère, purge), `(resolved_by)` partiel. La purge des titres oubliés (`purgeMedia`) écarte les titres signalés (sinon la clé `RESTRICT` ferait échouer tout le balayage) et ceux qui ont un `status_4k`.
+**`issue_comments`** — `issue_id` FK `CASCADE` · `user_id` FK `SET NULL` · `message` · `created_at`. Index `(issue_id, created_at)` (fil), `(user_id)` partiel.
+**`notifications`** — `issue_id` FK → issues `SET NULL` (index partiel) ; `kind` élargi (`notificationKinds`, `src/shared/notifications.ts`) : `requestNotificationKinds` (les cinq des demandes, seuls envoyés à Discord pour l'instant), `requested_on_behalf`, `issue_created`, `issue_commented`, `issue_resolved`, `issue_reopened`.
+
+**`watchlist`** (lot E) — `user_id` FK `CASCADE` · `media_type` `CHECK` · `tmdb_id` · `title`, `year`, `poster_path` (copie d'affichage, facultative) · `source` `CHECK IN ('manual','trakt','letterboxd')` · `created_at`. `UNIQUE(user_id, media_type, tmdb_id)` : import idempotent, liste du membre (préfixe `user_id`). Pas de lien vers `media` : un souhait n'a ni statut ni demande, et ne retient pas la purge.
+
+**`push_subscriptions`** (lot H) — `user_id` FK `CASCADE` · `endpoint` `UNIQUE` (réabonnement, suppression sur 404/410) · `p256dh`, `auth` (en clair : clés publiques du navigateur, pas des secrets du serveur) · `user_agent` · `created_at` · `updated_at`. Index `(user_id)`.
+
+**`blocked_titles`** (lot I) — `media_type` `CHECK` · `tmdb_id` · `title` · `blocked_by` FK `SET NULL` · `created_at`. `UNIQUE(media_type, tmdb_id)` (refus d'une demande, filtrage par lot). Les **mots-clés bloqués** sont un réglage (`blockedKeywords`, liste `{ id, name }` TMDB) : une courte liste lue en entier pour `without_keywords`, sans requête par titre.
+
+**`api_keys`** (lot G) — `name` · `key_hash` `UNIQUE` (SHA-256 hexadécimal, recherche à chaque requête `X-Api-Key`) · `prefix` (affichable) · `created_by` FK `CASCADE` (la clé authentifie comme son créateur) · `created_at` · `last_used_at` · `revoked_at`. Index `(created_by)`.
+
+**Réglages** (`settingSchemas`, sans migration) : `mediaServer` (`kind` `emby`/`jellyfin`/`plex`, même forme que `emby`, plus `serverId` facultatif : id de l'instance, lu au test de chaque enregistrement et figé une fois des membres inscrits ; `getMediaServer` relit l'ancien `emby` tant que `mediaServer` n'existe pas), `smtp` (mot de passe chiffré), `vapid` (clé privée chiffrée), `trakt` (`clientId` chiffré), `discover` (`hideAvailable`, `hideRequested`), `blockedKeywords`. Aucun n'est dans `connectionSchemas` : les routes génériques `/api/settings/:service` de l'assistant ne les exposent pas.
+
+**Statistiques** (lot F), vérifiées par `EXPLAIN QUERY PLAN` : totaux par statut (`requests(status, created_at)` couvrant), par mois (`requests(created_at)`, plage couvrante puis regroupement temporaire sur 12 mois au plus), membres les plus actifs (`requests(user_id, created_at)`), titres les plus demandés (`requests(media_id, status)`), signalements ouverts (`issues(status, created_at)`). Délais moyens : jointure `request_events(request_id, created_at)` existante.

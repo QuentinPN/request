@@ -4,7 +4,8 @@ import { cn } from 'cn';
 import { Film } from 'lucide-react';
 import { useId } from 'react';
 import { Avatar } from '@/components/shell/avatar';
-import { FieldHint, Label } from '@/components/ui/field';
+import { FieldHint, Label, Textarea } from '@/components/ui/field';
+import { onBehalfLabel } from '@/lib/requests';
 
 /** Bouton « Approuver » vert des maquettes (request.css, .btn-ok). */
 export const approveClass =
@@ -37,11 +38,17 @@ export function RequestPoster({
   );
 }
 
-export function Requester({ person }: { person: RequestView['requester'] }) {
+/** Membre d'une demande ; faite à sa place (`createdBy`), « Demandée par X pour Y » en dessous. */
+export function Requester({ request }: { request: Pick<RequestView, 'requester' | 'createdBy'> }) {
+  const person = request.requester;
+  const onBehalf = onBehalfLabel(request);
   return (
     <span className="inline-flex min-w-0 items-center gap-2">
       <Avatar viewer={person} className="size-7 text-[11px]" />
-      <span className="truncate">{person.name}</span>
+      <span className="min-w-0">
+        <span className="block truncate">{person.name}</span>
+        {onBehalf && <span className="block truncate text-xs text-muted-foreground">{onBehalf}</span>}
+      </span>
     </span>
   );
 }
@@ -74,7 +81,7 @@ export function ReasonField({
   return (
     <div>
       <Label htmlFor={id}>Motif si refus</Label>
-      <textarea
+      <Textarea
         id={id}
         value={value}
         maxLength={DECLINE_REASON_MAX}
@@ -83,7 +90,6 @@ export function ReasonField({
         aria-describedby={`${id}-hint`}
         rows={3}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full resize-none rounded-(--r-button) border border-input bg-(--field-bg) px-3.5 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/20 disabled:opacity-50 aria-invalid:border-(--tint-danger-border)"
         placeholder={hint}
       />
       <FieldHint id={`${id}-hint`} className={cn(error && 'text-(--text-danger)')}>

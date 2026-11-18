@@ -31,7 +31,12 @@ const CAST_LIMIT = 15;
 const LIST_TTL_MS = 60 * 60 * 1000;
 const DETAILS_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 1000;
-const DETAILS_APPEND = 'credits,videos,recommendations,similar,watch/providers,external_ids';
+const DETAILS_APPEND = 'credits,videos,recommendations,similar,watch/providers,external_ids,keywords';
+/**
+ * Séparateur de `without_keywords` : `|` (OU, comme pour `with_keywords`) exclut un titre qui porte l'un des mots-clés ;
+ * la virgule (ET) n'exclurait que ceux qui les portent tous. Non documenté par TMDB pour `without_keywords`.
+ */
+const KEYWORD_OR = '|';
 
 const MESSAGES = {
   unauthorized: 'Clé TMDB refusée',
@@ -48,6 +53,7 @@ const optionalString = z.string().nullish();
 const rawMedia = z.object({
   id: z.number().int(),
   title: optionalString,
+  original_title: optionalString,
   name: optionalString,
   release_date: optionalString,
   first_air_date: optionalString,
@@ -87,6 +93,8 @@ const rawCast = z.object({
   profile_path: optionalString,
 });
 const rawVideo = z.object({ key: z.string(), site: optionalString, type: optionalString, iso_639_1: optionalString });
+/** Mot-clé TMDB : `{ id, name }` (fiche, `/search/keyword`). */
+const rawKeyword = z.object({ id: z.number().int(), name: z.string() });
 
 const rawDetails = rawMedia.extend({
   genres: z.array(genreSchema).nullish(),
@@ -101,6 +109,8 @@ const rawDetails = rawMedia.extend({
   similar: mediaPage.nullish(),
   'watch/providers': z.object({ results: z.record(z.string(), rawProviders) }).nullish(),
   external_ids: z.object({ imdb_id: optionalString, tvdb_id: z.number().int().nullish() }).nullish(),
+  // Forme différente selon le type : `keywords.keywords` pour un film, `keywords.results` pour une série.
+  keywords: z.object({ keywords: z.array(rawKeyword).nullish(), results: z.array(rawKeyword).nullish() }).nullish(),
 });
 type RawDetails = z.infer<typeof rawDetails>;
 
@@ -161,6 +171,7 @@ function toDetails(raw: RawDetails, type: MediaType): MediaDetails {
     recommendations: (raw.recommendations?.results ?? []).map((r) => toSummary(r, type)),
     similar: (raw.similar?.results ?? []).map((r) => toSummary(r, type)),
     externalIds: { imdb: raw.external_ids?.imdb_id || null, tvdb: raw.external_ids?.tvdb_id ?? null },
+    keywords: (type === 'movie' ? raw.keywords?.keywords : raw.keywords?.results) ?? [],
     ...(raw.last_episode_to_air && {
       lastAired: {
         seasonNumber: raw.last_episode_to_air.season_number,
@@ -236,8 +247,14 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
   const list = async (type: MediaType, path: string, query: Query = {}) =>
     toPaged(await get(path, mediaPage, query, LIST_TTL_MS), type);
 
-  const discover = (type: MediaType, page: number, filters: Query) =>
-    list(type, `/discover/${type}`, { sort_by: 'popularity.desc', page, ...filters });
+  /** `/discover`, le seul flux qui sait écarter des mots-clés (`exclude`, ids TMDB) côté TMDB. */
+  const discover = (type: MediaType, page: number, filters: Query, exclude: readonly number[] = []) =>
+    list(type, `/discover/${type}`, {
+      sort_by: 'popularity.desc',
+      page,
+      ...filters,
+      ...(exclude.length > 0 && { without_keywords: exclude.join(KEYWORD_OR) }),
+    });
 
   return {
     trending: async (type: MediaType, window: 'day' | 'week'): Promise<MediaSummary[]> =>
@@ -255,15 +272,22 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
     /** Séries actuellement diffusées. */
     onTheAir: async (): Promise<MediaSummary[]> => (await list('tv', '/tv/on_the_air')).results,
 
-    /** Titres disponibles en streaming (abonnement) chez une plateforme, en France. */
-    discoverByProvider: (type: MediaType, providerId: number, page = 1) =>
-      discover(type, page, {
-        with_watch_providers: providerId,
-        watch_region: REGION,
-        with_watch_monetization_types: 'flatrate',
-      }),
+    /** Titres disponibles en streaming (abonnement) chez une plateforme, en France ; sans les mots-clés `exclude`. */
+    discoverByProvider: (type: MediaType, providerId: number, page = 1, exclude?: readonly number[]) =>
+      discover(
+        type,
+        page,
+        { with_watch_providers: providerId, watch_region: REGION, with_watch_monetization_types: 'flatrate' },
+        exclude,
+      ),
 
-    byGenre: (type: MediaType, genreId: number, page = 1) => discover(type, page, { with_genres: genreId }),
+    /** Titres d'un genre ; sans les mots-clés `exclude`. */
+    byGenre: (type: MediaType, genreId: number, page = 1, exclude?: readonly number[]) =>
+      discover(type, page, { with_genres: genreId }, exclude),
+
+    /** Mots-clés TMDB dont le nom correspond (Réglages › Blocages), première page. */
+    searchKeywords: async (query: string): Promise<Array<{ id: number; name: string }>> =>
+      (await get('/search/keyword', rawPage(rawKeyword), { query, page: 1 }, LIST_TTL_MS)).results,
 
     genres: async (type: MediaType): Promise<Genre[]> =>
       (await get(`/genre/${type}/list`, z.object({ genres: z.array(genreSchema) }), {}, DETAILS_TTL_MS)).genres,
@@ -307,6 +331,17 @@ export function createTmdb(config: TmdbConfig, cache: TtlLru = sharedCache) {
     /** Résumé d'un titre (affiche, année, synopsis), sans le reste de la fiche. */
     summary: async (type: MediaType, id: number): Promise<MediaSummary> =>
       toSummary(await get(`/${type}/${id}`, rawMedia, {}, DETAILS_TTL_MS), type),
+
+    /**
+     * Films dont le titre correspond à la recherche, dans l'ordre de TMDB, avec leur titre original (les titres
+     * d'autres langues, comme ceux de Letterboxd, y sont rapprochés). Sans filtre d'année : c'est l'appelant qui
+     * juge, une sortie en festival ou à l'étranger décalant souvent l'année d'un an.
+     */
+    searchMovies: async (query: string): Promise<Array<MediaSummary & { originalTitle: string }>> =>
+      (await get('/search/movie', mediaPage, { query }, LIST_TTL_MS)).results.map((raw) => ({
+        ...toSummary(raw, 'movie'),
+        originalTitle: raw.original_title ?? '',
+      })),
 
     /** Identifiant TVDB d'une série (Sonarr), `null` si TMDB ne le connaît pas. */
     tvdbIdFor: async (tvId: number): Promise<number | null> => {

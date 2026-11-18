@@ -1,5 +1,8 @@
+import type { UseQueryResult } from '@tanstack/react-query';
 import { cn } from 'cn';
 import type { ReactNode } from 'react';
+import { ErrorState, Loading } from '@/components/states';
+import { Skeleton } from '@/components/ui/skeleton';
 import { type SectionId, sectionText, settingsSectionOrder } from './config';
 
 export type SectionStatus = 'done' | 'todo' | 'active' | 'error';
@@ -34,12 +37,14 @@ export type SectionFrameProps<S extends SectionId = SectionId> = {
   section: S;
   open: boolean;
   onToggle: () => void;
-  /** Section inaccessible pour l'instant (amorçage : Emby seul tant qu'aucun propriétaire n'existe). */
+  /** Section inaccessible pour l'instant (amorçage : serveur multimédia seul tant qu'aucun propriétaire n'existe). */
   disabled?: boolean;
   /** Libellé de « Testé » pour une section sans test (règles). */
   doneLabel?: string;
   /** Libellé de « À faire » pour une section facultative (Seerr, Discord : « Désactivé »). */
   todoLabel?: string;
+  /** Numéro affiché, à la place du rang dans les réglages (section seule sur la page d'un gestionnaire). */
+  number?: number;
 };
 
 /** Élément d'accordéon de l'assistant et des réglages : en-tête numéroté, pastille de statut, contenu replié. */
@@ -50,6 +55,7 @@ export function SectionFrame({
   disabled = false,
   doneLabel,
   todoLabel,
+  number,
   status,
   children,
 }: SectionFrameProps & { status: SectionStatus; children: ReactNode }) {
@@ -81,7 +87,7 @@ export function SectionFrame({
             aria-hidden
             className={cn('grid size-7 shrink-0 place-items-center rounded-full text-[13px] font-bold', style.number)}
           >
-            {settingsSectionOrder.indexOf(section) + 1}
+            {number ?? settingsSectionOrder.indexOf(section) + 1}
           </span>
           <span className="flex min-w-0 grow flex-col gap-0.5">
             <span className="font-semibold">{title}</span>
@@ -105,6 +111,47 @@ export function SectionFrame({
       </section>
     </div>
   );
+}
+
+/** Section dont la lecture a échoué : message et « Réessayer ». */
+export function SectionLoadError({
+  query,
+  message,
+  ...frame
+}: SectionFrameProps & { query: Pick<UseQueryResult, 'refetch'>; message: string }) {
+  return (
+    <SectionFrame {...frame} status="error">
+      <ErrorState message={message} onRetry={() => void query.refetch()} />
+    </SectionFrame>
+  );
+}
+
+/** Section qui lit ses données : squelette (`rows` lignes), erreur à réessayer, puis le contenu. */
+export function LoadedSection<T>({
+  query,
+  rows = 2,
+  errorMessage = 'Ces réglages n’ont pas pu se charger.',
+  children,
+  ...frame
+}: SectionFrameProps & {
+  query: UseQueryResult<T>;
+  rows?: number;
+  errorMessage?: string;
+  children: (data: T) => ReactNode;
+}) {
+  if (query.isPending)
+    return (
+      <SectionFrame {...frame} status="todo">
+        <Loading className="space-y-4">
+          {Array.from({ length: rows }, (_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: liste fixe de squelettes identiques
+            <Skeleton key={i} className="h-12 w-full rounded-(--r-button)" />
+          ))}
+        </Loading>
+      </SectionFrame>
+    );
+  if (query.isError) return <SectionLoadError {...frame} query={query} message={errorMessage} />;
+  return children(query.data);
 }
 
 /** Boutons d'une section : à droite sur ordinateur, pleine largeur et empilés sur mobile. */

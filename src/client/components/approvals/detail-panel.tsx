@@ -4,9 +4,9 @@ import { type ReactNode, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
 import { formatBytes } from '@/components/setup/config';
 import { Button } from '@/components/ui/button';
-import { FieldHint, Label, NativeSelect } from '@/components/ui/field';
+import { CheckboxRow, FieldHint, Label, NativeSelect } from '@/components/ui/field';
 import { type ApprovalTab, profileName, type SendChoice, type SendOptions } from '@/lib/approvals';
-import { arrName, formatWhen, requestMeta, requestStatusLabel, requestTitle } from '@/lib/requests';
+import { arrName, formatWhen, requestArrName, requestMeta, requestStatusLabel, requestTitle } from '@/lib/requests';
 import { approveClass, parseReason, ReasonField, Requester, RequestPoster } from './request-parts';
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -33,18 +33,40 @@ function SendTo({
   disabled: boolean;
 }) {
   const id = useId();
-  const service = arrName(request.type);
+  const service = arrName(request.type, request.is4k);
   if (!options)
     return (
       <p className="text-sm text-muted-foreground">
-        Envoi à {service} avec le profil et le dossier par défaut des réglages.
+        Envoi à {requestArrName(request)} avec le profil et le dossier par défaut des réglages.
       </p>
     );
   const folder = choice.rootFolderPath ?? options.defaultFolder;
   const free = options.rootFolders.find((f) => f.path === folder)?.freeSpace;
+  const server = options.servers.find((s) => s.id === options.serverId);
   return (
     <fieldset className="space-y-4" disabled={disabled}>
-      <legend className="mb-3 text-[13px] font-semibold">Envoyer à {service}</legend>
+      <legend className="mb-3 text-[13px] font-semibold">Envoyer à {server?.name ?? service}</legend>
+      {options.servers.length > 1 && (
+        <div>
+          <Label htmlFor={`${id}-server`} className="font-medium text-muted-foreground">
+            Serveur {service}
+          </Label>
+          <NativeSelect
+            id={`${id}-server`}
+            value={options.serverId}
+            // Profils et dossiers sont propres à chaque serveur : ceux du nouveau serveur reprennent leurs défauts.
+            onChange={(event) =>
+              onChoice({ serverId: Number(event.target.value), qualityProfileId: undefined, rootFolderPath: undefined })
+            }
+          >
+            {options.servers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.isDefault ? `${s.name} (par défaut)` : s.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      )}
       <div>
         <Label htmlFor={`${id}-profile`} className="font-medium text-muted-foreground">
           Profil de qualité
@@ -86,6 +108,8 @@ type Props = {
   tab: ApprovalTab;
   request: RequestView;
   options: SendOptions | null | undefined;
+  /** Listes d'un autre serveur en cours de lecture : celles affichées sont celles du serveur précédent. */
+  optionsLoading?: boolean;
   choice: SendChoice;
   onChoice: (patch: SendChoice) => void;
   busy: boolean;
@@ -95,7 +119,18 @@ type Props = {
 };
 
 /** Panneau de droite (ordinateur) : la demande choisie dans le tableau, avec ce qu'on peut en faire selon l'onglet. */
-export function DetailPanel({ tab, request, options, choice, onChoice, busy, onApprove, onRetry, onDecline }: Props) {
+export function DetailPanel({
+  tab,
+  request,
+  options,
+  optionsLoading = false,
+  choice,
+  onChoice,
+  busy,
+  onApprove,
+  onRetry,
+  onDecline,
+}: Props) {
   const [reason, setReason] = useState('');
   const [invalid, setInvalid] = useState<string | null>(null);
   const decidable = tab === 'pending' || tab === 'failed';
@@ -119,8 +154,9 @@ export function DetailPanel({ tab, request, options, choice, onChoice, busy, onA
 
       <dl className="space-y-2.5">
         <Fact label="Demandé par">
-          <Requester person={request.requester} />
+          <Requester request={request} />
         </Fact>
+        {request.server && <Fact label="Serveur">{request.server.name}</Fact>}
         {tab === 'history' && (
           <>
             <Fact label="Statut">{requestStatusLabel[request.status]}</Fact>
@@ -145,13 +181,29 @@ export function DetailPanel({ tab, request, options, choice, onChoice, busy, onA
 
       {tab === 'failed' && (
         <Notice tone="error">
-          {arrName(request.type)} n’a pas pu recevoir cette demande
+          {requestArrName(request)} n’a pas pu recevoir cette demande
           {request.failureReason ? ` : ${request.failureReason}` : '.'}
         </Notice>
       )}
 
       {tab === 'pending' && (
-        <SendTo request={request} options={options} choice={choice} onChoice={onChoice} disabled={busy} />
+        <SendTo
+          request={request}
+          options={options}
+          choice={choice}
+          onChoice={onChoice}
+          disabled={busy || optionsLoading}
+        />
+      )}
+
+      {tab === 'pending' && (
+        <CheckboxRow
+          checked={choice.quotaExempt ?? request.quotaExempt}
+          onChange={(quotaExempt) => onChoice({ quotaExempt })}
+          label="Hors quota"
+          hint={`Ne compte pas dans le quota de ${request.requester.name}.`}
+          disabled={busy}
+        />
       )}
 
       {decidable && (

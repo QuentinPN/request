@@ -1,6 +1,8 @@
 import { SEERR_IMPORT_PATH, type SeerrImportInput, type SeerrImportResult } from '@shared/import.ts';
+import { plural } from '@shared/text.ts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
+import { ImportCounts } from '@/components/import-counts';
 import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,7 +22,6 @@ import { actionClass, SectionActions, SectionFrame, type SectionFrameProps } fro
 const importSeerr = (input: SeerrImportInput, dryRun: boolean) =>
   apiSend<SeerrImportResult>('POST', `${SEERR_IMPORT_PATH}${dryRun ? '?dryRun=1' : ''}`, input);
 
-const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
 const requestsLabel = (n: number) => plural(n, 'demande', 'demandes');
 
 /** Comptes d'un aperçu ou d'un import : les mêmes lignes, au futur ou au passé. */
@@ -38,14 +39,7 @@ function ResultSummary({ result }: { result: SeerrImportResult }) {
       <p className="text-sm text-muted-foreground">
         {requestsLabel(result.total)} lue{result.total > 1 ? 's' : ''} dans Seerr.
       </p>
-      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex flex-col gap-0.5 rounded-[12px] bg-muted px-3 py-2.5">
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="text-lg font-semibold tabular-nums">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <ImportCounts rows={rows} className="grid grid-cols-2 gap-2 sm:grid-cols-4" />
       {result.unmatchedUsers.length > 0 && (
         <div className="text-sm">
           <p className="text-muted-foreground">

@@ -1,3 +1,4 @@
+import { plural } from '@shared/text.ts';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -17,11 +18,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { plural } from '@/lib/catalogue';
+import { titleLink } from '@/lib/catalogue';
 import { errorMessage } from '@/lib/http';
+import { useMediaServerName } from '@/lib/media-server';
 import {
   formatDay,
   myRequestsQuery,
+  onBehalfLabel,
   requestCountsQuery,
   requestMeta,
   requestProgress,
@@ -108,7 +111,7 @@ const rowBox =
 const rowGrid = 'min-w-0 grow lg:grid lg:grid-cols-[minmax(0,1fr)_300px_170px] lg:items-center lg:gap-6';
 
 function RequestRow({ request }: { request: RequestView }) {
-  const progress = requestProgress(request);
+  const progress = requestProgress(request, useMediaServerName());
   const title = request.media?.title ?? 'Titre inconnu';
   return (
     <li className={rowBox}>
@@ -116,13 +119,15 @@ function RequestRow({ request }: { request: RequestView }) {
       <div className={rowGrid}>
         <div className="min-w-0">
           <Link
-            to="/titre/$type/$id"
-            params={{ type: request.type, id: String(request.tmdbId) }}
+            {...titleLink(request)}
             className="block truncate font-semibold outline-none hover:underline focus-visible:underline"
           >
             {title}
           </Link>
           <p className="truncate text-[13px] text-muted-foreground">{requestMeta(request).join(' · ')}</p>
+          {request.createdBy && (
+            <p className="truncate text-xs text-muted-foreground">{onBehalfLabel(request, request.requester.id)}</p>
+          )}
         </div>
         <div className="mt-2 space-y-1.5 lg:mt-0">
           <RequestStatusPill progress={progress} />

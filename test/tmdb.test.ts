@@ -82,7 +82,7 @@ describe('details', () => {
     const [request] = server.requests;
     expect(request?.query).toMatchObject({
       language: 'fr-FR',
-      append_to_response: 'credits,videos,recommendations,similar,watch/providers,external_ids',
+      append_to_response: 'credits,videos,recommendations,similar,watch/providers,external_ids,keywords',
       include_video_language: 'fr,en,null',
     });
   });
@@ -126,6 +126,19 @@ describe('details', () => {
     };
     const server = await serve({ 'GET /movie/1': { id: 1, title: 'T', overview: 'O', videos } });
     expect((await tmdbFor(server).details('movie', 1)).trailerKey).toBe('en');
+  });
+
+  it('lit les mots-clés : `keywords.keywords` pour un film, `keywords.results` pour une série', async () => {
+    const keyword = { id: 818, name: 'based on novel or book' };
+    const server = await serve({
+      'GET /movie/1': { id: 1, title: 'T', overview: 'O', keywords: { keywords: [keyword] } },
+      'GET /tv/2': { id: 2, name: 'S', overview: 'O', keywords: { results: [keyword] } },
+      'GET /movie/3': { id: 3, title: 'Sans', overview: 'O' },
+    });
+    const tmdb = tmdbFor(server);
+    expect((await tmdb.details('movie', 1)).keywords).toEqual([keyword]);
+    expect((await tmdb.details('tv', 2)).keywords).toEqual([keyword]);
+    expect((await tmdb.details('movie', 3)).keywords).toEqual([]);
   });
 
   it('complète en anglais un titre ou synopsis vide en français (un seul appel de plus)', async () => {
@@ -228,6 +241,26 @@ describe('listes', () => {
     await tmdb.byGenre('movie', 28);
     expect(server.requests[0]?.query).toMatchObject({ with_genres: '28', page: '1' });
     expect(await tmdb.genres('movie')).toEqual([{ id: 28, name: 'Action' }]);
+  });
+
+  it('écarte les mots-clés bloqués des flux /discover (`without_keywords`, séparés par | = OU)', async () => {
+    const server = await serve({
+      'GET /discover/movie': fixture('trending-movie'),
+      'GET /discover/tv': fixture('trending-movie'),
+    });
+    const tmdb = tmdbFor(server);
+    await tmdb.byGenre('movie', 28, 1, [818, 9715]);
+    await tmdb.discoverByProvider('tv', 8, 1, [818]);
+    await tmdb.byGenre('movie', 35, 1, []);
+    expect(server.requests.map((r) => r.query.without_keywords)).toEqual(['818|9715', '818', undefined]);
+  });
+
+  it('searchKeywords lit la première page de /search/keyword', async () => {
+    const server = await serve({
+      'GET /search/keyword': { page: 1, total_pages: 5, total_results: 84, results: [{ id: 262419, name: 'lost' }] },
+    });
+    expect(await tmdbFor(server).searchKeywords('lost')).toEqual([{ id: 262419, name: 'lost' }]);
+    expect(server.requests[0]?.query).toMatchObject({ query: 'lost', page: '1' });
   });
 
   it('searchMulti sépare films, séries et personnes', async () => {

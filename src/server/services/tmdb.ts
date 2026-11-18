@@ -12,15 +12,19 @@ import { createTmdb, type TmdbClient } from '../integrations/tmdb.ts';
 import { HttpError, NotConfiguredError, parseUpstream } from '../lib/api-errors.ts';
 import { getSetting } from './settings.ts';
 
-/** Fiche TMDB validée (fiche titre, création d'une demande) ; un titre inconnu de TMDB → 404 « Titre introuvable ». */
-export async function loadDetails(tmdb: TmdbClient, type: MediaType, id: number): Promise<MediaDetails> {
+/** Lecture TMDB d'un titre : un titre inconnu de TMDB → 404 « Titre introuvable », les autres erreurs passent. */
+export async function orTitleNotFound<T>(read: () => Promise<T>): Promise<T> {
   try {
-    return parseUpstream('TMDB', mediaDetailsSchema, await tmdb.details(type, id));
+    return await read();
   } catch (err) {
     if (err instanceof IntegrationError && err.kind === 'not_found') throw new HttpError(404, 'Titre introuvable');
     throw err;
   }
 }
+
+/** Fiche TMDB validée (fiche titre, création d'une demande) ; un titre inconnu de TMDB → 404 « Titre introuvable ». */
+export const loadDetails = (tmdb: TmdbClient, type: MediaType, id: number): Promise<MediaDetails> =>
+  orTitleNotFound(async () => parseUpstream('TMDB', mediaDetailsSchema, await tmdb.details(type, id)));
 
 /**
  * Résumés TMDB des titres (en cache), indexés par `keyOf` ; un titre (ou TMDB entier, non configuré ou en panne)

@@ -1,10 +1,12 @@
 import { and, eq, inArray, TransactionRollbackError } from 'drizzle-orm';
 import type { SeerrImportResult, SeerrUnmatchedUser } from '../../shared/import.ts';
 import { type MediaType, mediaTypes } from '../../shared/media.ts';
-import { activeRequestStatuses, type RequestStatus } from '../../shared/status.ts';
+import { activeRequestStatuses, preSendRequestStatuses, type RequestStatus } from '../../shared/status.ts';
 import type { Db } from '../db/index.ts';
 import { requestEvents, requestSeasons, requests, users } from '../db/schema.ts';
+import { arrKindOf } from '../integrations/arr.ts';
 import { SEERR_MEDIA_AVAILABLE, SEERR_REQUEST, type SeerrRequest, type SeerrUser } from '../integrations/seerr.ts';
+import { defaultArrServerId } from './arr-servers.ts';
 import { upsertMedia } from './requests.ts';
 import type { User } from './users.ts';
 
@@ -16,6 +18,8 @@ export const IMPORTED_DETAIL = 'Importée depuis Seerr';
 
 /** Origine gardée sur la demande (`requests.external_ref`) : un nouvel import la reconnaît. */
 const externalRefOf = (seerrId: number) => `seerr:${seerrId}`;
+/** Marque, dans la frise de la demande qui l'absorbe, une demande Seerr fondue sans ligne à elle (une seule `external_ref` par demande). */
+const mergedDetail = (externalRef: string) => `Fusionnée depuis Seerr (${externalRef})`;
 
 /**
  * Ids Emby comparés sans casse ni tirets. Seerr 3.5.2 range tel quel le `User.Id` renvoyé par Emby (même valeur que
@@ -89,6 +93,9 @@ function userMatcher(db: Pick<Db, 'select'>) {
 const seerrUserName = (seerr: SeerrUser) =>
   seerr.displayName || seerr.username || seerr.jellyfinUsername || seerr.plexUsername || `Compte Seerr n° ${seerr.id}`;
 
+/** Serveur 4K par défaut de chaque type de titre, `null` s'il n'y en a pas. */
+type Servers4k = Record<MediaType, number | null>;
+
 interface Counts {
   imported: number;
   alreadyPresent: number;
@@ -100,17 +107,25 @@ interface Counts {
 /**
  * Une demande Seerr : déjà importée (même `external_ref`), ou fondue dans la demande en cours du même membre sur le
  * même titre (saisons manquantes ajoutées tant qu'elle attend), ou créée avec sa date d'origine et un seul évènement
- * `requested` noté « Importée depuis Seerr ». Écritures directes : ni quota, ni notification, ni Radarr/Sonarr.
+ * `requested` noté « Importée depuis Seerr ». Écritures directes : ni quota, ni notification, ni Radarr/Sonarr. Une
+ * demande 4K vise le serveur 4K par défaut du type.
  */
-function applyOne(tx: Tx, item: SeerrRequest | null, match: (u: SeerrUser) => User | null, counts: Counts) {
+function applyOne(
+  tx: Tx,
+  item: SeerrRequest | null,
+  match: (u: SeerrUser) => User | null,
+  servers4k: Servers4k,
+  counts: Counts,
+) {
   const title = item && titleOf(item);
   const status = item && statusOf(item);
   if (!item || !title || !status) {
     counts.unmatchedMedia++;
     return;
   }
-  // Pas de Radarr/Sonarr 4K : une demande 4K encore à traiter ne pourrait jamais partir (l'historique, lui, est repris).
-  if (item.is4k && (status === 'pending' || status === 'failed')) {
+  const server4k = item.is4k ? servers4k[title.type] : null;
+  // Sans serveur 4K du type, une demande 4K encore à traiter ne pourrait jamais partir (l'historique, lui, est repris).
+  if (item.is4k && server4k === null && (status === 'pending' || status === 'failed')) {
     counts.skipped4k++;
     return;
   }
@@ -135,8 +150,25 @@ function applyOne(tx: Tx, item: SeerrRequest | null, match: (u: SeerrUser) => Us
 
   const is4k = item.is4k ?? false;
   const mediaId = upsertMedia(tx, title);
+  const merged = tx
+    .select({ id: requestEvents.id })
+    .from(requestEvents)
+    .innerJoin(requests, eq(requests.id, requestEvents.requestId))
+    .where(
+      and(
+        eq(requests.mediaId, mediaId),
+        eq(requests.userId, user.id),
+        eq(requests.is4k, is4k),
+        eq(requestEvents.detail, mergedDetail(externalRef)),
+      ),
+    )
+    .get();
+  if (merged) {
+    counts.alreadyPresent++;
+    return;
+  }
   const isActive = (activeRequestStatuses as readonly RequestStatus[]).includes(status);
-  const existing = isActive
+  const own = isActive
     ? tx
         .select({ id: requests.id, status: requests.status })
         .from(requests)
@@ -148,14 +180,46 @@ function applyOne(tx: Tx, item: SeerrRequest | null, match: (u: SeerrUser) => Us
             inArray(requests.status, [...activeRequestStatuses]),
           ),
         )
-        .get()
-    : undefined;
-  if (existing) {
+        .all()
+    : [];
+  const covered = new Set(
+    own.length === 0
+      ? []
+      : tx
+          .select({ n: requestSeasons.seasonNumber })
+          .from(requestSeasons)
+          .where(
+            inArray(
+              requestSeasons.requestId,
+              own.map((r) => r.id),
+            ),
+          )
+          .all()
+          .map((s) => s.n),
+  );
+  const missing = title.seasons.filter((n) => !covered.has(n));
+  const pending = own.find((r) => r.status === 'pending');
+  // Une demande `sent` n'est pas couverte par `requests_active` : ses saisons manquantes font une nouvelle demande.
+  const target = pending ?? own.find((r) => (preSendRequestStatuses as readonly RequestStatus[]).includes(r.status));
+  const [existing] = own;
+  if (existing && (missing.length === 0 || target)) {
     // Deux demandes Seerr en attente pour des saisons différentes : une seule demande en cours, toutes ses saisons.
-    if (existing.status === 'pending' && title.seasons.length > 0)
+    if (pending && missing.length > 0)
       tx.insert(requestSeasons)
-        .values(title.seasons.map((seasonNumber) => ({ requestId: existing.id, seasonNumber })))
+        .values(missing.map((seasonNumber) => ({ requestId: pending.id, seasonNumber })))
         .onConflictDoNothing()
+        .run();
+    // Demande `approved`/`failed` : les saisons manquantes ne peuvent pas s'y ajouter, sans marqueur un import
+    // ultérieur, une fois la demande sortie de l'état actif, pourra les reprendre.
+    if (pending || missing.length === 0)
+      tx.insert(requestEvents)
+        .values({
+          requestId: (target ?? existing).id,
+          type: 'requested',
+          actorId: user.id,
+          detail: mergedDetail(externalRef),
+          createdAt: dateOf(item.createdAt) ?? new Date(),
+        })
         .run();
     counts.alreadyPresent++;
     return;
@@ -165,12 +229,12 @@ function applyOne(tx: Tx, item: SeerrRequest | null, match: (u: SeerrUser) => Us
   const updatedAt = dateOf(item.updatedAt) ?? createdAt;
   const { id } = tx
     .insert(requests)
-    .values({ mediaId, userId: user.id, status, is4k, externalRef, createdAt, updatedAt })
+    .values({ mediaId, userId: user.id, status, is4k, serverId: server4k, externalRef, createdAt, updatedAt })
     .returning({ id: requests.id })
     .get();
-  if (title.seasons.length > 0)
+  if (missing.length > 0)
     tx.insert(requestSeasons)
-      .values(title.seasons.map((seasonNumber) => ({ requestId: id, seasonNumber })))
+      .values(missing.map((seasonNumber) => ({ requestId: id, seasonNumber })))
       .run();
   tx.insert(requestEvents)
     .values({ requestId: id, type: 'requested', actorId: user.id, detail: IMPORTED_DETAIL, createdAt })
@@ -189,8 +253,11 @@ export function importSeerrRequests(
 ): SeerrImportResult {
   const counts: Counts = { imported: 0, alreadyPresent: 0, unmatchedMedia: 0, skipped4k: 0, unmatchedUsers: new Map() };
   const match = userMatcher(db);
+  const servers4k = Object.fromEntries(
+    mediaTypes.map((type) => [type, defaultArrServerId(db, arrKindOf(type), true)]),
+  ) as Servers4k;
   const applyAll = (tx: Tx, batch: ReadonlyArray<SeerrRequest | null>) => {
-    for (const item of batch) applyOne(tx, item, match, counts);
+    for (const item of batch) applyOne(tx, item, match, servers4k, counts);
   };
 
   if (dryRun) {

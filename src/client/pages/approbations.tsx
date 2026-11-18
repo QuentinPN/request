@@ -1,4 +1,4 @@
-import type { BatchResult, RequestView } from '@shared/requests.ts';
+import type { BatchResult, RequestDetail, RequestView } from '@shared/requests.ts';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { DeclineDialog } from '@/components/approvals/decline-dialog';
@@ -25,6 +25,7 @@ import {
   profileName,
   type SendChoice,
   sendOutcome,
+  sendTargetOf,
   useApprovalActions,
   useSendOptions,
 } from '@/lib/approvals';
@@ -73,9 +74,10 @@ export function ApprobationsPage() {
   const rows = list.data?.results ?? [];
   const failed = failedList.data?.results ?? [];
   const failedTotal = failedList.data?.totals.failed ?? 0;
-  const movieOptions = useSendOptions('movie', canManage && tab !== 'failed' && rows.some((r) => r.type === 'movie'));
-  const tvOptions = useSendOptions('tv', canManage && tab !== 'failed' && rows.some((r) => r.type === 'tv'));
-  const optionsOf = (type: RequestView['type']) => (type === 'movie' ? movieOptions.data : tvOptions.data);
+  const targetOf = (request: RequestView) => sendTargetOf(request, choices[request.id]);
+  const sendOptionsOf = useSendOptions(canManage && tab !== 'failed' ? rows.map(targetOf) : []);
+  const optionsQueryOf = (request: RequestView) => sendOptionsOf(targetOf(request));
+  const optionsOf = (request: RequestView) => optionsQueryOf(request)?.data;
 
   const selected = rows.find((r) => r.id === selectedId) ?? rows[0];
   const checkedIds = rows.filter((r) => checked.has(r.id)).map((r) => r.id);
@@ -84,7 +86,7 @@ export function ApprobationsPage() {
     return request ? requestTitle(request) : `Demande n° ${id}`;
   };
   const qualityOf = (request: RequestView) => {
-    const options = optionsOf(request.type);
+    const options = optionsOf(request);
     const id =
       request.status === 'pending'
         ? (choices[request.id]?.qualityProfileId ?? options?.defaultProfileId)
@@ -111,33 +113,22 @@ export function ApprobationsPage() {
     if (selected?.id === id) setSelectedId((rows[index + 1] ?? rows[index - 1])?.id);
   };
 
+  /** Issue d'un envoi (approbation ou relance) : sélection voisine, page à jour et résultat de l'envoi. */
+  const sent = (id: number) => ({
+    onSuccess: (request: RequestDetail) => {
+      advance(id);
+      leave([request]);
+      setFeedback(sendOutcome(request));
+    },
+    onError: fail,
+  });
   const approve = (id: number) => {
     setFeedback(null);
-    actions.approve.mutate(
-      { id, choice: choices[id] },
-      {
-        onSuccess: (request) => {
-          advance(id);
-          leave([request]);
-          setFeedback(sendOutcome(request));
-        },
-        onError: fail,
-      },
-    );
+    actions.approve.mutate({ id, choice: choices[id] }, sent(id));
   };
   const retry = (id: number) => {
     setFeedback(null);
-    actions.retry.mutate(
-      { id },
-      {
-        onSuccess: (request) => {
-          advance(id);
-          leave([request]);
-          setFeedback(sendOutcome(request));
-        },
-        onError: fail,
-      },
-    );
+    actions.retry.mutate({ id }, sent(id));
   };
   const approveChecked = () => {
     setFeedback(null);
@@ -283,7 +274,8 @@ export function ApprobationsPage() {
                       key={selected.id}
                       tab={tab}
                       request={selected}
-                      options={optionsOf(selected.type)}
+                      options={optionsOf(selected)}
+                      optionsLoading={optionsQueryOf(selected)?.isPlaceholderData === true}
                       choice={choices[selected.id] ?? {}}
                       onChoice={(patch) =>
                         setChoices((all) => ({ ...all, [selected.id]: { ...all[selected.id], ...patch } }))

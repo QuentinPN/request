@@ -132,7 +132,7 @@ export function QueueTable({
                 </button>
               </td>
               <td className={cell}>
-                <Requester person={request.requester} />
+                <Requester request={request} />
               </td>
               <td className={cn(cell, 'max-w-56')}>
                 {tab === 'failed' ? (

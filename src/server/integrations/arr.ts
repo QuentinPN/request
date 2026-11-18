@@ -1,20 +1,18 @@
 import { z } from 'zod';
-import type { MediaType } from '../../shared/media.ts';
+import { type ArrKind, arrKindLabels } from '../../shared/arr-servers.ts';
 import type { ArrTestResult } from '../../shared/setup.ts';
 import { createClient, IntegrationError } from './http.ts';
 
-/** Réglages d'une instance Radarr ou Sonarr (voir `settingSchemas.radarr` / `.sonarr`). */
+/** Connexion à une instance Radarr ou Sonarr (un serveur de `arr_servers`). */
 export interface ArrConfig {
   url: string;
   apiKey: string;
 }
 
-export type ArrKind = 'radarr' | 'sonarr';
+export { arrKindOf } from '../../shared/arr-servers.ts';
+export type { ArrKind };
 
-export const ARR_SERVICE: Record<ArrKind, string> = { radarr: 'Radarr', sonarr: 'Sonarr' };
-
-/** Service qui reçoit un titre : Radarr pour un film, Sonarr pour une série. */
-export const arrKindOf = (type: MediaType): ArrKind => (type === 'movie' ? 'radarr' : 'sonarr');
+export const ARR_SERVICE = arrKindLabels;
 
 const API = '/api/v3';
 
@@ -33,7 +31,6 @@ export function arrClient(kind: ArrKind, config: ArrConfig) {
     put: <T>(path: string, schema: z.ZodType<T>, body: unknown) => client.put(at(path), schema, { body }),
   };
 }
-export type ArrClient = ReturnType<typeof arrClient>;
 
 /** Erreur « ressource absente » dans le même format que les erreurs HTTP (message lisible, en français). */
 export const notFound = (kind: ArrKind, what: string) =>

@@ -1,17 +1,18 @@
 import type { FastifyInstance } from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { announceSetupToken, parseSetupToken, SETUP_TOKEN_LIMIT } from '../src/server/plugins/auth.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
 import { CSRF_HEADERS } from '../src/shared/auth.ts';
-import { closedPortUrl, type FakeHandler, status } from './fake-server.ts';
+import { SETUP_TOKEN_HEADER } from '../src/shared/setup.ts';
+import { type FakeHandler, status } from './fake-server.ts';
 import librariesFixture from './fixtures/emby/libraries.json';
 import systemInfoFixture from './fixtures/emby/system-info.json';
-import { loginAs, loginAsOwner, trackApps, trackFakeServers } from './helpers.ts';
+import { addArrServer, bootstrapHeaders, loginAs, loginAsOwner, trackApps, trackFakeServers } from './helpers.ts';
 
 const newApp = trackApps();
 const serve = trackFakeServers();
 
 const EMBY_KEY = 'CLE-EMBY-SECRETE';
-const RADARR_KEY = 'CLE-RADARR-SECRETE';
 
 /** Répond `body` seulement si l'en-tête `header` porte la bonne clé, sinon 401. */
 const keyed =
@@ -19,17 +20,11 @@ const keyed =
   (req, res) =>
     req.headers[header] === key ? status(200, body)(req, res) : status(401)(req, res);
 
-const fakeEmby = () =>
+/** Faux Emby ; `serverId` : id de l'instance (`Id` de `/System/Info`), celui de la fixture par défaut. */
+const fakeEmby = (serverId = systemInfoFixture.Id) =>
   serve({
-    'GET /System/Info': keyed('x-emby-token', EMBY_KEY, systemInfoFixture),
+    'GET /System/Info': keyed('x-emby-token', EMBY_KEY, { ...systemInfoFixture, Id: serverId }),
     'GET /Library/VirtualFolders/Query': keyed('x-emby-token', EMBY_KEY, librariesFixture),
-  });
-
-const fakeRadarr = () =>
-  serve({
-    'GET /api/v3/system/status': keyed('x-api-key', RADARR_KEY, { version: '5.14.0' }),
-    'GET /api/v3/qualityprofile': keyed('x-api-key', RADARR_KEY, [{ id: 4, name: 'HD-1080p' }]),
-    'GET /api/v3/rootfolder': keyed('x-api-key', RADARR_KEY, [{ id: 1, path: '/films', freeSpace: 1.2e12 }]),
   });
 
 const csrf = CSRF_HEADERS;
@@ -45,8 +40,10 @@ describe('GET /api/setup/state', () => {
   it('décrit une installation neuve, puis complète', async () => {
     const app = await newApp();
     expect((await call(app, 'GET', '/api/setup/state')).json()).toEqual({
-      services: { emby: false, tmdb: false, radarr: false, sonarr: false, rules: false },
+      services: { mediaServer: false, tmdb: false, radarr: false, sonarr: false, rules: false },
+      mediaServerKind: null,
       hasOwner: false,
+      hasMembers: false,
       complete: false,
     });
 
@@ -54,46 +51,190 @@ describe('GET /api/setup/state', () => {
     const service = { url: 'http://service', apiKey: 'k' };
     setSetting(db, cryptoKey, 'emby', service);
     setSetting(db, cryptoKey, 'tmdb', { apiKey: 'k' });
-    setSetting(db, cryptoKey, 'radarr', { ...service, qualityProfileId: 1, rootFolderPath: '/films' });
-    setSetting(db, cryptoKey, 'sonarr', { ...service, qualityProfileId: 1, rootFolderPath: '/series' });
+    addArrServer(app.data, { ...service, type: 'radarr' });
+    addArrServer(app.data, { ...service, type: 'sonarr' });
     setSetting(db, cryptoKey, 'rules', {});
     expect((await call(app, 'GET', '/api/setup/state')).json()).toMatchObject({ hasOwner: false, complete: false });
     await loginAsOwner(app);
-    expect((await call(app, 'GET', '/api/setup/state')).json()).toMatchObject({ hasOwner: true, complete: true });
+    expect((await call(app, 'GET', '/api/setup/state')).json()).toMatchObject({
+      hasOwner: true,
+      hasMembers: true,
+      complete: true,
+    });
+  });
+
+  it('des membres sans propriétaire : `hasMembers` suit la règle serveur du type figé', async () => {
+    const app = await newApp();
+    await loginAs(app, 'member');
+    expect((await call(app, 'GET', '/api/setup/state')).json()).toMatchObject({ hasOwner: false, hasMembers: true });
   });
 });
 
 describe('amorçage', () => {
-  it('Emby se teste et s’enregistre sans session tant qu’aucun propriétaire n’existe', async () => {
+  it('Emby se teste et s’enregistre sans session avec le jeton d’installation', async () => {
     const app = await newApp();
     const emby = await fakeEmby();
-    const test = await call(app, 'POST', '/api/setup/emby/test', { url: emby.url, apiKey: EMBY_KEY });
+    const headers = bootstrapHeaders(app);
+    const test = await call(
+      app,
+      'POST',
+      '/api/setup/mediaServer/test',
+      { kind: 'emby', url: emby.url, apiKey: EMBY_KEY },
+      headers,
+    );
     expect(test.statusCode).toBe(200);
     expect(test.json()).toMatchObject({ serverName: 'Salon', version: '4.8.10.0' });
     expect(test.json().libraries).toContainEqual({ id: '10', name: 'Films', type: 'movies' });
 
-    const save = await call(app, 'PUT', '/api/settings/emby', { url: emby.url, apiKey: EMBY_KEY, libraryIds: ['10'] });
+    const save = await call(
+      app,
+      'PUT',
+      '/api/settings/mediaServer',
+      { kind: 'emby', url: emby.url, apiKey: EMBY_KEY, libraryIds: ['10'] },
+      headers,
+    );
     expect(save.statusCode).toBe(200);
-    expect(save.json()).toEqual({ url: emby.url, apiKey: { set: true }, libraryIds: ['10'], publicUrl: null });
+    expect(save.json()).toEqual({
+      kind: 'emby',
+      url: emby.url,
+      apiKey: { set: true },
+      libraryIds: ['10'],
+      publicUrl: null,
+      serverId: systemInfoFixture.Id,
+    });
+  });
+
+  it('sans jeton, ou avec un faux : 403 et rien n’est contacté ni enregistré', async () => {
+    const app = await newApp();
+    const emby = await fakeEmby();
+    const body = { kind: 'emby', url: emby.url, apiKey: EMBY_KEY };
+    for (const headers of [csrf, { ...csrf, [SETUP_TOKEN_HEADER]: 'faux' }, { ...csrf, [SETUP_TOKEN_HEADER]: '' }]) {
+      const test = await call(app, 'POST', '/api/setup/mediaServer/test', body, headers);
+      expect(test.statusCode).toBe(403);
+      expect(test.json().error).toMatch(/^Jeton d’installation manquant ou invalide/);
+      expect((await call(app, 'PUT', '/api/settings/mediaServer', body, headers)).statusCode).toBe(403);
+    }
+    expect(emby.requests).toHaveLength(0);
+    expect(getSetting(app.data.db, app.data.cryptoKey, 'mediaServer')).toBeNull();
+  });
+
+  it('une session sans droit ne remplace pas le jeton (membre inscrit avant le propriétaire)', async () => {
+    const app = await newApp();
+    const emby = await fakeEmby();
+    const member = await loginAs(app, 'manager');
+    const body = { kind: 'emby', url: emby.url, apiKey: EMBY_KEY };
+    expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, member.headers)).statusCode).toBe(403);
+    const withToken = { ...member.headers, [SETUP_TOKEN_HEADER]: app.setupToken };
+    expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, withToken)).statusCode).toBe(200);
+  });
+
+  it('jetons invalides limités par adresse IP (429), même le bon jeton est refusé jusqu’à la fin de la fenêtre', async () => {
+    const app = await newApp();
+    const emby = await fakeEmby();
+    const body = { kind: 'emby', url: emby.url, apiKey: EMBY_KEY };
+    const wrong = { ...csrf, [SETUP_TOKEN_HEADER]: 'faux' };
+    for (let i = 0; i < SETUP_TOKEN_LIMIT.limit; i++)
+      expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, wrong)).statusCode).toBe(403);
+    const blocked = await call(app, 'POST', '/api/setup/mediaServer/test', body, wrong);
+    expect(blocked.statusCode).toBe(429);
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+    expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, bootstrapHeaders(app))).statusCode).toBe(429);
+  });
+
+  describe('annonce du jeton', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    });
+
+    it('le jeton aléatoire est écrit dans les journaux, pas celui de `SETUP_TOKEN`', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const app = await newApp();
+      announceSetupToken(app);
+      expect(log).toHaveBeenCalledWith(`Jeton d’installation : ${app.setupToken}`);
+      log.mockClear();
+      vi.stubEnv('SETUP_TOKEN', app.setupToken);
+      announceSetupToken(app);
+      expect(log).toHaveBeenCalledWith('Jeton d’installation : celui de la variable SETUP_TOKEN.');
+    });
+  });
+
+  it('jeton : `SETUP_TOKEN` s’il est renseigné, sinon tiré au hasard', () => {
+    expect(parseSetupToken('  mon-jeton  ')).toBe('mon-jeton');
+    for (const env of [undefined, '', '   ']) expect(parseSetupToken(env)).toMatch(/^[\w-]{32}$/);
+    expect(parseSetupToken(undefined)).not.toBe(parseSetupToken(undefined));
   });
 
   it('les autres services exigent une session même avant le propriétaire', async () => {
     const app = await newApp();
     expect((await call(app, 'POST', '/api/setup/radarr/test', { url: 'http://x', apiKey: 'k' })).statusCode).toBe(401);
     expect((await call(app, 'PUT', '/api/settings/rules', {})).statusCode).toBe(401);
-    expect((await call(app, 'GET', '/api/settings/emby')).statusCode).toBe(401);
+    expect((await call(app, 'GET', '/api/settings/mediaServer')).statusCode).toBe(401);
   });
 
-  it('se ferme dès qu’un propriétaire existe : 401 sans session, 403 pour un membre', async () => {
+  it('se ferme dès qu’un propriétaire existe, jeton ou non : 401 sans session, 403 pour un membre', async () => {
     const app = await newApp();
     const emby = await fakeEmby();
-    const body = { url: emby.url, apiKey: EMBY_KEY };
+    const body = { kind: 'emby', url: emby.url, apiKey: EMBY_KEY };
     const owner = await loginAsOwner(app);
     const member = await loginAs(app, 'manager');
-    expect((await call(app, 'POST', '/api/setup/emby/test', body)).statusCode).toBe(401);
-    expect((await call(app, 'PUT', '/api/settings/emby', body)).statusCode).toBe(401);
-    expect((await call(app, 'POST', '/api/setup/emby/test', body, member.headers)).statusCode).toBe(403);
-    expect((await call(app, 'POST', '/api/setup/emby/test', body, owner.headers)).statusCode).toBe(200);
+    for (const headers of [csrf, bootstrapHeaders(app)]) {
+      expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, headers)).statusCode).toBe(401);
+      expect((await call(app, 'PUT', '/api/settings/mediaServer', body, headers)).statusCode).toBe(401);
+    }
+    expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, member.headers)).statusCode).toBe(403);
+    expect((await call(app, 'POST', '/api/setup/mediaServer/test', body, owner.headers)).statusCode).toBe(200);
+  });
+});
+
+describe('instance du serveur multimédia figée une fois des membres inscrits', () => {
+  const OTHER_INSTANCE = 'Ce serveur n’est pas le même que celui où vos membres sont inscrits.';
+  const put = (app: FastifyInstance, url: string, headers: Record<string, string>, extra: object = {}) =>
+    call(app, 'PUT', '/api/settings/mediaServer', { kind: 'emby', url, apiKey: EMBY_KEY, ...extra }, headers);
+  const stored = (app: FastifyInstance) => getSetting(app.data.db, app.data.cryptoKey, 'mediaServer');
+
+  it('l’id de l’instance vient du test, jamais du client', async () => {
+    const app = await newApp();
+    const { headers } = await loginAsOwner(app);
+    const emby = await fakeEmby('instance-a');
+    const res = await put(app, emby.url, headers, { serverId: 'choisi-par-le-client' });
+    expect(res.statusCode).toBe(200);
+    expect(stored(app)?.serverId).toBe('instance-a');
+  });
+
+  it('autre instance refusée (409), rien n’est modifié ; même instance à une autre adresse acceptée', async () => {
+    const app = await newApp();
+    const { headers } = await loginAsOwner(app);
+    const first = await fakeEmby('instance-a');
+    expect((await put(app, first.url, headers)).statusCode).toBe(200);
+
+    const other = await fakeEmby('instance-b');
+    const refused = await put(app, other.url, headers);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error).toBe(OTHER_INSTANCE);
+    expect(stored(app)).toMatchObject({ url: first.url, serverId: 'instance-a' });
+
+    const moved = await fakeEmby('instance-a');
+    expect((await put(app, moved.url, headers)).statusCode).toBe(200);
+    expect(stored(app)).toMatchObject({ url: moved.url, serverId: 'instance-a' });
+  });
+
+  it('installation sans id enregistré : acceptée, l’id est enregistré au passage', async () => {
+    const app = await newApp();
+    const { headers } = await loginAsOwner(app);
+    setSetting(app.data.db, app.data.cryptoKey, 'emby', { url: 'http://ancien', apiKey: EMBY_KEY });
+    const emby = await fakeEmby('instance-a');
+    expect((await put(app, emby.url, headers)).statusCode).toBe(200);
+    expect(stored(app)?.serverId).toBe('instance-a');
+    expect((await put(app, (await fakeEmby('instance-b')).url, headers)).statusCode).toBe(409);
+  });
+
+  it('libre tant qu’aucun membre n’existe', async () => {
+    const app = await newApp();
+    const headers = bootstrapHeaders(app);
+    expect((await put(app, (await fakeEmby('instance-a')).url, headers)).statusCode).toBe(200);
+    expect((await put(app, (await fakeEmby('instance-b')).url, headers)).statusCode).toBe(200);
+    expect(stored(app)?.serverId).toBe('instance-b');
   });
 });
 
@@ -102,17 +243,17 @@ describe('adresse publique d’Emby', () => {
     const app = await newApp();
     const { headers } = await loginAsOwner(app);
     const emby = await fakeEmby();
-    const body = { url: emby.url, apiKey: EMBY_KEY, ...(publicUrl !== undefined && { publicUrl }) };
-    return { app, headers, res: await call(app, 'PUT', '/api/settings/emby', body, headers) };
+    const body = { kind: 'emby', url: emby.url, apiKey: EMBY_KEY, ...(publicUrl !== undefined && { publicUrl }) };
+    return { app, headers, res: await call(app, 'PUT', '/api/settings/mediaServer', body, headers) };
   };
 
   it('s’enregistre sans « / » final et se relit en clair (ce n’est pas un secret)', async () => {
     const { app, headers, res } = await put('https://tv.exemple.fr/emby/');
     expect(res.statusCode).toBe(200);
     expect(res.json().publicUrl).toBe('https://tv.exemple.fr/emby');
-    const read = await call(app, 'GET', '/api/settings/emby', undefined, headers);
+    const read = await call(app, 'GET', '/api/settings/mediaServer', undefined, headers);
     expect(read.json().publicUrl).toBe('https://tv.exemple.fr/emby');
-    expect(getSetting(app.data.db, app.data.cryptoKey, 'emby')?.publicUrl).toBe('https://tv.exemple.fr/emby');
+    expect(getSetting(app.data.db, app.data.cryptoKey, 'mediaServer')?.publicUrl).toBe('https://tv.exemple.fr/emby');
   });
 
   it('est facultative : absente ou nulle', async () => {
@@ -131,31 +272,15 @@ describe('POST /api/setup/:service/test', () => {
     const app = await newApp();
     const { headers } = await loginAsOwner(app);
     const emby = await fakeEmby();
-    const wrongKey = await call(app, 'POST', '/api/setup/emby/test', { url: emby.url, apiKey: 'faux' }, headers);
-    expect(wrongKey.statusCode).toBe(422);
-    expect(wrongKey.json()).toEqual({ error: "Clé d'API refusée par Emby" });
-
-    const down = await call(
+    const wrongKey = await call(
       app,
       'POST',
-      '/api/setup/radarr/test',
-      { url: await closedPortUrl(), apiKey: 'k' },
+      '/api/setup/mediaServer/test',
+      { kind: 'emby', url: emby.url, apiKey: 'faux' },
       headers,
     );
-    expect(down.statusCode).toBe(422);
-    expect(down.json()).toEqual({ error: 'Radarr injoignable à cette adresse' });
-  });
-
-  it('renvoie profils et dossiers de Radarr', async () => {
-    const app = await newApp();
-    const { headers } = await loginAsOwner(app);
-    const radarr = await fakeRadarr();
-    const res = await call(app, 'POST', '/api/setup/radarr/test', { url: radarr.url, apiKey: RADARR_KEY }, headers);
-    expect(res.json()).toEqual({
-      version: '5.14.0',
-      qualityProfiles: [{ id: 4, name: 'HD-1080p' }],
-      rootFolders: [{ id: 1, path: '/films', freeSpace: 1.2e12 }],
-    });
+    expect(wrongKey.statusCode).toBe(422);
+    expect(wrongKey.json()).toEqual({ error: "Clé d'API refusée par Emby" });
   });
 
   it('une clé vide réutilise la clé enregistrée, à la même adresse seulement', async () => {
@@ -164,13 +289,25 @@ describe('POST /api/setup/:service/test', () => {
     const emby = await fakeEmby();
     setSetting(app.data.db, app.data.cryptoKey, 'emby', { url: emby.url, apiKey: EMBY_KEY });
 
-    const reused = await call(app, 'POST', '/api/setup/emby/test', { url: `${emby.url}/`, apiKey: '' }, headers);
+    const reused = await call(
+      app,
+      'POST',
+      '/api/setup/mediaServer/test',
+      { kind: 'emby', url: `${emby.url}/`, apiKey: '' },
+      headers,
+    );
     expect(reused.statusCode).toBe(200);
     expect(emby.requests.at(-1)?.headers['x-emby-token']).toBe(EMBY_KEY);
 
     // Autre adresse : la clé enregistrée n'est jamais envoyée ailleurs.
     const other = await fakeEmby();
-    const elsewhere = await call(app, 'POST', '/api/setup/emby/test', { url: other.url, apiKey: '' }, headers);
+    const elsewhere = await call(
+      app,
+      'POST',
+      '/api/setup/mediaServer/test',
+      { kind: 'emby', url: other.url, apiKey: '' },
+      headers,
+    );
     expect(elsewhere.statusCode).toBe(400);
     expect(other.requests).toHaveLength(0);
   });
@@ -184,36 +321,14 @@ describe('POST /api/setup/:service/test', () => {
 });
 
 describe('réglages', () => {
-  it('PUT teste puis enregistre ; GET ne renvoie jamais le secret', async () => {
+  it('Radarr et Sonarr ne sont plus des réglages : ce sont des serveurs (`/api/arr-servers`)', async () => {
     const app = await newApp();
     const { headers } = await loginAsOwner(app);
-    const radarr = await fakeRadarr();
-    const body = { url: radarr.url, apiKey: RADARR_KEY, qualityProfileId: 4, rootFolderPath: '/films' };
-
-    const incomplete = await call(app, 'PUT', '/api/settings/radarr', { url: radarr.url, apiKey: RADARR_KEY }, headers);
-    expect(incomplete.statusCode).toBe(400);
-    const refused = await call(app, 'PUT', '/api/settings/radarr', { ...body, apiKey: 'faux' }, headers);
-    expect(refused.statusCode).toBe(422);
-    expect((await call(app, 'GET', '/api/settings/radarr', undefined, headers)).statusCode).toBe(404);
-
-    const saved = await call(app, 'PUT', '/api/settings/radarr', body, headers);
-    expect(saved.statusCode).toBe(200);
-    expect(saved.body).not.toContain(RADARR_KEY);
-
-    const read = await call(app, 'GET', '/api/settings/radarr', undefined, headers);
-    expect(read.body).not.toContain(RADARR_KEY);
-    expect(read.json()).toEqual({ ...body, apiKey: { set: true }, minimumAvailability: 'released' });
-
-    // Modifier sans renvoyer la clé : l'ancienne est gardée.
-    const updated = await call(
-      app,
-      'PUT',
-      '/api/settings/radarr',
-      { ...body, apiKey: '', rootFolderPath: '/4k' },
-      headers,
-    );
-    expect(updated.json()).toMatchObject({ rootFolderPath: '/4k', apiKey: { set: true } });
-    expect(radarr.requests.at(-1)?.headers['x-api-key']).toBe(RADARR_KEY);
+    for (const kind of ['radarr', 'sonarr']) {
+      expect((await call(app, 'GET', `/api/settings/${kind}`, undefined, headers)).statusCode).toBe(404);
+      expect((await call(app, 'PUT', `/api/settings/${kind}`, {}, headers)).statusCode).toBe(404);
+      expect((await call(app, 'POST', `/api/setup/${kind}/test`, {}, headers)).statusCode).toBe(404);
+    }
   });
 
   it('règles : valeurs par défaut puis enregistrement', async () => {

@@ -26,6 +26,11 @@ const shortLabel = (status: MediaStatus, progress: Availability['progress']) => 
  * Pastille de statut. `onMedia` : posée sur une image (verre sombre identique dans les deux thèmes, libellé court).
  * `label` remplace le libellé du statut, qui ne donne plus que la teinte (statut d'une demande).
  */
+/** Pastille de la version 4K d'un titre ou d'une saison : « 4K · Disponible ». */
+export function FourKPill({ status, className }: { status: MediaStatus; className?: string }) {
+  return <StatusPill status={status} label={`4K · ${mediaStatusLabel[status]}`} className={className} />;
+}
+
 export function StatusPill({
   status,
   onMedia = false,

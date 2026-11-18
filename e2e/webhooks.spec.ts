@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, expectNoAxeViolations, field, test, viewerAs, webhookSettingsOf } from './support/api.ts';
+import { expect, expectNoAxeViolations, field, test, viewerAs, webhookSettingsOf, webhookUrl } from './support/api.ts';
 
 const webhooksSection = (page: Page) => page.getByRole('button', { name: /^Webhooks\b/ });
 
@@ -13,8 +13,8 @@ async function openWebhooks(page: Page) {
 test('Réglages : les adresses Radarr et Sonarr, et comment les brancher', async ({ page }) => {
   await openWebhooks(page);
   const initial = webhookSettingsOf('jeton-initial');
-  await expect(field(page, 'Radarr')).toHaveValue(initial.urls.radarr);
-  await expect(field(page, 'Sonarr')).toHaveValue(initial.urls.sonarr);
+  await expect(field(page, 'Radarr')).toHaveValue(webhookUrl(initial, 'Radarr'));
+  await expect(field(page, 'Sonarr')).toHaveValue(webhookUrl(initial, 'Sonarr'));
   await expect(field(page, 'Radarr')).toHaveAttribute('readonly', '');
   await expect(webhooksSection(page)).toContainText('Actif');
   await expect(page.getByText('Paramètres › Connexions › + › Webhook')).toBeVisible();
@@ -29,7 +29,7 @@ test('Copier place l’adresse dans le presse-papiers', async ({ page, context }
   await copy.click();
   await expect(copy).toHaveText('Copié');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    webhookSettingsOf('jeton-initial').urls.sonarr,
+    webhookUrl(webhookSettingsOf('jeton-initial'), 'Sonarr'),
   );
 });
 
@@ -43,7 +43,7 @@ test('sans presse-papiers (http sur le réseau local), pas de bouton : l’adres
   const selected = await field(page, 'Radarr').evaluate(
     (el: HTMLInputElement) => (el.selectionEnd ?? 0) - (el.selectionStart ?? 0),
   );
-  expect(selected).toBe(webhookSettingsOf('jeton-initial').urls.radarr.length);
+  expect(selected).toBe(webhookUrl(webhookSettingsOf('jeton-initial'), 'Radarr').length);
 });
 
 test('Régénérer le jeton demande confirmation, puis remplace les adresses', async ({ page, api }) => {
@@ -60,15 +60,15 @@ test('Régénérer le jeton demande confirmation, puis remplace les adresses', a
   await dialog.getByRole('button', { name: 'Annuler' }).click();
   await expect(dialog).toHaveCount(0);
   expect(regenerated).toBe(0);
-  await expect(field(page, 'Radarr')).toHaveValue(webhookSettingsOf('jeton-initial').urls.radarr);
+  await expect(field(page, 'Radarr')).toHaveValue(webhookUrl(webhookSettingsOf('jeton-initial'), 'Radarr'));
 
   await page.getByRole('button', { name: 'Régénérer le jeton' }).click();
   await expectNoAxeViolations(page);
   await dialog.getByRole('button', { name: 'Régénérer', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(regenerated).toBe(1);
-  await expect(field(page, 'Radarr')).toHaveValue(webhookSettingsOf('jeton-regenere').urls.radarr);
-  await expect(field(page, 'Sonarr')).toHaveValue(webhookSettingsOf('jeton-regenere').urls.sonarr);
+  await expect(field(page, 'Radarr')).toHaveValue(webhookUrl(webhookSettingsOf('jeton-regenere'), 'Radarr'));
+  await expect(field(page, 'Sonarr')).toHaveValue(webhookUrl(webhookSettingsOf('jeton-regenere'), 'Sonarr'));
   await expect(page.getByText('Nouveau jeton généré')).toBeVisible();
   expect(api.state.webhooks.token).toBe('jeton-regenere');
 });
@@ -83,7 +83,7 @@ test('Régénérer : l’échec du serveur reste dans la feuille, l’ancien jet
   await dialog.getByRole('button', { name: 'Régénérer', exact: true }).click();
   await expect(dialog).toContainText('Erreur interne du serveur');
   await dialog.getByRole('button', { name: 'Annuler' }).click();
-  await expect(field(page, 'Radarr')).toHaveValue(webhookSettingsOf('jeton-initial').urls.radarr);
+  await expect(field(page, 'Radarr')).toHaveValue(webhookUrl(webhookSettingsOf('jeton-initial'), 'Radarr'));
 });
 
 test('un jeton illisible : message et « Réessayer »', async ({ page }) => {
@@ -98,9 +98,12 @@ test('un jeton illisible : message et « Réessayer »', async ({ page }) => {
   await expect(field(page, 'Radarr')).toBeVisible();
 });
 
-test('pas de section Webhooks hors du propriétaire (Réglages lui est fermé)', async ({ page, api }) => {
+test('pas de section Webhooks hors du propriétaire (un gestionnaire n’y voit que les blocages)', async ({
+  page,
+  api,
+}) => {
   api.state.viewer = viewerAs('manager', 'Marion');
   await page.goto('/reglages');
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('button', { name: /^Blocages/ })).toBeVisible();
   await expect(webhooksSection(page)).toHaveCount(0);
 });

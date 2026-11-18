@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
+  WEBHOOK_SERVER_QUERY,
   WEBHOOK_SETTINGS_PATH,
   WEBHOOK_TOKEN_HEADER,
   WEBHOOK_TOKEN_PATH,
@@ -10,26 +11,34 @@ import {
   webhookServices,
 } from '../../shared/webhooks.ts';
 import { HttpError } from '../lib/api-errors.ts';
-import { requireCapability } from '../plugins/auth.ts';
+import { ownerOnly } from '../plugins/auth.ts';
+import { listArrServers } from '../services/arr-servers.ts';
 import type { SyncService } from '../services/sync.ts';
 import { isValidWebhookToken, regenerateWebhookToken, webhookToken } from '../services/webhooks.ts';
 
 const asString = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
+const queryOf = (req: FastifyRequest) => req.query as Record<string, unknown> | undefined;
+
 /** Jeton reçu : en-tête, sinon paramètre `?token=` de l'adresse. */
 const receivedToken = (req: FastifyRequest) =>
-  asString(req.headers[WEBHOOK_TOKEN_HEADER]) ??
-  asString((req.query as Record<string, unknown> | undefined)?.[WEBHOOK_TOKEN_QUERY]);
+  asString(req.headers[WEBHOOK_TOKEN_HEADER]) ?? asString(queryOf(req)?.[WEBHOOK_TOKEN_QUERY]);
 
-/** Adresses à coller dans Radarr/Sonarr, d'après l'adresse par laquelle le propriétaire joint l'appli. */
-function settingsOf(req: FastifyRequest, token: string): WebhookSettings {
-  const urlOf = (path: string) => {
-    const url = new URL(path, `${req.protocol}://${req.host}`);
+/** Serveur émetteur (`?server=<id>`) ; absent ou illisible : `undefined` (recalcul sur tous les serveurs du type). */
+function senderOf(req: FastifyRequest): number | undefined {
+  const id = Number(asString(queryOf(req)?.[WEBHOOK_SERVER_QUERY]));
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+}
+
+/** Adresses à coller dans chaque serveur Radarr/Sonarr, d'après l'adresse par laquelle le propriétaire joint l'appli. */
+function settingsOf(req: FastifyRequest, token: string, data: FastifyInstance['data']): WebhookSettings {
+  const servers = listArrServers(data).map(({ id, name, type, is4k }) => {
+    const url = new URL(webhookPath(type), `${req.protocol}://${req.host}`);
     url.searchParams.set(WEBHOOK_TOKEN_QUERY, token);
-    return url.toString();
-  };
-  const urls = Object.fromEntries(webhookServices.map((s) => [s, urlOf(webhookPath(s))]));
-  return { token, urls: urls as WebhookSettings['urls'] };
+    url.searchParams.set(WEBHOOK_SERVER_QUERY, String(id));
+    return { id, name, type, is4k, url: url.toString() };
+  });
+  return { token, servers };
 }
 
 /**
@@ -45,10 +54,9 @@ export function webhookRoutes(app: FastifyInstance, sync: SyncService) {
     app.post(
       webhookPath(service),
       { onRequest: checkToken },
-      async (req): Promise<WebhookResult> => sync.handleWebhook(service, req.body),
+      async (req): Promise<WebhookResult> => sync.handleWebhook(service, req.body, senderOf(req)),
     );
 
-  const ownerOnly = { preHandler: requireCapability('isOwner') };
-  app.get(WEBHOOK_SETTINGS_PATH, ownerOnly, async (req) => settingsOf(req, webhookToken(app.data)));
-  app.post(WEBHOOK_TOKEN_PATH, ownerOnly, async (req) => settingsOf(req, regenerateWebhookToken(app.data)));
+  app.get(WEBHOOK_SETTINGS_PATH, ownerOnly, async (req) => settingsOf(req, webhookToken(app.data), app.data));
+  app.post(WEBHOOK_TOKEN_PATH, ownerOnly, async (req) => settingsOf(req, regenerateWebhookToken(app.data), app.data));
 }

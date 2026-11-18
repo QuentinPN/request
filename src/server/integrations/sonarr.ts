@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Setting } from '../../shared/settings.ts';
+import type { SeriesType } from '../../shared/settings.ts';
 import type { SonarrTestResult } from '../../shared/setup.ts';
 import {
   type ArrConfig,
@@ -30,8 +30,6 @@ const seriesSchema = z.looseObject({
   seasons: z.array(seasonSchema),
 });
 type Series = z.infer<typeof seriesSchema>;
-
-export type SeriesType = Setting<'sonarr'>['seriesType'];
 
 export interface AddSeriesInput {
   tvdbId: number;

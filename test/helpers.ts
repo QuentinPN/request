@@ -4,12 +4,15 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
-import { type Db, migrationsFolder, openDataDir } from '../src/server/db/index.ts';
+import { type Data, type Db, migrationsFolder, openDataDir } from '../src/server/db/index.ts';
 import { SESSION_COOKIE } from '../src/server/plugins/auth.ts';
+import { saveArrServer } from '../src/server/services/arr-servers.ts';
 import { createSession } from '../src/server/services/sessions.ts';
 import { setRole, type User, upsertFromEmby } from '../src/server/services/users.ts';
+import { type ArrServerInput, arrKindLabels, arrServerInputSchema } from '../src/shared/arr-servers.ts';
 import { CSRF_HEADERS } from '../src/shared/auth.ts';
 import type { Role } from '../src/shared/roles.ts';
+import { SETUP_TOKEN_HEADER } from '../src/shared/setup.ts';
 import { type FakeRoutes, startFakeServer } from './fake-server.ts';
 
 /** Crée des dossiers temporaires, supprimés après chaque test du fichier appelant. */
@@ -33,8 +36,8 @@ export function trackApps() {
   afterEach(async () => {
     for (const app of apps.splice(0)) await app.close();
   });
-  return async () => {
-    const app = await buildApp({ data: openDataDir(tempDir()) });
+  return async (options: Pick<Parameters<typeof buildApp>[0], 'upstreams'> = {}) => {
+    const app = await buildApp({ data: openDataDir(tempDir()), ...options });
     apps.push(app);
     return app;
   };
@@ -74,6 +77,31 @@ export async function loginAs(app: FastifyInstance, role: Role, id = `membre-${r
 
 /** Session du propriétaire (crée le membre propriétaire au besoin). */
 export const loginAsOwner = (app: FastifyInstance) => loginAs(app, 'owner', 'proprietaire');
+
+/** En-têtes de l'amorçage sans session : CSRF et jeton d'installation de cette application. */
+export const bootstrapHeaders = (app: FastifyInstance): Record<string, string> => ({
+  ...CSRF_HEADERS,
+  [SETUP_TOKEN_HEADER]: app.setupToken,
+});
+
+/**
+ * Serveur Radarr/Sonarr écrit en base sans test de connexion (défaut de son couple type/4K s'il est le premier). Nom par
+ * défaut « Radarr », « Sonarr 4K »…, clé `k`, profil 1, dossier `/media`.
+ */
+export const addArrServer = (
+  data: Pick<Data, 'db' | 'cryptoKey'>,
+  server: Pick<ArrServerInput, 'type' | 'url'> & Partial<ArrServerInput>,
+) =>
+  saveArrServer(
+    data,
+    arrServerInputSchema.parse({
+      name: `${arrKindLabels[server.type]}${server.is4k ? ' 4K' : ''}`,
+      apiKey: 'k',
+      qualityProfileId: 1,
+      rootFolderPath: '/media',
+      ...server,
+    }),
+  );
 
 /** Plan d'exécution d'une requête Drizzle (même SQL et mêmes paramètres que ceux envoyés à SQLite). */
 export function queryPlan(db: Db, query: { toSQL: () => { sql: string; params: unknown[] } }): string {

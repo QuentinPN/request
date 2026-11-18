@@ -1,16 +1,14 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
-import { Bell, type LucideIcon, Search } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
-import { unreadLabel } from '@/lib/notifications';
-import { CountBadge, NavBadge } from './nav-badge';
-import { activeOptions, focusRing, useNavItems } from './nav-items';
-import { NotificationsSheet, useUnreadCount } from './notifications';
+import { type LucideIcon, Search } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { MenuBadge, NavBadge } from './nav-badge';
+import { activeOptions, focusRing, useMenuActive, useNavItems } from './nav-items';
 import { searchShortcut, useOpenSearch } from './search';
 
-// Jusqu'à six onglets (gestionnaire) dans 390 px : chacun prend une part égale, 64 px au plus.
+// Cinq onglets au plus (gestionnaire) dans 390 px.
 const tab = cn(
-  'relative flex min-h-11 max-w-16 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl py-1 text-[10px] font-semibold text-muted-foreground aria-[current=page]:text-foreground',
+  'relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl py-1 text-[10px] font-semibold text-muted-foreground aria-[current=page]:text-foreground',
   focusRing,
 );
 const tabBadge = 'absolute -top-1.5 right-2 h-[18px] min-w-[18px] text-[10px]';
@@ -24,34 +22,25 @@ function TabContent({ icon: Icon, children }: { icon: LucideIcon; children: Reac
   );
 }
 
-/** Onglet « Alertes » : ouvre les notifications dans une feuille, avec le nombre de non lues. */
-function NotificationsTab() {
-  const [open, setOpen] = useState(false);
-  const unread = useUnreadCount();
-  return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className={tab}>
-        <TabContent icon={Bell}>Alertes</TabContent>
-        {unread > 0 && <CountBadge count={unread} label={unreadLabel(unread)} className={tabBadge} />}
-      </button>
-      <NotificationsSheet open={open} onOpenChange={setOpen} />
-    </>
-  );
-}
-
-// Barre d'onglets flottante du mobile (< 1024 px), comme dans la maquette R-Mobile, plus les notifications.
+// Barre d'onglets flottante du mobile (< 1024 px), comme dans la maquette R-Mobile. Le reste (Ma liste, Signalements,
+// Statistiques) s'ouvre depuis Compte ; les notifications, depuis la cloche de l'en-tête.
 export function MobileNav() {
   const [home, ...rest] = useNavItems('tabs');
   const openSearch = useOpenSearch();
+  const menuActive = useMenuActive();
   const link = (item: NonNullable<typeof home>) => (
-    <Link key={item.to} to={item.to} activeOptions={activeOptions(item.to)} className={tab}>
+    <Link
+      key={item.to}
+      to={item.to}
+      activeOptions={activeOptions(item.to)}
+      aria-current={menuActive && item.in.includes('account') ? 'page' : undefined}
+      className={tab}
+    >
       <TabContent icon={item.icon}>{item.mobileLabel ?? item.label}</TabContent>
       <NavBadge item={item} className={tabBadge} />
+      {item.in.includes('account') && <MenuBadge className={tabBadge} />}
     </Link>
   );
-  // Le compte reste le dernier onglet, les notifications juste avant.
-  const isAccount = (item: NonNullable<typeof home>) => item.in.includes('account');
-
   return (
     <nav
       aria-label="Navigation"
@@ -61,9 +50,7 @@ export function MobileNav() {
       <button type="button" onClick={openSearch} aria-keyshortcuts={searchShortcut.aria} className={tab}>
         <TabContent icon={Search}>Rechercher</TabContent>
       </button>
-      {rest.filter((item) => !isAccount(item)).map(link)}
-      <NotificationsTab />
-      {rest.filter(isAccount).map(link)}
+      {rest.map(link)}
     </nav>
   );
 }

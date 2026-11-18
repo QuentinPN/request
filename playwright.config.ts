@@ -7,7 +7,9 @@ export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
-  use: { baseURL: 'http://localhost:3100', trace: 'off' },
+  // Service worker bloqué : les requêtes qu'il verrait échapperaient aux faux serveurs (`page.route`). Le push du
+  // navigateur est simulé au besoin (e2e/canaux-mocks.ts).
+  use: { baseURL: 'http://localhost:3100', trace: 'off', serviceWorkers: 'block' },
   projects: [
     { name: 'ordinateur', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
     { name: 'mobile', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, hasTouch: true } },

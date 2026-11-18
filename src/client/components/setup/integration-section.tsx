@@ -1,20 +1,36 @@
 import {
+  ARR_SERVERS_TEST_PATH,
+  type ArrKind,
+  type ArrServerInput,
+  arrKindLabels,
+  isArrKind,
+} from '@shared/arr-servers.ts';
+import { loginMethodOf } from '@shared/media-server.ts';
+import {
+  DEFAULT_MINIMUM_AVAILABILITY,
+  DEFAULT_SERIES_TYPE,
   type IntegrationKey,
   type MaskedSetting,
-  type minimumAvailabilities,
+  type MediaServerKind,
+  type MinimumAvailability,
+  mediaServerKindLabels,
+  mediaServerKinds,
   normalizeUrl,
+  ofMediaServer,
+  type SeriesType,
   type SettingInput,
-  type seriesTypes,
 } from '@shared/settings.ts';
-import type { TestResults } from '@shared/setup.ts';
-import { useMutation } from '@tanstack/react-query';
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { SETUP_TOKEN_HEADER, setupTestPath, type TestResults } from '@shared/setup.ts';
+import { type UseMutationResult, useMutation, useQuery } from '@tanstack/react-query';
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
-import { FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
+import { CheckboxRow, FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
 import { apiSend } from '@/lib/http';
+import { setupStateQuery } from '@/lib/session';
 import {
-  connectionText,
+  type ConnectionKey,
+  connectionTextOf,
   formatBytes,
   isHttpUrl,
   libraryTypeLabels,
@@ -26,16 +42,19 @@ import {
 import { useSaveSetting } from './queries';
 import { actionClass, SectionActions, SectionFrame, type SectionFrameProps, sectionStatus } from './section-frame';
 
-type MinimumAvailability = (typeof minimumAvailabilities)[number];
-type SeriesType = (typeof seriesTypes)[number];
-
-/** Valeurs du formulaire, communes aux quatre intégrations (chacune n'en lit qu'une partie). */
-type Values = {
+/** Valeurs du formulaire, communes au serveur multimédia, à TMDB et aux serveurs Radarr/Sonarr (chacun n'en lit qu'une partie). */
+export type Values = {
+  /** Serveur multimédia : Emby, Jellyfin ou Plex, choisi d'abord ; `null` tant qu'aucun ne l'est. */
+  kind: MediaServerKind | null;
+  /** Serveur Radarr/Sonarr : nom affiché, 4K, serveur par défaut de son couple (type, 4K). */
+  name: string;
+  is4k: boolean;
+  isDefault: boolean;
   url: string;
   /** Vide : garder la clé enregistrée (même adresse seulement, voir withStoredSecrets côté serveur). */
   apiKey: string;
   libraryIds: string[];
-  /** Emby : adresse que les membres utilisent (« Regarder dans Emby »), vide = aucune. */
+  /** Emby, Jellyfin : adresse que les membres utilisent (« Regarder dans… »), vide = aucune. */
   publicUrl: string;
   qualityProfileId: string;
   rootFolderPath: string;
@@ -44,60 +63,96 @@ type Values = {
   languageProfileId: string;
 };
 
-/** Vue à plat d'un réglage masqué, quelle que soit l'intégration. */
-type StoredFields = Partial<Omit<Values, 'apiKey' | 'publicUrl' | 'qualityProfileId' | 'languageProfileId'>> & {
+/** Vue à plat d'un réglage masqué ou d'un serveur Radarr/Sonarr enregistré. */
+export type StoredFields = Partial<
+  Omit<
+    Values,
+    'kind' | 'apiKey' | 'publicUrl' | 'qualityProfileId' | 'languageProfileId' | 'minimumAvailability' | 'seriesType'
+  >
+> & {
+  kind?: MediaServerKind;
+  /** Serveur Radarr/Sonarr déjà enregistré : sa clé est reprise au test si elle est laissée vide. */
+  id?: number;
   apiKey?: { set: boolean };
   publicUrl?: string | null;
   qualityProfileId?: number;
-  languageProfileId?: number;
+  languageProfileId?: number | null;
+  minimumAvailability?: MinimumAvailability | null;
+  seriesType?: SeriesType | null;
+  tags?: number[];
 };
 
 const initialValues = (s: StoredFields): Values => ({
+  kind: s.kind ?? null,
+  name: s.name ?? '',
+  is4k: s.is4k ?? false,
+  isDefault: s.isDefault ?? false,
   url: s.url ?? '',
   apiKey: '',
   libraryIds: s.libraryIds ?? [],
   publicUrl: s.publicUrl ?? '',
   qualityProfileId: s.qualityProfileId ? String(s.qualityProfileId) : '',
   rootFolderPath: s.rootFolderPath ?? '',
-  minimumAvailability: s.minimumAvailability ?? 'released',
-  seriesType: s.seriesType ?? 'standard',
+  minimumAvailability: s.minimumAvailability ?? DEFAULT_MINIMUM_AVAILABILITY,
+  seriesType: s.seriesType ?? DEFAULT_SERIES_TYPE,
   languageProfileId: s.languageProfileId ? String(s.languageProfileId) : '',
 });
 
-const connectionOf = (key: IntegrationKey, v: Values) =>
-  key === 'tmdb' ? { apiKey: v.apiKey } : { url: v.url.trim(), apiKey: v.apiKey };
+const connectionOf = (key: ConnectionKey, v: Values) =>
+  key === 'tmdb'
+    ? { apiKey: v.apiKey }
+    : { ...(key === 'mediaServer' && { kind: v.kind }), url: v.url.trim(), apiKey: v.apiKey };
 
-/** Corps du PUT, au format du schéma partagé de chaque intégration. */
-function payloadOf(key: IntegrationKey, v: Values): SettingInput<IntegrationKey> {
+/** Plex n'a pas d'adresse publique : son lien « Regarder dans Plex » passe par app.plex.tv. */
+const hasPublicUrl = (key: ConnectionKey, v: Values) => key === 'mediaServer' && v.kind !== null && v.kind !== 'plex';
+
+/** Corps du PUT du serveur multimédia ou de TMDB, au format du schéma partagé de chaque intégration. */
+function settingPayloadOf(key: IntegrationKey, v: Values): SettingInput<IntegrationKey> {
   const connection = connectionOf(key, v);
-  const arr = { ...connection, qualityProfileId: Number(v.qualityProfileId), rootFolderPath: v.rootFolderPath };
-  switch (key) {
-    case 'emby':
-      return { ...connection, libraryIds: v.libraryIds, publicUrl: v.publicUrl.trim() || null } as SettingInput<'emby'>;
-    case 'tmdb':
-      return connection as SettingInput<'tmdb'>;
-    case 'radarr':
-      return { ...arr, minimumAvailability: v.minimumAvailability } as SettingInput<'radarr'>;
-    case 'sonarr':
-      return {
-        ...arr,
-        seriesType: v.seriesType,
-        ...(v.languageProfileId ? { languageProfileId: Number(v.languageProfileId) } : {}),
-      } as SettingInput<'sonarr'>;
-  }
+  return key === 'mediaServer'
+    ? ({
+        ...connection,
+        libraryIds: v.libraryIds,
+        publicUrl: (hasPublicUrl(key, v) && v.publicUrl.trim()) || null,
+      } as SettingInput<'mediaServer'>)
+    : (connection as SettingInput<'tmdb'>);
 }
+
+/** Corps de l'ajout ou de la modification d'un serveur ; les étiquettes enregistrées sont gardées telles quelles. */
+export function arrPayloadOf(type: ArrKind, v: Values, stored: StoredFields | null): ArrServerInput {
+  return {
+    url: v.url.trim(),
+    apiKey: v.apiKey,
+    type,
+    name: v.name.trim(),
+    is4k: v.is4k,
+    isDefault: v.isDefault,
+    qualityProfileId: Number(v.qualityProfileId),
+    rootFolderPath: v.rootFolderPath,
+    minimumAvailability: type === 'radarr' ? v.minimumAvailability : null,
+    seriesType: type === 'sonarr' ? v.seriesType : null,
+    languageProfileId: type === 'sonarr' && v.languageProfileId ? Number(v.languageProfileId) : null,
+    tags: stored?.tags ?? [],
+  };
+}
+
+/** Test de connexion : celui de l'intégration, ou celui des serveurs (avec l'id, pour reprendre la clé enregistrée). */
+const testRequest = (key: ConnectionKey, v: Values, stored: StoredFields) =>
+  isArrKind(key)
+    ? { path: ARR_SERVERS_TEST_PATH, body: { ...connectionOf(key, v), type: key, id: stored.id } }
+    : { path: setupTestPath(key), body: connectionOf(key, v) };
 
 const pick = (current: string, options: string[]) => (options.includes(current) ? current : (options[0] ?? ''));
 
 /** Choix par défaut après un test : valeurs enregistrées si elles existent encore, sinon la première option. */
-function prefill(key: IntegrationKey, v: Values, result: TestResults[IntegrationKey]): Values {
-  if (key === 'emby') {
-    const { libraries } = result as TestResults['emby'];
+function prefill(key: ConnectionKey, v: Values, result: TestResults[ConnectionKey]): Values {
+  if (key === 'mediaServer') {
+    const { libraries } = result as TestResults['mediaServer'];
     const known = v.libraryIds.filter((id) => libraries.some((l) => l.id === id));
     const media = libraries.filter((l) => l.type !== 'other').map((l) => l.id);
     return { ...v, libraryIds: known.length > 0 ? known : media };
   }
-  if (key === 'radarr' || key === 'sonarr') {
+  if (isArrKind(key)) {
     const r = result as TestResults['sonarr'];
     return {
       ...v,
@@ -120,87 +175,143 @@ function prefill(key: IntegrationKey, v: Values, result: TestResults[Integration
   return v;
 }
 
-/** Adresse publique d'Emby : facultative, mais valide si elle est renseignée. */
-const publicUrlError = (key: IntegrationKey, v: Values) =>
-  key === 'emby' && v.publicUrl.trim() !== '' && !isHttpUrl(v.publicUrl) ? URL_ERROR : null;
+/** Adresse publique d'Emby ou de Jellyfin : facultative, mais valide si elle est renseignée. */
+const publicUrlError = (key: ConnectionKey, v: Values) =>
+  hasPublicUrl(key, v) && v.publicUrl.trim() !== '' && !isHttpUrl(v.publicUrl) ? URL_ERROR : null;
+
+/**
+ * La clé enregistrée vaut pour cette saisie : même adresse, et même type de serveur multimédia (le serveur ne reprend
+ * jamais la clé d'un autre type, voir routes/setup.ts).
+ */
+const keepsStoredKey = (key: ConnectionKey, v: Values, stored: StoredFields) =>
+  stored.apiKey?.set === true &&
+  (connectionTextOf(key, v.kind).url === null || normalizeUrl(v.url.trim()) === stored.url) &&
+  (stored.kind === undefined || stored.kind === v.kind);
 
 /** Vérification locale avant d'appeler le serveur ; `null` si rien à signaler. */
-function localError(key: IntegrationKey, v: Values, stored: StoredFields): string | null {
-  const hasUrl = connectionText[key].url !== null;
-  if (hasUrl && !isHttpUrl(v.url)) return URL_ERROR;
-  const keepsKey = stored.apiKey?.set === true && (!hasUrl || normalizeUrl(v.url.trim()) === stored.url);
-  if (!v.apiKey.trim() && !keepsKey)
+function localError(key: ConnectionKey, v: Values, stored: StoredFields, named: boolean): string | null {
+  if (key === 'mediaServer' && !v.kind) return 'Choisissez d’abord le type de serveur';
+  if (named && !v.name.trim()) return 'Nom requis';
+  if (connectionTextOf(key, v.kind).url !== null && !isHttpUrl(v.url)) return URL_ERROR;
+  if (!v.apiKey.trim() && !keepsStoredKey(key, v, stored))
     return stored.apiKey?.set ? 'Nouvelle adresse : saisissez à nouveau la clé d’API' : 'Clé d’API requise';
   return null;
 }
 
-type Props = SectionFrameProps & {
-  service: IntegrationKey;
-  stored: MaskedSetting<IntegrationKey> | null;
-  saved: boolean;
+/** État du formulaire utile au cadre qui l'entoure (pastille de statut de la section). */
+export type FormState = { failed: boolean; testing: boolean };
+
+type FormProps<P> = {
+  service: ConnectionKey;
+  stored: StoredFields | null;
   /** Mode assistant : « Enregistrer et continuer » ; mode réglages : « Enregistrer ». */
   wizard: boolean;
-  onSaved: () => void;
+  /** Formulaire visible : le premier affichage d'un réglage enregistré lance le test, pour remplir les listes. */
+  open: boolean;
+  /** Nom, 4K et serveur par défaut (serveur Radarr/Sonarr dans les réglages ; l'assistant n'en configure qu'un). */
+  serverFields?: boolean;
+  /** Valeurs de départ d'un serveur à ajouter (nom proposé, serveur par défaut). */
+  defaults?: Partial<Values>;
+  save: UseMutationResult<unknown, Error, P>;
+  toPayload: (values: Values) => P;
+  /** Bouton en plus des actions (« Annuler » d'un serveur en cours d'édition). */
+  extraAction?: ReactNode;
+  /** Serveur multimédia : son type ne peut plus changer (des membres existent ; le serveur refuse aussi, 409). */
+  kindLocked?: boolean;
+  /** Amorçage du serveur multimédia (aucun propriétaire) : jeton d'installation saisi, et ses en-têtes de requête. */
+  setupToken?: SetupTokenField;
+  render: (state: FormState, form: ReactNode) => ReactNode;
 };
 
-/** Formulaire unique des quatre intégrations : connexion, test en direct, choix lus dans le résultat, enregistrement. */
-export function IntegrationSection({ service, stored: storedSetting, saved, wizard, onSaved, ...frame }: Props) {
-  const stored = (storedSetting ?? {}) as StoredFields;
-  const text = connectionText[service];
+type SetupTokenField = { value: string; onChange: (value: string) => void; headers: Record<string, string> };
+
+/**
+ * Formulaire unique du serveur multimédia (Emby, Jellyfin ou Plex, choisi d'abord), de TMDB et des serveurs
+ * Radarr/Sonarr : connexion, test en direct, choix lus dans le résultat, enregistrement. Le cadre (section
+ * d'accordéon, ligne de la liste des serveurs) vient de `render`.
+ */
+export function IntegrationForm<P>({
+  service,
+  stored: storedSetting,
+  wizard,
+  open,
+  serverFields = false,
+  defaults,
+  save,
+  toPayload,
+  extraAction,
+  kindLocked = false,
+  setupToken,
+  render,
+}: FormProps<P>) {
+  const stored = storedSetting ?? {};
   const id = useId();
-  const [values, setValues] = useState(() => initialValues(stored));
+  const [values, setValues] = useState(() => ({ ...initialValues(stored), ...defaults }));
+  const text = connectionTextOf(service, values.kind);
+  const isMediaServer = service === 'mediaServer';
+  const serverName = values.kind ? mediaServerKindLabels[values.kind] : '';
   const [checkError, setCheckError] = useState<string | null>(null);
 
   const test = useMutation({
-    mutationFn: (connection: ReturnType<typeof connectionOf>) =>
-      apiSend<TestResults[IntegrationKey]>('POST', `/api/setup/${service}/test`, connection),
+    mutationFn: (v: Values) => {
+      const { path, body } = testRequest(service, v, stored);
+      return apiSend<TestResults[ConnectionKey]>('POST', path, body, undefined, setupToken?.headers);
+    },
     onSuccess: (result) => setValues((v) => prefill(service, v, result)),
-  });
-  const save = useSaveSetting(service, () => {
-    setValues((v) => ({ ...v, apiKey: '' }));
-    onSaved();
   });
 
   const runTest = (v: Values) => {
     save.reset();
-    const error = localError(service, v, stored);
+    const error =
+      setupToken && !setupToken.value.trim()
+        ? 'Saisissez le jeton d’installation'
+        : localError(service, v, stored, serverFields);
     setCheckError(error);
     if (error) test.reset();
-    else test.mutate(connectionOf(service, v));
+    else test.mutate(v);
   };
 
-  // Section déjà enregistrée : test automatique à la première ouverture, pour remplir les listes.
+  // Réglage déjà enregistré : test automatique à la première ouverture, pour remplir les listes.
   const autoTested = useRef(false);
   useEffect(() => {
-    if (!frame.open || !storedSetting || autoTested.current) return;
+    if (!open || !storedSetting || autoTested.current) return;
     autoTested.current = true;
     runTest(values);
   });
 
-  // Toute modification de la connexion invalide le dernier test.
-  const setConnection = (patch: Partial<Pick<Values, 'url' | 'apiKey'>>) => {
-    setValues((v) => ({ ...v, ...patch }));
+  // Toute modification de la connexion (ou du jeton d'installation) invalide le dernier test.
+  const resetTest = () => {
     setCheckError(null);
     test.reset();
     save.reset();
+  };
+  const setConnection = (patch: Partial<Pick<Values, 'url' | 'apiKey'>>) => {
+    setValues((v) => ({ ...v, ...patch }));
+    resetTest();
   };
   const setChoice = (patch: Partial<Values>) => {
     setValues((v) => ({ ...v, ...patch }));
     save.reset();
   };
+  // Autre type de serveur : autre clé, autres bibliothèques ; la clé enregistrée ne vaut plus.
+  const setKind = (kind: MediaServerKind) => {
+    setValues((v) => ({ ...v, kind, apiKey: '', libraryIds: kind === stored.kind ? (stored.libraryIds ?? []) : [] }));
+    resetTest();
+  };
 
   const result = test.data;
-  const arr = result && (service === 'radarr' || service === 'sonarr') ? (result as TestResults['sonarr']) : null;
+  const arr = result && isArrKind(service) ? (result as TestResults['sonarr']) : null;
   const publicError = publicUrlError(service, values);
   const canSave =
     test.isSuccess &&
     !save.isPending &&
     !publicError &&
+    (!serverFields || values.name.trim() !== '') &&
     (!arr || (values.qualityProfileId !== '' && values.rootFolderPath !== ''));
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (canSave) save.mutate(payloadOf(service, values));
+    if (canSave) save.mutate(toPayload(values), { onSuccess: () => setValues((v) => ({ ...v, apiKey: '' })) });
     else if (!test.isPending) runTest(values);
   };
 
@@ -209,22 +320,93 @@ export function IntegrationSection({ service, stored: storedSetting, saved, wiza
     if (save.isSuccess && !wizard) return <Notice tone="ok">Réglages enregistrés</Notice>;
     if (checkError) return <Notice tone="error">{checkError}</Notice>;
     if (test.isError) return <Notice tone="error">{test.error.message}</Notice>;
-    if (result) return <Notice tone="ok">{testSummary(service, result)}</Notice>;
+    if (result) return <Notice tone="ok">{testSummary(service, result, values.kind)}</Notice>;
     return null;
   })();
 
-  const status = sectionStatus({
-    saved,
-    open: frame.open,
+  const state = {
     failed: Boolean(checkError) || test.isError || save.isError,
     testing: test.isPending || save.isPending,
-  });
-  const keyPlaceholder =
-    stored.apiKey?.set && (!text.url || normalizeUrl(values.url.trim()) === stored.url) ? 'Clé enregistrée' : undefined;
+  };
+  const keyPlaceholder = keepsStoredKey(service, values, stored) ? 'Clé enregistrée' : undefined;
+  const pairLabel = isArrKind(service) ? `${arrKindLabels[service]}${values.is4k ? ' 4K' : ''}` : '';
+  // Serveur multimédia : rien d'autre à remplir tant que son type n'est pas choisi.
+  const showConnection = !isMediaServer || values.kind !== null;
 
-  return (
-    <SectionFrame {...frame} status={status}>
-      <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
+  return render(
+    state,
+    <form noValidate onSubmit={onSubmit} className="flex flex-col gap-4">
+      {setupToken && (
+        <div>
+          <Label htmlFor={`${id}-setup-token`}>Jeton d’installation</Label>
+          <Input
+            id={`${id}-setup-token`}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            aria-describedby={`${id}-setup-token-hint`}
+            value={setupToken.value}
+            onChange={(e) => {
+              setupToken.onChange(e.target.value);
+              resetTest();
+            }}
+          />
+          <FieldHint id={`${id}-setup-token-hint`}>
+            Écrit dans les journaux du serveur à son démarrage, sur la ligne « Jeton d’installation » (
+            <code className="text-[13px] text-foreground">docker compose logs request</code>), sauf s’il est fixé
+            par la variable <code className="text-[13px] text-foreground">SETUP_TOKEN</code>. Il n’est plus demandé une
+            fois le propriétaire connecté.
+          </FieldHint>
+        </div>
+      )}
+      {isMediaServer && (
+        <fieldset aria-describedby={kindLocked ? `${id}-kind-hint` : undefined}>
+          <legend className="mb-2 text-[13px] font-semibold">Type de serveur</legend>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {mediaServerKinds.map((kind) => (
+              <label
+                key={kind}
+                className="flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-60"
+              >
+                <input
+                  type="radio"
+                  name={`${id}-kind`}
+                  value={kind}
+                  className="size-4 shrink-0 accent-(--accent-play)"
+                  checked={values.kind === kind}
+                  disabled={kindLocked && kind !== values.kind}
+                  onChange={() => setKind(kind)}
+                />
+                <span className="flex flex-col">
+                  <span className="font-medium">{mediaServerKindLabels[kind]}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {loginMethodOf(kind) === 'plex' ? 'Connexion avec un compte Plex' : 'Identifiant et mot de passe'}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {kindLocked && (
+            <FieldHint id={`${id}-kind-hint`}>
+              Le type ne peut plus changer : vos membres sont inscrits avec leur compte {serverName}, et leurs demandes
+              en dépendent.
+            </FieldHint>
+          )}
+        </fieldset>
+      )}
+      {serverFields && (
+        <div>
+          <Label htmlFor={`${id}-name`}>Nom</Label>
+          <Input
+            id={`${id}-name`}
+            autoComplete="off"
+            maxLength={100}
+            value={values.name}
+            onChange={(e) => setChoice({ name: e.target.value })}
+          />
+        </div>
+      )}
+      {showConnection && (
         <div className="grid gap-4 sm:grid-cols-2">
           {text.url && (
             <div>
@@ -256,161 +438,217 @@ export function IntegrationSection({ service, stored: storedSetting, saved, wiza
             <FieldHint id={`${id}-key-hint`}>{text.apiKeyHint}</FieldHint>
           </div>
         </div>
+      )}
 
-        {service === 'emby' && (
-          <div>
-            <Label htmlFor={`${id}-public-url`}>Adresse publique d’Emby</Label>
-            <Input
-              id={`${id}-public-url`}
-              type="url"
-              inputMode="url"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="https://emby.exemple.fr"
-              aria-describedby={`${id}-public-url-hint`}
-              aria-invalid={publicError ? true : undefined}
-              value={values.publicUrl}
-              onChange={(e) => setChoice({ publicUrl: e.target.value })}
-            />
-            <FieldHint id={`${id}-public-url-hint`} className={publicError ? 'text-(--text-danger)' : undefined}>
-              {publicError ??
-                'Facultative. Celle que vos membres utilisent pour ouvrir Emby : elle active le lien « Regarder dans Emby ».'}
-            </FieldHint>
-          </div>
-        )}
+      {hasPublicUrl(service, values) && (
+        <div>
+          <Label htmlFor={`${id}-public-url`}>Adresse publique {values.kind && ofMediaServer(values.kind)}</Label>
+          <Input
+            id={`${id}-public-url`}
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={`https://${values.kind}.exemple.fr`}
+            aria-describedby={`${id}-public-url-hint`}
+            aria-invalid={publicError ? true : undefined}
+            value={values.publicUrl}
+            onChange={(e) => setChoice({ publicUrl: e.target.value })}
+          />
+          <FieldHint id={`${id}-public-url-hint`} className={publicError ? 'text-(--text-danger)' : undefined}>
+            {publicError ??
+              `Facultative. Celle que vos membres utilisent pour ouvrir ${serverName} : elle active le lien « Regarder dans ${serverName} ».`}
+          </FieldHint>
+        </div>
+      )}
 
-        {result && service === 'emby' && (
-          <fieldset>
-            <legend className="mb-2 text-[13px] font-semibold">Bibliothèques à surveiller</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {(result as TestResults['emby']).libraries.map((library) => (
-                <label
-                  key={library.id}
-                  className="flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-(--accent-play)"
-                    checked={values.libraryIds.includes(library.id)}
-                    onChange={(e) =>
-                      setChoice({
-                        libraryIds: e.target.checked
-                          ? [...values.libraryIds, library.id]
-                          : values.libraryIds.filter((l) => l !== library.id),
-                      })
-                    }
-                  />
-                  <span className="grow">{library.name}</span>
-                  <span className="text-xs text-muted-foreground">{libraryTypeLabels[library.type]}</span>
-                </label>
-              ))}
-            </div>
-            <FieldHint>Ce qui s’y trouve déjà n’est jamais proposé à la demande.</FieldHint>
-          </fieldset>
-        )}
-
-        {arr && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor={`${id}-profile`}>Profil de qualité</Label>
-              <NativeSelect
-                id={`${id}-profile`}
-                value={values.qualityProfileId}
-                onChange={(e) => setChoice({ qualityProfileId: e.target.value })}
+      {result && isMediaServer && (
+        <fieldset>
+          <legend className="mb-2 text-[13px] font-semibold">Bibliothèques à surveiller</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(result as TestResults['mediaServer']).libraries.map((library) => (
+              <label
+                key={library.id}
+                className="flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm"
               >
-                {arr.qualityProfiles.map((p) => (
+                <input
+                  type="checkbox"
+                  className="size-4 accent-(--accent-play)"
+                  checked={values.libraryIds.includes(library.id)}
+                  onChange={(e) =>
+                    setChoice({
+                      libraryIds: e.target.checked
+                        ? [...values.libraryIds, library.id]
+                        : values.libraryIds.filter((l) => l !== library.id),
+                    })
+                  }
+                />
+                <span className="grow">{library.name}</span>
+                <span className="text-xs text-muted-foreground">{libraryTypeLabels[library.type]}</span>
+              </label>
+            ))}
+          </div>
+          <FieldHint>Ce qui s’y trouve déjà n’est jamais proposé à la demande.</FieldHint>
+        </fieldset>
+      )}
+
+      {arr && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor={`${id}-profile`}>Profil de qualité</Label>
+            <NativeSelect
+              id={`${id}-profile`}
+              value={values.qualityProfileId}
+              onChange={(e) => setChoice({ qualityProfileId: e.target.value })}
+            >
+              {arr.qualityProfiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <div>
+            <Label htmlFor={`${id}-folder`}>Dossier racine</Label>
+            <NativeSelect
+              id={`${id}-folder`}
+              value={values.rootFolderPath}
+              onChange={(e) => setChoice({ rootFolderPath: e.target.value })}
+            >
+              {arr.rootFolders.length === 0 && <option value="">Aucun dossier racine trouvé</option>}
+              {arr.rootFolders.map((f) => (
+                <option key={f.id} value={f.path}>
+                  {f.path} · {formatBytes(f.freeSpace)} libres
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          {service === 'radarr' && (
+            <div>
+              <Label htmlFor={`${id}-availability`}>Disponibilité minimale</Label>
+              <NativeSelect
+                id={`${id}-availability`}
+                value={values.minimumAvailability}
+                onChange={(e) => setChoice({ minimumAvailability: e.target.value as MinimumAvailability })}
+              >
+                {Object.entries(minimumAvailabilityLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
+          {service === 'sonarr' && (
+            <div>
+              <Label htmlFor={`${id}-series-type`}>Type de série</Label>
+              <NativeSelect
+                id={`${id}-series-type`}
+                value={values.seriesType}
+                onChange={(e) => setChoice({ seriesType: e.target.value as SeriesType })}
+              >
+                {Object.entries(seriesTypeLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
+          {arr.languageProfiles && (
+            <div>
+              <Label htmlFor={`${id}-language`}>Profil de langue</Label>
+              <NativeSelect
+                id={`${id}-language`}
+                value={values.languageProfileId}
+                onChange={(e) => setChoice({ languageProfileId: e.target.value })}
+              >
+                {arr.languageProfiles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
               </NativeSelect>
             </div>
-            <div>
-              <Label htmlFor={`${id}-folder`}>Dossier racine</Label>
-              <NativeSelect
-                id={`${id}-folder`}
-                value={values.rootFolderPath}
-                onChange={(e) => setChoice({ rootFolderPath: e.target.value })}
-              >
-                {arr.rootFolders.length === 0 && <option value="">Aucun dossier racine trouvé</option>}
-                {arr.rootFolders.map((f) => (
-                  <option key={f.id} value={f.path}>
-                    {f.path} · {formatBytes(f.freeSpace)} libres
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            {service === 'radarr' && (
-              <div>
-                <Label htmlFor={`${id}-availability`}>Disponibilité minimale</Label>
-                <NativeSelect
-                  id={`${id}-availability`}
-                  value={values.minimumAvailability}
-                  onChange={(e) => setChoice({ minimumAvailability: e.target.value as MinimumAvailability })}
-                >
-                  {Object.entries(minimumAvailabilityLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            )}
-            {service === 'sonarr' && (
-              <div>
-                <Label htmlFor={`${id}-series-type`}>Type de série</Label>
-                <NativeSelect
-                  id={`${id}-series-type`}
-                  value={values.seriesType}
-                  onChange={(e) => setChoice({ seriesType: e.target.value as SeriesType })}
-                >
-                  {Object.entries(seriesTypeLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            )}
-            {arr.languageProfiles && (
-              <div>
-                <Label htmlFor={`${id}-language`}>Profil de langue</Label>
-                <NativeSelect
-                  id={`${id}-language`}
-                  value={values.languageProfileId}
-                  onChange={(e) => setChoice({ languageProfileId: e.target.value })}
-                >
-                  {arr.languageProfiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div role="status" className="empty:-mt-4">
-          {message}
+          )}
         </div>
-        <SectionActions>
-          {/* Bouton par défaut (Entrée) : « Tester » tant que l'enregistrement n'est pas possible. */}
-          <Button
-            type={canSave ? 'button' : 'submit'}
-            variant="secondary"
-            size="lg"
-            className={actionClass}
-            disabled={test.isPending || save.isPending}
-            onClick={canSave ? () => runTest(values) : undefined}
-          >
-            {test.isPending ? 'Test en cours…' : result || test.isError ? 'Tester à nouveau' : 'Tester'}
-          </Button>
-          <Button type="submit" size="lg" className={actionClass} disabled={!canSave}>
-            {wizard ? 'Enregistrer et continuer' : 'Enregistrer'}
-          </Button>
-        </SectionActions>
-      </form>
-    </SectionFrame>
+      )}
+
+      {serverFields && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <CheckboxRow
+            checked={values.is4k}
+            onChange={(is4k) => setChoice({ is4k })}
+            label="Serveur 4K"
+            hint="Reçoit les demandes en 4K, suivies à part"
+          />
+          <CheckboxRow
+            checked={values.isDefault}
+            onChange={(isDefault) => setChoice({ isDefault })}
+            label="Serveur par défaut"
+            hint={`Proposé d’abord à l’approbation parmi les serveurs ${pairLabel}`}
+          />
+        </div>
+      )}
+
+      <div role="status" className="empty:-mt-4">
+        {message}
+      </div>
+      <SectionActions>
+        {extraAction}
+        {/* Bouton par défaut (Entrée) : « Tester » tant que l'enregistrement n'est pas possible. */}
+        <Button
+          type={canSave ? 'button' : 'submit'}
+          variant="secondary"
+          size="lg"
+          className={actionClass}
+          disabled={test.isPending || save.isPending}
+          onClick={canSave ? () => runTest(values) : undefined}
+        >
+          {test.isPending ? 'Test en cours…' : result || test.isError ? 'Tester à nouveau' : 'Tester'}
+        </Button>
+        <Button type="submit" size="lg" className={actionClass} disabled={!canSave}>
+          {wizard ? 'Enregistrer et continuer' : 'Enregistrer'}
+        </Button>
+      </SectionActions>
+    </form>,
+  );
+}
+
+type SectionProps = SectionFrameProps & {
+  service: IntegrationKey;
+  stored: MaskedSetting<IntegrationKey> | null;
+  saved: boolean;
+  wizard: boolean;
+  onSaved: () => void;
+};
+
+/** Section d'accordéon du serveur multimédia ou de TMDB : le formulaire, enregistré comme réglage. */
+export function IntegrationSection({ service, stored, saved, wizard, onSaved, ...frame }: SectionProps) {
+  const setup = useQuery(setupStateQuery).data;
+  // Amorçage : sans propriétaire, le serveur exige le jeton d'installation (gardé ici, en mémoire de la page seulement).
+  const bootstrap = service === 'mediaServer' && setup?.hasOwner === false;
+  const [token, setToken] = useState('');
+  const setupToken = bootstrap
+    ? { value: token, onChange: setToken, headers: { [SETUP_TOKEN_HEADER]: token.trim() } }
+    : undefined;
+  const save = useSaveSetting(service, onSaved, setupToken?.headers);
+  return (
+    <IntegrationForm
+      service={service}
+      stored={stored}
+      wizard={wizard}
+      open={frame.open}
+      save={save}
+      // Des membres existent : le type du serveur multimédia enregistré est figé (le serveur le refuse, même règle).
+      kindLocked={service === 'mediaServer' && saved && setup?.hasMembers === true}
+      setupToken={setupToken}
+      toPayload={(v) => settingPayloadOf(service, v)}
+      render={(state, form) => (
+        <SectionFrame {...frame} status={sectionStatus({ saved, open: frame.open, ...state })}>
+          {form}
+        </SectionFrame>
+      )}
+    />
   );
 }

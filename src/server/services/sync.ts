@@ -1,18 +1,22 @@
 import { and, eq, exists, isNotNull, isNull, lt, not, or, type SQL } from 'drizzle-orm';
 import type { MediaKey } from '../../shared/media.ts';
+import { plural } from '../../shared/text.ts';
 import type { WebhookResult, WebhookService } from '../../shared/webhooks.ts';
 import type { Data, Db } from '../db/index.ts';
-import { media, requests } from '../db/schema.ts';
+import { issues, media, requests } from '../db/schema.ts';
 import type { ArrWebhookEvent } from '../integrations/arr.ts';
-import { latestEmbyItems } from '../integrations/emby.ts';
+import { labelOf, type MediaServer } from '../integrations/media-server.ts';
 import { parseRadarrWebhook } from '../integrations/radarr.ts';
 import { parseSonarrWebhook } from '../integrations/sonarr.ts';
+import { startPeriodic } from '../lib/periodic.ts';
 import { one } from '../lib/sql.ts';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '../lib/time.ts';
+import { listArrServers } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
 import { lastFailureAt, lastSuccessAt, runJob } from './jobs.ts';
-import { NOTIFICATION_RETENTION_MS, purgeReadNotifications } from './notifications.ts';
-import { getSetting } from './settings.ts';
+import type { MediaServers } from './media-server.ts';
+import { purgeOldNotifications } from './notifications.ts';
+import { purgeExpired, revokeDepartedMembers } from './sessions.ts';
 
 /** Noms des balayages dans `job_runs` (verrou : une seule exécution `running` par nom). */
 export const SCAN_JOBS = { light: 'scan:light', full: 'scan:full' } as const;
@@ -39,14 +43,26 @@ const hasRequest = (db: Db, where?: SQL) =>
       .where(and(eq(requests.mediaId, media.id), where)),
   );
 
+/** Un signalement retient son titre (clé étrangère `RESTRICT`). */
+const hasIssue = (db: Db) => exists(db.select({ one }).from(issues).where(eq(issues.mediaId, media.id)));
+
 /**
- * Supprime les titres sans statut (absents d'Emby, Radarr et Sonarr), sans aucune demande et pas recalculés depuis
- * `before` : les affiches vues une fois s'accumuleraient sinon. Leurs saisons partent en cascade.
+ * Supprime les titres sans statut, normal ni 4K (absents d'Emby, Radarr et Sonarr), sans aucune demande ni
+ * signalement et pas recalculés depuis `before` : les affiches vues une fois s'accumuleraient sinon. Leurs saisons
+ * partent en cascade.
  */
 export function purgeMedia(db: Db, before: Date): number {
   return db
     .delete(media)
-    .where(and(isNull(media.status), lt(media.statusUpdatedAt, before), not(hasRequest(db))))
+    .where(
+      and(
+        isNull(media.status),
+        isNull(media.status4k),
+        lt(media.statusUpdatedAt, before),
+        not(hasRequest(db)),
+        not(hasIssue(db)),
+      ),
+    )
     .run().changes;
 }
 
@@ -54,9 +70,12 @@ export function purgeMedia(db: Db, before: Date): number {
  * Synchronisation avec Radarr, Sonarr et Emby : webhooks entrants et balayages. Tout passe par le calcul unique du
  * statut (`availability.refresh`), qui fait aussi passer `available` les demandes envoyées arrivées.
  */
-export function createSync(data: Data, deps: { availability: AvailabilityService; now?: () => number }) {
-  const { db, cryptoKey } = data;
-  const { availability } = deps;
+export function createSync(
+  data: Data,
+  deps: { availability: AvailabilityService; mediaServers: MediaServers; now?: () => number },
+) {
+  const { db } = data;
+  const { availability, mediaServers } = deps;
   const now = deps.now ?? Date.now;
 
   /** Titre concerné par un webhook, s'il est connu de l'appli (un titre inconnu n'a ni cache ni demande). */
@@ -75,17 +94,23 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
   }
 
   /**
-   * Webhook Radarr/Sonarr (jeton déjà vérifié). Grab → « en téléchargement » ; Download et suppressions → recalcul de
-   * ce seul titre, liste et file du service relues ; Test → accusé de réception ; le reste est ignoré.
+   * Webhook Radarr/Sonarr (jeton déjà vérifié), d'un serveur identifié par `serverId` (`?server=` de l'adresse).
+   * Grab → « en téléchargement » dans la qualité du serveur ; Download et suppressions → recalcul de ce seul titre,
+   * liste et file du serveur relues ; Test → accusé de réception ; le reste est ignoré. Serveur absent, inconnu ou d'un
+   * autre type (adresse collée avant les serveurs multiples) : le seul serveur du type s'il n'y en a qu'un, sinon le
+   * titre est recalculé avec les listes de tous les serveurs du type relues, un Grab compris (sa qualité est alors
+   * inconnue, la file la donne).
    */
-  async function handleWebhook(service: WebhookService, body: unknown): Promise<WebhookResult> {
+  async function handleWebhook(service: WebhookService, body: unknown, serverId?: number): Promise<WebhookResult> {
     const event = service === 'radarr' ? parseRadarrWebhook(body) : parseSonarrWebhook(body);
     if (event.event === 'test') return { handled: true };
     if (event.event === 'other') return { handled: false };
     const row = mediaOf(service, event);
     if (!row) return { handled: false };
-    if (event.event === 'grab') availability.markDownloading(service, row.id, event.seasons);
-    else await availability.refresh([row], { forget: service });
+    const ofType = listArrServers(data).filter((s) => s.type === service);
+    const server = ofType.find((s) => s.id === serverId) ?? (ofType.length === 1 ? ofType[0] : undefined);
+    if (event.event === 'grab' && server) availability.markDownloading(server, row.id, event.seasons);
+    else await availability.refresh([row], { forget: service, ...(server && { serverId: server.id }) });
     return { handled: true };
   }
 
@@ -96,28 +121,60 @@ export function createSync(data: Data, deps: { availability: AvailabilityService
   const keysWhere = (where: SQL | undefined) =>
     db.select({ type: media.type, tmdbId: media.tmdbId }).from(media).where(where).all();
 
+  /**
+   * Déconnecte les membres dont le compte a disparu du serveur multimédia ou y est désactivé (voir
+   * `revokeDepartedMembers`). Serveur absent, injoignable ou en erreur : rien n'est révoqué. Renvoie ce qu'il faut
+   * ajouter au résumé du balayage (`job_runs.detail`), qui garde la trace.
+   */
+  async function revokeDeparted(): Promise<string> {
+    let server: MediaServer | null | undefined;
+    let accounts: Awaited<ReturnType<MediaServer['listUsers']>>;
+    try {
+      server = mediaServers.current();
+      if (!server) return '';
+      accounts = await server.listUsers();
+    } catch {
+      return `, membres non vérifiés (${server ? labelOf(server) : 'serveur multimédia'} indisponible)`;
+    }
+    const { revoked, sparedOwners } = revokeDepartedMembers(db, accounts);
+    return [
+      revoked > 0 && `, ${plural(revoked, 'membre déconnecté', 'membres déconnectés')}`,
+      sparedOwners > 0 && ', propriétaire conservé (absent du serveur, mais le dernier)',
+    ]
+      .filter(Boolean)
+      .join('');
+  }
+
   /** Balayage léger : derniers ajouts d'Emby, titres en téléchargement et titres des demandes envoyées. */
   const lightScan = () =>
     runJob(db, SCAN_JOBS.light, async () => {
-      const emby = getSetting(db, cryptoKey, 'emby');
-      const recent = emby ? await latestEmbyItems(emby, { libraryIds: emby.libraryIds, limit: RECENT_LIMIT }) : [];
-      const watched = keysWhere(or(eq(media.status, 'downloading'), hasRequest(db, eq(requests.status, 'sent'))));
+      const recent = await availability.latestOnServer(RECENT_LIMIT);
+      const watched = keysWhere(
+        or(
+          eq(media.status, 'downloading'),
+          eq(media.status4k, 'downloading'),
+          hasRequest(db, eq(requests.status, 'sent')),
+        ),
+      );
       const keys = [...recent.map(({ type, tmdbId }) => ({ type, tmdbId })), ...watched];
       await refreshAll(keys);
       return `${keys.length} titres recalculés`;
     });
 
   /**
-   * Balayage complet : purges d'abord (titres oubliés, qu'un recalcul rajeunirait, et notifications lues de plus de
-   * 90 jours), puis tout titre suivi.
+   * Balayage complet : purges d'abord (titres oubliés, qu'un recalcul rajeunirait, notifications lues de plus de
+   * 90 jours ou non lues de plus d'un an et sessions expirées), puis tout titre suivi.
    */
   const fullScan = () =>
     runJob(db, SCAN_JOBS.full, async () => {
       const purged = purgeMedia(db, new Date(now() - PURGE_AFTER_MS));
-      purgeReadNotifications(db, new Date(now() - NOTIFICATION_RETENTION_MS));
-      const keys = keysWhere(or(isNotNull(media.status), hasRequest(db)));
+      purgeOldNotifications(db, new Date(now()));
+      purgeExpired(db, new Date(now()));
+      // Avant le recalcul des titres : une panne du serveur multimédia ne doit pas le sauter (il est alors seulement noté).
+      const members = await revokeDeparted();
+      const keys = keysWhere(or(isNotNull(media.status), isNotNull(media.status4k), hasRequest(db)));
       await refreshAll(keys);
-      return `${keys.length} titres recalculés, ${purged} supprimés`;
+      return `${keys.length} titres recalculés, ${purged} supprimés${members}`;
     });
 
   return { handleWebhook, lightScan, fullScan };
@@ -133,7 +190,6 @@ export type SyncService = ReturnType<typeof createSync>;
  * de fermer la base).
  */
 export function startScheduler(sync: SyncService, db: Db, now: () => number = Date.now) {
-  let current: Promise<void> | null = null;
   const isOlderThan = (at: Date | null, ms: number) => !at || now() - at.getTime() >= ms;
   const tick = async () => {
     await sync.lightScan();
@@ -143,23 +199,8 @@ export function startScheduler(sync: SyncService, db: Db, now: () => number = Da
     )
       await sync.fullScan();
   };
-  const run = () => {
-    if (current) return;
-    current = tick()
-      .catch((error: unknown) => console.error('Balayage planifié', error))
-      .finally(() => {
-        current = null;
-      });
-  };
-  const first = setTimeout(run, FIRST_TICK_DELAY_MS);
-  const timer = setInterval(run, LIGHT_SCAN_INTERVAL_MS);
-  first.unref();
-  timer.unref();
-  return {
-    async stop() {
-      clearTimeout(first);
-      clearInterval(timer);
-      await current;
-    },
-  };
+  return startPeriodic('Balayage planifié', tick, {
+    firstDelayMs: FIRST_TICK_DELAY_MS,
+    intervalMs: LIGHT_SCAN_INTERVAL_MS,
+  });
 }

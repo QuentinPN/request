@@ -1,12 +1,16 @@
 import type { Page } from '@playwright/test';
+import { SETUP_TOKEN_HEADER } from '../src/shared/setup.ts';
 import {
   type ApiMock,
+  arrServer,
   completeSetup,
   embyTest,
   expect,
   expectNoAxeViolations,
   field,
+  fillSetupToken,
   freshSetup,
+  SETUP_TOKEN,
   sonarrTest,
   test,
   viewerAs,
@@ -21,6 +25,8 @@ function freshInstall(api: ApiMock) {
 }
 
 async function fillEmby(page: Page) {
+  await fillSetupToken(page);
+  await page.getByRole('radio', { name: /^Emby/ }).check();
   await field(page, 'Adresse').fill('http://192.0.2.20:8096');
   await field(page, 'Clé d’API').fill('cle-emby');
 }
@@ -30,7 +36,7 @@ test('installation neuve : toute page mène à l’assistant, Emby seul accessib
   await page.goto('/demandes');
   await expect(page).toHaveURL(/\/assistant$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Configuration' })).toBeVisible();
-  await expect(section(page, 'Emby')).toHaveAttribute('aria-expanded', 'true');
+  await expect(section(page, 'Serveur multimédia')).toHaveAttribute('aria-expanded', 'true');
   await expect(section(page, 'TMDB')).toBeDisabled();
   await expect(section(page, 'Règles et quotas')).toBeDisabled();
 });
@@ -38,43 +44,82 @@ test('installation neuve : toute page mène à l’assistant, Emby seul accessib
 test('Emby : un test réussi affiche les bibliothèques, Entrée lance le test', async ({ page, api }) => {
   freshInstall(api);
   let body: unknown;
-  await page.route('**/api/setup/emby/test', (route) => {
+  let token: string | undefined;
+  await page.route('**/api/setup/mediaServer/test', (route) => {
     body = route.request().postDataJSON();
+    token = route.request().headers()[SETUP_TOKEN_HEADER];
     return route.fulfill({ json: embyTest });
   });
   await page.goto('/assistant');
   await fillEmby(page);
   await page.keyboard.press('Enter');
   await expect(status(page)).toHaveText('Connexion réussie · Salon · Emby v4.9.1 · 3 bibliothèques');
-  expect(body).toEqual({ url: 'http://192.0.2.20:8096', apiKey: 'cle-emby' });
+  expect(body).toEqual({ kind: 'emby', url: 'http://192.0.2.20:8096', apiKey: 'cle-emby' });
+  expect(token).toBe(SETUP_TOKEN);
   await expect(page.getByRole('checkbox', { name: /^Films/ })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: /^Séries/ })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: /^Musique/ })).not.toBeChecked();
-  await expect(section(page, 'Emby')).toContainText('En cours');
+  await expect(section(page, 'Serveur multimédia')).toContainText('En cours');
 });
 
 test('Emby : un test en échec affiche le message du serveur', async ({ page, api }) => {
   freshInstall(api);
-  await page.route('**/api/setup/emby/test', (route) =>
+  await page.route('**/api/setup/mediaServer/test', (route) =>
     route.fulfill({ status: 422, json: { error: 'Emby injoignable à cette adresse' } }),
   );
   await page.goto('/assistant');
   await fillEmby(page);
   await page.getByRole('button', { name: 'Tester', exact: true }).click();
   await expect(status(page)).toHaveText('Emby injoignable à cette adresse');
-  await expect(section(page, 'Emby')).toContainText('Erreur');
+  await expect(section(page, 'Serveur multimédia')).toContainText('Erreur');
   await expect(page.getByRole('button', { name: 'Enregistrer et continuer' })).toBeDisabled();
+});
+
+test('jeton d’installation : exigé avant le test, refus du serveur affiché', async ({ page, api }) => {
+  freshInstall(api);
+  const refusal = 'Jeton d’installation manquant ou invalide. Il est écrit dans les journaux du serveur.';
+  await page.route('**/api/setup/mediaServer/test', (route) =>
+    route.fulfill({ status: 403, json: { error: refusal } }),
+  );
+  await page.goto('/assistant');
+  await expect(field(page, 'Jeton d’installation')).toBeVisible();
+  await page.getByRole('radio', { name: /^Emby/ }).check();
+  await field(page, 'Adresse').fill('http://192.0.2.20:8096');
+  await field(page, 'Clé d’API').fill('cle-emby');
+  await page.getByRole('button', { name: 'Tester', exact: true }).click();
+  await expect(status(page)).toHaveText('Saisissez le jeton d’installation');
+  await fillSetupToken(page);
+  await page.getByRole('button', { name: 'Tester', exact: true }).click();
+  await expect(status(page)).toHaveText(refusal);
+  await expect(page.getByRole('button', { name: 'Enregistrer et continuer' })).toBeDisabled();
+});
+
+test('propriétaire connecté : plus de jeton d’installation', async ({ page, api }) => {
+  api.state.setup = { ...completeSetup, services: { ...completeSetup.services, rules: false }, complete: false };
+  await page.goto('/assistant');
+  await section(page, 'Serveur multimédia').click();
+  await expect(page.getByRole('radio', { name: /^Emby/ })).toBeVisible();
+  await expect(field(page, 'Jeton d’installation')).toHaveCount(0);
 });
 
 test('Emby enregistré sans propriétaire : invitation à se connecter', async ({ page, api }) => {
   freshInstall(api);
-  await page.route('**/api/setup/emby/test', (route) => route.fulfill({ json: embyTest }));
+  await page.route('**/api/setup/mediaServer/test', (route) => route.fulfill({ json: embyTest }));
   let saved: unknown;
-  await page.route('**/api/settings/emby', (route) => {
+  let savedToken: string | undefined;
+  await page.route('**/api/settings/mediaServer', (route) => {
     saved = route.request().postDataJSON();
-    api.state.setup.services.emby = true;
+    savedToken = route.request().headers()[SETUP_TOKEN_HEADER];
+    api.state.setup.services.mediaServer = true;
+    api.state.setup.mediaServerKind = 'emby';
     return route.fulfill({
-      json: { url: 'http://192.0.2.20:8096', apiKey: { set: true }, libraryIds: ['lib-films', 'lib-series'] },
+      json: {
+        kind: 'emby',
+        url: 'http://192.0.2.20:8096',
+        apiKey: { set: true },
+        libraryIds: ['lib-films', 'lib-series'],
+        publicUrl: null,
+      },
     });
   });
   await page.goto('/assistant');
@@ -82,13 +127,15 @@ test('Emby enregistré sans propriétaire : invitation à se connecter', async (
   await page.getByRole('button', { name: 'Tester', exact: true }).click();
   await page.getByRole('button', { name: 'Enregistrer et continuer' }).click();
   await expect(page.getByText('Connectez-vous avec un compte administrateur Emby pour continuer.')).toBeVisible();
+  expect(savedToken).toBe(SETUP_TOKEN);
   expect(saved).toEqual({
+    kind: 'emby',
     url: 'http://192.0.2.20:8096',
     apiKey: 'cle-emby',
     libraryIds: ['lib-films', 'lib-series'],
     publicUrl: null,
   });
-  await expect(section(page, 'Emby')).toContainText('Testé');
+  await expect(section(page, 'Serveur multimédia')).toContainText('Testé');
   await page.getByRole('link', { name: 'Se connecter' }).click();
   await expect(page).toHaveURL(/\/connexion\?retour=%2Fassistant$/);
 });
@@ -111,13 +158,20 @@ test('déconnecté : /demandes mène à la connexion, puis y revient', async ({ 
 
 test('propriétaire sans Emby configuré : pas de boucle, message du serveur', async ({ page, api }) => {
   api.state.viewer = null;
-  api.state.setup = { ...completeSetup, services: { ...completeSetup.services, emby: false }, complete: false };
+  api.state.setup = {
+    ...completeSetup,
+    services: { ...completeSetup.services, mediaServer: false },
+    mediaServerKind: null,
+    complete: false,
+  };
   await page.route('**/api/auth/login', (route) =>
     route.fulfill({ status: 409, json: { error: 'Emby n’est pas encore configuré' } }),
   );
   await page.goto('/assistant');
   await expect(page).toHaveURL(/\/connexion\?retour=%2Fassistant$/);
-  await expect(page.getByText('Emby n’est plus configuré : contactez le propriétaire de l’application.')).toBeVisible();
+  await expect(
+    page.getByText('Le serveur multimédia n’est plus configuré : contactez le propriétaire de l’application.'),
+  ).toBeVisible();
   await field(page, 'Identifiant').fill('marion');
   await field(page, 'Mot de passe').fill('secret');
   await page.getByRole('button', { name: 'Se connecter' }).click();
@@ -177,24 +231,22 @@ test('une session perdue en cours de route ramène à la connexion', async ({ pa
   await expect(page).toHaveURL(/\/connexion\?retour=%2Freglages$/);
 });
 
-test('Réglages : une section enregistrée se teste à l’ouverture et remplit les listes', async ({ page, api }) => {
-  api.state.settings.sonarr = {
-    url: 'http://192.0.2.20:8989',
-    apiKey: { set: true },
-    qualityProfileId: 5,
-    rootFolderPath: '/anime',
-    seriesType: 'anime',
-  };
+test('Réglages : un serveur enregistré se teste à l’ouverture et remplit les listes', async ({ page, api }) => {
+  api.state.arrServers = [
+    arrServer(1, 'radarr'),
+    arrServer(2, 'sonarr', { qualityProfileId: 5, rootFolderPath: '/anime', seriesType: 'anime' }),
+  ];
   let tested: unknown;
-  await page.route('**/api/setup/sonarr/test', (route) => {
+  await page.route('**/api/arr-servers/test', (route) => {
     tested = route.request().postDataJSON();
     return route.fulfill({ json: sonarrTest });
   });
   await page.goto('/reglages');
   await expect(page.getByRole('heading', { level: 1, name: 'Réglages' })).toBeVisible();
   await section(page, 'Sonarr').click();
+  await page.getByRole('button', { name: 'Modifier Sonarr' }).click();
   await expect(status(page)).toHaveText('Connexion réussie · Sonarr v4.0.11 · 3 profils, 2 dossiers');
-  expect(tested).toEqual({ url: 'http://192.0.2.20:8989', apiKey: '' });
+  expect(tested).toEqual({ url: 'http://192.0.2.20:8989', apiKey: '', type: 'sonarr', id: 2 });
   await expect(field(page, 'Clé d’API')).toHaveAttribute('placeholder', 'Clé enregistrée');
   await expect(field(page, 'Profil de qualité')).toHaveValue('5');
   await expect(field(page, 'Dossier racine')).toHaveValue('/anime');
@@ -230,7 +282,7 @@ test('axe : aucune violation sur /connexion', async ({ page, api }) => {
 
 test('axe : aucune violation sur /assistant, section ouverte et testée', async ({ page, api }) => {
   freshInstall(api);
-  await page.route('**/api/setup/emby/test', (route) => route.fulfill({ json: embyTest }));
+  await page.route('**/api/setup/mediaServer/test', (route) => route.fulfill({ json: embyTest }));
   await page.goto('/assistant');
   await fillEmby(page);
   await page.getByRole('button', { name: 'Tester', exact: true }).click();

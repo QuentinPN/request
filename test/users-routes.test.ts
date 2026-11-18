@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { setSetting } from '../src/server/services/settings.ts';
 import { upsertFromEmby } from '../src/server/services/users.ts';
+import { CSRF_HEADERS } from '../src/shared/auth.ts';
 import type { FakeRoutes } from './fake-server.ts';
 import usersFixture from './fixtures/emby/users.json';
 import { loginAs, loginAsOwner, trackApps, trackFakeServers } from './helpers.ts';
@@ -145,5 +146,38 @@ describe('GET /api/users/:id/avatar', () => {
     const { headers, user } = await loginAs(app, 'member');
     const res = await app.inject({ method: 'GET', url: `/api/users/${user.id}/avatar`, headers });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('DELETE /api/users/:id/sessions', () => {
+  const del = (app: FastifyInstance, id: string, headers: Record<string, string>) =>
+    app.inject({ method: 'DELETE', url: `/api/users/${id}/sessions`, headers });
+  const me = (app: FastifyInstance, headers: Record<string, string>) =>
+    app.inject({ method: 'GET', url: '/api/auth/me', headers });
+
+  it('le propriétaire déconnecte un membre partout ; les autres sessions restent', async () => {
+    const app = await newApp();
+    const owner = await loginAsOwner(app);
+    const member = await loginAs(app, 'member');
+    const phone = await loginAs(app, 'member'); // seconde session du même membre
+    const other = await loginAs(app, 'member', 'autre');
+    const res = await del(app, member.user.id, owner.headers);
+    expect(res.statusCode).toBe(204);
+    expect((await me(app, member.headers)).statusCode).toBe(401);
+    expect((await me(app, phone.headers)).statusCode).toBe(401);
+    expect((await me(app, other.headers)).statusCode).toBe(200);
+    expect((await me(app, owner.headers)).statusCode).toBe(200);
+  });
+
+  it('403 pour les gestionnaires et les membres, 401 sans session, 404 pour un inconnu', async () => {
+    const app = await newApp();
+    const owner = await loginAsOwner(app);
+    const manager = await loginAs(app, 'manager');
+    const member = await loginAs(app, 'member');
+    expect((await del(app, member.user.id, manager.headers)).statusCode).toBe(403);
+    expect((await del(app, owner.user.id, member.headers)).statusCode).toBe(403);
+    expect((await del(app, member.user.id, CSRF_HEADERS)).statusCode).toBe(401);
+    expect((await me(app, member.headers)).statusCode).toBe(200);
+    expect((await del(app, 'inconnu', owner.headers)).statusCode).toBe(404);
   });
 });

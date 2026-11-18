@@ -4,11 +4,11 @@ import { openDataDir } from '../src/server/db/index.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { createSync } from '../src/server/services/sync.ts';
 import { DISCORD_SETTINGS_PATH, DISCORD_TEST_PATH } from '../src/shared/discord.ts';
-import { type NotificationKind, notificationKinds } from '../src/shared/notifications.ts';
+import { type RequestNotificationKind, requestNotificationKinds } from '../src/shared/notifications.ts';
 import type { RequestDetail } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { status } from './fake-server.ts';
-import { loginAs, trackFakeServers, trackTempDirs } from './helpers.ts';
+import { addArrServer, loginAs, trackFakeServers, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const startServer = trackFakeServers();
@@ -43,7 +43,7 @@ interface DiscordMessage {
 }
 
 /** Appli branchée sur de faux TMDB, Radarr et Discord ; le webhook n'est enregistré que si `discord` est fourni. */
-async function setup(discord?: { enabled?: boolean; events?: readonly NotificationKind[]; reply?: number }) {
+async function setup(discord?: { enabled?: boolean; events?: readonly RequestNotificationKind[]; reply?: number }) {
   const radarrState = { movies: [] as Array<{ id: number; tmdbId: number; hasFile: boolean }>, down: false };
   const tmdb = await startServer({ 'GET /movie/603': matrix });
   const radarr = await startServer({
@@ -62,7 +62,7 @@ async function setup(discord?: { enabled?: boolean; events?: readonly Notificati
   const data = openDataDir(tempDir());
   const { db, cryptoKey } = data;
   setSetting(db, cryptoKey, 'tmdb', { apiKey: 'abcdef0123456789abcdef0123456789' });
-  setSetting(db, cryptoKey, 'radarr', { url: radarr.url, apiKey: 'k', qualityProfileId: 1, rootFolderPath: '/films' });
+  addArrServer({ db, cryptoKey }, { type: 'radarr', url: radarr.url, rootFolderPath: '/films' });
   if (discord)
     setSetting(db, cryptoKey, 'discord', {
       webhookUrl: WEBHOOK,
@@ -125,14 +125,23 @@ describe('messages Discord des évènements', () => {
     const request = await requestMovie(await as('member'));
     await owner.post(`/api/requests/${request.id}/approve`);
     radarrState.movies.push({ id: 42, tmdbId: 603, hasFile: true });
-    await createSync(data, { availability: app.availability }).handleWebhook('radarr', {
+    // Nom du serveur multimédia lu à l'envoi (un Jellyfin vide : Radarr suffit au statut).
+    const jellyfin = await startServer({ 'GET /Items': { Items: [], TotalRecordCount: 0 } });
+    setSetting(data.db, data.cryptoKey, 'mediaServer', {
+      kind: 'jellyfin',
+      url: jellyfin.url,
+      apiKey: 'k',
+      libraryIds: [],
+      publicUrl: null,
+    });
+    await createSync(data, { availability: app.availability, mediaServers: app.mediaServers }).handleWebhook('radarr', {
       eventType: 'Download',
       movie: { tmdbId: 603 },
     });
 
     // Les envois sont simultanés : l'ordre d'arrivée n'est pas garanti.
     const titles = (await sent()).map((m) => m.message.embeds[0]?.title);
-    expect(titles.sort()).toEqual(['Demande approuvée', 'Disponible dans Emby', 'Nouvelle demande à approuver']);
+    expect(titles.sort()).toEqual(['Demande approuvée', 'Disponible dans Jellyfin', 'Nouvelle demande à approuver']);
   });
 
   it('refusée avec son motif, puis échec d’envoi avec sa raison', async () => {
@@ -215,7 +224,7 @@ describe('réglages Discord', () => {
   it('par défaut : désactivé, tous les évènements, aucune adresse', async () => {
     const { as } = await setup();
     const response = await (await as('owner')).get(DISCORD_SETTINGS_PATH);
-    expect(response.json()).toEqual({ webhookUrl: { set: false }, enabled: false, events: notificationKinds });
+    expect(response.json()).toEqual({ webhookUrl: { set: false }, enabled: false, events: requestNotificationKinds });
   });
 
   it('propriétaire seulement', async () => {

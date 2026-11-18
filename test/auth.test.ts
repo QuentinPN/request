@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { LOGIN_LIMIT } from '../src/server/routes/auth.ts';
 import { SESSION_TTL_MS } from '../src/server/services/sessions.ts';
 import { setSetting } from '../src/server/services/settings.ts';
+import { getUser } from '../src/server/services/users.ts';
 import { CSRF_HEADERS } from '../src/shared/auth.ts';
 import { type FakeHandler, status } from './fake-server.ts';
 import authenticateFixture from './fixtures/emby/authenticate.json';
@@ -170,9 +171,22 @@ describe('POST /api/auth/login', () => {
     expect(res.cookies).toHaveLength(0);
   });
 
+  it('compte désactivé sur Emby (403) : refusé, ni compte ni session créés', async () => {
+    const app = await newApp();
+    const emby = await serve({ 'POST /Users/AuthenticateByName': status(403) });
+    setSetting(app.data.db, app.data.cryptoKey, 'emby', { url: emby.url, apiKey: 'CLE-EMBY' });
+    const res = await login(app, 'alice', 'bon');
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'Compte Emby désactivé ou non autorisé' });
+    expect(res.cookies).toHaveLength(0);
+    expect(getUser(app.data.db, 'u-1')).toBeNull();
+  });
+
   it('409 tant qu’Emby n’est pas configuré, 400 sur un corps invalide', async () => {
     const app = await newApp();
-    expect((await login(app, 'alice', 'bon')).json()).toEqual({ error: "Emby n'est pas encore configuré" });
+    expect((await login(app, 'alice', 'bon')).json()).toEqual({
+      error: "Aucun serveur multimédia n'est encore configuré",
+    });
     const bad = await app.inject({ method: 'POST', url: '/api/auth/login', headers: csrf, payload: { username: ' ' } });
     expect(bad.statusCode).toBe(400);
   });

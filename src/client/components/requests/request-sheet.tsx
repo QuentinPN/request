@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { X } from 'lucide-react';
 import { createContext, type FormEvent, type ReactNode, useCallback, useContext, useId, useRef, useState } from 'react';
+import type { Member } from '../../../shared/auth.ts';
 import type { MediaDetails, MediaSummary, Season } from '../../../shared/media.ts';
 import {
   type CreateRequestInput,
@@ -11,20 +12,26 @@ import {
   type RequestDetail,
   type RequestQuota,
 } from '../../../shared/requests.ts';
+import { capabilitiesOf } from '../../../shared/roles.ts';
+import { plural } from '../../../shared/text.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
-import { mediaQuery, plural, regularSeasons, seasonMeta, seasonTitle, summaryMeta } from '../../lib/catalogue.ts';
+import { blockLabel } from '../../lib/blocklist.ts';
+import { mediaQuery, regularSeasons, seasonMeta, seasonTitle, summaryMeta } from '../../lib/catalogue.ts';
 import { errorMessage } from '../../lib/http.ts';
-import { arrName, requestProgress, requestQuotaQuery, useCreateRequest } from '../../lib/requests.ts';
+import { useMediaServerName } from '../../lib/media-server.ts';
+import { arrName, membersQuery, requestProgress, requestQuotaQuery, useCreateRequest } from '../../lib/requests.ts';
 import { canRequest } from '../../lib/status.ts';
 import { StatusPill } from '../media/status-pill.tsx';
 import { Notice } from '../notice.tsx';
+import { Avatar } from '../shell/avatar.tsx';
 import { roundButton } from '../shell/nav-items.ts';
 import { Button, buttonVariants } from '../ui/button.tsx';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
+import { CheckboxRow, Input, Label } from '../ui/field.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { RequestThumb } from './request-progress.tsx';
 
-const RequestSheetContext = createContext<((media: MediaSummary) => void) | null>(null);
+const RequestSheetContext = createContext<((media: MediaSummary, is4k: boolean) => void) | null>(null);
 
 /**
  * Action « Demander » d'un titre : ouvre la feuille de demande. `undefined` si le membre n'a pas le droit de demander
@@ -33,8 +40,29 @@ const RequestSheetContext = createContext<((media: MediaSummary) => void) | null
 export function useRequestAction(media: MediaSummary | undefined): (() => void) | undefined {
   const open = useContext(RequestSheetContext);
   const viewer = useViewer();
-  if (!open || !media || !viewer?.capabilities.canRequest || !canRequest(media.status)) return undefined;
-  return () => open(media);
+  if (!open || !media || media.blocked || !viewer?.capabilities.canRequest || !canRequest(media.status))
+    return undefined;
+  return () => open(media, false);
+}
+
+/**
+ * La 4K se demande seulement si un serveur 4K du type existe (`fourK` présent), si le membre en a le droit et si la
+ * version 4K n'est ni disponible, ni en cours, ni déjà demandée.
+ */
+const can4k = (viewer: ReturnType<typeof useViewer>, media: MediaDetails | undefined): media is MediaDetails =>
+  !!media?.fourK && !media.blocked && !!viewer?.capabilities.canRequest4k && canRequest(media.fourK.status);
+
+/** Action « Demander en 4K » de la fiche (voir `can4k`) : ouvre la feuille en 4K. */
+export function useRequest4kAction(media: MediaDetails | undefined): (() => void) | undefined {
+  const open = useContext(RequestSheetContext);
+  const viewer = useViewer();
+  if (!open || !can4k(viewer, media)) return undefined;
+  return () => open(media, true);
+}
+
+/** Saison vue en 4K : statut, progression et épisodes de la version 4K à la place de ceux de la version normale. */
+function seasonIn4k({ fourK, status: _status, progress: _progress, episodes: _episodes, ...season }: Season): Season {
+  return { ...season, ...fourK };
 }
 
 // Ordinateur : dialogue centré (maquette A-Demande). Mobile : feuille posée en bas de l'écran (maquette R-Mobile).
@@ -48,11 +76,13 @@ export const bottomSheet = cn(
 /** Feuille de demande, montée une fois pour toute l'appli : affiches, hero et fiche l'ouvrent par `useRequestAction`. */
 export function RequestSheetProvider({ children }: { children: ReactNode }) {
   const [media, setMedia] = useState<MediaSummary | null>(null);
+  const [is4k, setIs4k] = useState(false);
   const [open, setOpen] = useState(false);
   // Chaque ouverture repart d'un formulaire neuf (sélection, erreur, confirmation).
   const [session, setSession] = useState(0);
-  const show = useCallback((next: MediaSummary) => {
+  const show = useCallback((next: MediaSummary, fourK: boolean) => {
     setMedia(next);
+    setIs4k(fourK);
     setSession((n) => n + 1);
     setOpen(true);
   }, []);
@@ -62,8 +92,8 @@ export function RequestSheetProvider({ children }: { children: ReactNode }) {
       <Dialog open={open} onOpenChange={setOpen}>
         {media && (
           <DialogContent showCloseButton={false} className={bottomSheet}>
-            <span aria-hidden className="h-[5px] w-10 justify-self-center rounded-full bg-(--track) lg:hidden" />
-            <RequestForm key={session} media={media} onClose={() => setOpen(false)} />
+            <SheetHandle />
+            <RequestForm key={session} media={media} is4k={is4k} onClose={() => setOpen(false)} />
           </DialogContent>
         )}
       </Dialog>
@@ -71,16 +101,30 @@ export function RequestSheetProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function SheetHeader({ media }: { media: MediaSummary }) {
+/** Poignée de la feuille, sur mobile seulement. */
+export const SheetHandle = () => (
+  <span aria-hidden className="h-[5px] w-10 justify-self-center rounded-full bg-(--track) lg:hidden" />
+);
+
+/** En-tête d'une feuille : vignette, ligne facultative au-dessus du titre, titre, description, « Fermer » sur ordinateur. */
+export function SheetHeader({
+  posterPath,
+  eyebrow,
+  title,
+  description,
+}: {
+  posterPath: string | null | undefined;
+  eyebrow?: ReactNode;
+  title: ReactNode;
+  description: ReactNode;
+}) {
   return (
     <div className="flex items-start gap-4">
-      <RequestThumb posterPath={media.posterPath} className="w-12 lg:w-16" />
+      <RequestThumb posterPath={posterPath} className="w-12 lg:w-16" />
       <div className="min-w-0 grow space-y-1">
-        <p className="text-xs text-muted-foreground">
-          {media.type === 'movie' ? 'Demander un film' : 'Demander une série'}
-        </p>
-        <DialogTitle className="text-lg font-bold lg:text-[22px]">{media.title}</DialogTitle>
-        <DialogDescription>{summaryMeta(media).join(' · ')}</DialogDescription>
+        {eyebrow && <p className="text-xs text-muted-foreground">{eyebrow}</p>}
+        <DialogTitle className="text-lg font-bold lg:text-[22px]">{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
       </div>
       <DialogClose aria-label="Fermer" className={cn(roundButton, 'size-10 shrink-0 max-lg:hidden')}>
         <X aria-hidden className="size-5" />
@@ -89,11 +133,28 @@ function SheetHeader({ media }: { media: MediaSummary }) {
   );
 }
 
-function RequestForm({ media, onClose }: { media: MediaSummary; onClose: () => void }) {
-  const details = useQuery({ ...mediaQuery(media.type, media.tmdbId), enabled: media.type === 'tv' });
+function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; is4k: boolean; onClose: () => void }) {
+  // Détails lus aussi pour un film : ils disent si la 4K se demande (`fourK`).
+  const details = useQuery(mediaQuery(media.type, media.tmdbId));
+  const viewer = useViewer();
+  const [is4k, setIs4k] = useState(opened4k);
+  // Gestionnaires : pour qui (`null` : soi-même) et hors quota.
+  const [forUser, setForUser] = useState<Member | null>(null);
+  const [quotaExempt, setQuotaExempt] = useState(false);
+  // Choix de la version quand les deux se demandent ; ouverte en 4K depuis la fiche, la version normale peut être déjà là.
+  const choice = canRequest(media.status) && can4k(viewer, details.data);
+  // Changer de version repart d'une sélection neuve (les saisons manquantes ne sont pas les mêmes).
+  const bodyProps = { media, is4k, onClose, forUser, quotaExempt };
   let body: ReactNode;
-  if (media.type === 'movie') body = <RequestBody media={media} onClose={onClose} />;
-  else if (details.data) body = <RequestBody media={media} details={details.data} onClose={onClose} />;
+  // Bloqué (liste ou mot-clé, connu par la fiche) : le serveur refuserait, la feuille le dit d'emblée.
+  if (details.data?.blocked)
+    body = (
+      <Notice tone="error" role="alert">
+        {blockLabel(details.data.blocked)} : ce titre ne peut pas être demandé.
+      </Notice>
+    );
+  else if (media.type === 'movie') body = <RequestBody key={String(is4k)} {...bodyProps} />;
+  else if (details.data) body = <RequestBody key={String(is4k)} {...bodyProps} details={details.data} />;
   else if (details.isPending)
     body = (
       <div role="status" className="space-y-2">
@@ -111,9 +172,157 @@ function RequestForm({ media, onClose }: { media: MediaSummary; onClose: () => v
     );
   return (
     <>
-      <SheetHeader media={media} />
+      <SheetHeader
+        posterPath={media.posterPath}
+        eyebrow={
+          <>
+            {media.type === 'movie' ? 'Demander un film' : 'Demander une série'}
+            {is4k && ' en 4K'}
+          </>
+        }
+        title={media.title}
+        description={summaryMeta(media).join(' · ')}
+      />
+      {choice && <QualityChoice is4k={is4k} onChange={setIs4k} />}
+      {!details.data?.blocked && (
+        <ManagerOptions
+          forUser={forUser}
+          onForUser={setForUser}
+          quotaExempt={quotaExempt}
+          onQuotaExempt={setQuotaExempt}
+        />
+      )}
       {body}
     </>
+  );
+}
+
+/**
+ * Options des gestionnaires : demander à la place d'un membre (droit « Demander pour un autre », « Moi » par défaut) et
+ * hors quota (droit de gérer les demandes, quand le quota du membre visé compte). Rien pour un membre.
+ */
+function ManagerOptions({
+  forUser,
+  onForUser,
+  quotaExempt,
+  onQuotaExempt,
+}: {
+  forUser: Member | null;
+  onForUser: (member: Member | null) => void;
+  quotaExempt: boolean;
+  onQuotaExempt: (exempt: boolean) => void;
+}) {
+  const capabilities = useViewer()?.capabilities;
+  // Même requête que le corps de la feuille (en cache) : « Hors quota » n'a de sens que si le quota compte.
+  const quota = useQuery(requestQuotaQuery(forUser?.id));
+  if (!capabilities?.canRequestOnBehalf && !capabilities?.canManageRequests) return null;
+  return (
+    <div className="grid gap-3">
+      {capabilities.canRequestOnBehalf && <MemberPicker value={forUser} onChange={onForUser} />}
+      {capabilities.canManageRequests && quota.data?.exempt === false && (
+        <CheckboxRow
+          checked={quotaExempt}
+          onChange={onQuotaExempt}
+          label="Hors quota"
+          hint={
+            forUser
+              ? `Ne compte pas dans le quota de ${forUser.name}.`
+              : 'Ne compte pas dans le quota du membre à qui elle appartient.'
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/** Membres affichés au plus pendant une recherche (le membre choisi reste toujours visible). */
+const MEMBER_RESULTS = 5;
+
+/** Sélecteur du membre pour qui demander : « Moi », puis une recherche par nom parmi les membres de l'appli. */
+function MemberPicker({ value, onChange }: { value: Member | null; onChange: (member: Member | null) => void }) {
+  const id = useId();
+  const viewer = useViewer();
+  const members = useQuery(membersQuery);
+  const [search, setSearch] = useState('');
+  const term = search.trim().toLocaleLowerCase('fr');
+  const others = (members.data ?? []).filter((m) => m.id !== viewer?.id);
+  const found = term
+    ? others.filter((m) => m.name.toLocaleLowerCase('fr').includes(term)).slice(0, MEMBER_RESULTS)
+    : [];
+  const shown = value && !found.some((m) => m.id === value.id) ? [value, ...found] : found;
+  const option =
+    'flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] bg-muted px-3 py-2 text-sm has-checked:ring-2 has-checked:ring-ring has-focus-visible:ring-3 has-focus-visible:ring-ring';
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="mb-2 text-[13px] font-semibold text-muted-foreground">Demander pour</legend>
+      <label className={option}>
+        <input
+          type="radio"
+          name={id}
+          className="size-4 accent-(--accent-play)"
+          checked={value === null}
+          onChange={() => onChange(null)}
+        />
+        Moi
+      </label>
+      <div>
+        <Label htmlFor={`${id}-search`} className="sr-only">
+          Rechercher un membre
+        </Label>
+        <Input
+          id={`${id}-search`}
+          type="search"
+          autoComplete="off"
+          placeholder="Rechercher un membre par son nom"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      {members.isError && (
+        <Notice tone="error" role="alert">
+          La liste des membres n’a pas pu se charger.
+        </Notice>
+      )}
+      {term && members.data && found.length === 0 && (
+        <p className="text-sm text-muted-foreground">Aucun membre ne correspond à « {search.trim()} ».</p>
+      )}
+      {shown.map((member) => (
+        <label key={member.id} className={option}>
+          <input
+            type="radio"
+            name={id}
+            className="size-4 accent-(--accent-play)"
+            checked={value?.id === member.id}
+            onChange={() => onChange(member)}
+          />
+          <Avatar viewer={member} className="size-7 text-[11px]" />
+          <span className="truncate">{member.name}</span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+/** Version demandée : standard ou 4K (serveurs 4K à part, statut suivi à part). */
+function QualityChoice({ is4k, onChange }: { is4k: boolean; onChange: (is4k: boolean) => void }) {
+  const legend = useId();
+  return (
+    <fieldset aria-labelledby={legend} className="flex flex-wrap items-center gap-2">
+      <span id={legend} className="mr-1 text-[13px] font-semibold text-muted-foreground">
+        Version
+      </span>
+      {[false, true].map((fourK) => (
+        <Button
+          key={String(fourK)}
+          type="button"
+          variant={is4k === fourK ? 'default' : 'secondary'}
+          aria-pressed={is4k === fourK}
+          onClick={() => onChange(fourK)}
+        >
+          {fourK ? 'Demander en 4K' : 'Standard'}
+        </Button>
+      ))}
+    </fieldset>
   );
 }
 
@@ -123,26 +332,35 @@ const isRequestable = (season: Season, day: string) => isAiredSeason(season, day
 function RequestBody({
   media,
   details,
+  is4k,
   onClose,
+  forUser,
+  quotaExempt,
 }: {
   media: MediaSummary;
   details?: MediaDetails;
+  is4k: boolean;
   onClose: () => void;
+  /** Membre pour qui demander (`null` : soi-même) : son quota et son approbation automatique s'appliquent. */
+  forUser: Member | null;
+  quotaExempt: boolean;
 }) {
   const day = isoDay();
-  const seasons = details ? regularSeasons(details.seasons) : [];
+  // Demande 4K : les saisons déjà là, en cours ou demandées le sont en 4K, la version normale ne compte pas.
+  const seasons = details ? regularSeasons(details.seasons).map((s) => (is4k ? seasonIn4k(s) : s)) : [];
   const missing = seasons.filter((s) => isRequestable(s, day)).map((s) => s.seasonNumber);
   // « Toutes les saisons manquantes » présélectionné.
   const [selected, setSelected] = useState<Set<number>>(() => new Set(missing));
   const mutation = useCreateRequest();
   const submitting = useRef(false);
-  const quota = useQuery(requestQuotaQuery());
+  const quota = useQuery(requestQuotaQuery(forUser?.id));
   const viewer = useViewer();
+  const capabilities = forUser ? capabilitiesOf(forUser.role) : viewer?.capabilities;
 
   const isTv = media.type === 'tv';
   const wanted = isTv ? selected.size : 1;
   const usage = quota.data && !quota.data.exempt ? quota.data[isTv ? 'seasons' : 'movies'] : undefined;
-  const overQuota = usage !== undefined && wanted > usage.remaining;
+  const overQuota = !quotaExempt && usage !== undefined && wanted > usage.remaining;
   const disabled = wanted === 0 || overQuota || mutation.isPending;
 
   if (mutation.data) return <RequestSent request={mutation.data} media={media} onClose={onClose} />;
@@ -152,9 +370,16 @@ function RequestBody({
     // Double clic ou Entrée répétée : une seule demande part.
     if (submitting.current || disabled) return;
     submitting.current = true;
+    // `is4k` seulement pour une demande 4K : absent, le serveur en fait une demande normale.
+    const options = {
+      ...(is4k && { is4k }),
+      ...(forUser && { forUserId: forUser.id }),
+      // Case cochée puis membre exempté de quota : elle est masquée, rien à envoyer.
+      ...(quotaExempt && quota.data?.exempt === false && { quotaExempt }),
+    };
     const input: CreateRequestInput = isTv
-      ? { type: 'tv', tmdbId: media.tmdbId, seasons: [...selected].sort((a, b) => a - b) }
-      : { type: 'movie', tmdbId: media.tmdbId };
+      ? { type: 'tv', tmdbId: media.tmdbId, seasons: [...selected].sort((a, b) => a - b), ...options }
+      : { type: 'movie', tmdbId: media.tmdbId, ...options };
     mutation.mutate(input, {
       onSettled: () => {
         submitting.current = false;
@@ -169,9 +394,9 @@ function RequestBody({
       return next;
     });
 
-  const submitLabel = isTv
-    ? `Demander ${wanted > 0 ? plural(wanted, 'saison', 'saisons') : 'des saisons'}`
-    : 'Demander ce film';
+  const submitLabel = `${
+    isTv ? `Demander ${wanted > 0 ? plural(wanted, 'saison', 'saisons') : 'des saisons'}` : 'Demander ce film'
+  }${is4k ? ' en 4K' : ''}`;
 
   return (
     <form onSubmit={onSubmit} className="grid gap-5">
@@ -186,11 +411,12 @@ function RequestBody({
         />
       )}
       <QuotaNotice
-        quota={quota.data}
+        quota={quotaExempt ? undefined : quota.data}
         isTv={isTv}
         wanted={wanted}
-        arr={arrName(media.type)}
-        autoApprove={!!viewer?.capabilities.autoApprove}
+        arr={arrName(media.type, is4k)}
+        autoApprove={!!capabilities?.[is4k ? 'autoApprove4k' : 'autoApprove']}
+        member={forUser?.name ?? null}
       />
       {mutation.error && (
         <Notice tone="error" role="alert">
@@ -284,17 +510,20 @@ function QuotaNotice({
   wanted,
   arr,
   autoApprove,
+  member,
 }: {
   quota: RequestQuota | undefined;
   isTv: boolean;
   wanted: number;
   arr: string;
   autoApprove: boolean;
+  /** Nom du membre pour qui la demande est faite ; `null` : soi-même. */
+  member: string | null;
 }) {
   const approval = autoApprove
     ? `Elle part directement à ${arr}.`
     : `Un administrateur la valide avant l’envoi à ${arr}.`;
-  // Quota inconnu (chargement, erreur) ou exempté : le serveur reste juge, seule la consigne d'approbation s'affiche.
+  // Quota inconnu (chargement, erreur), exempté ou hors quota : le serveur reste juge, seule la consigne d'approbation.
   const usage = quota && !quota.exempt ? quota[isTv ? 'seasons' : 'movies'] : undefined;
   if (!usage) return <Notice tone="info">{approval}</Notice>;
   const unit = (n: number) => plural(n, isTv ? 'saison' : 'film', isTv ? 'saisons' : 'films');
@@ -302,19 +531,23 @@ function QuotaNotice({
   if (usage.remaining === 0)
     return (
       <Notice tone="error" role="alert">
-        Quota atteint : {unit(usage.limit)} {period}. Vous pourrez demander à nouveau quand d’anciennes demandes
-        sortiront de cette période.
+        Quota atteint{member && ` pour ${member}`} : {unit(usage.limit)} {period}.{' '}
+        {member
+          ? 'Cochez « Hors quota » pour demander quand même.'
+          : 'Vous pourrez demander à nouveau quand d’anciennes demandes sortiront de cette période.'}
       </Notice>
     );
   if (wanted > usage.remaining)
     return (
       <Notice tone="error" role="alert">
-        Il ne vous reste que {unit(usage.remaining)} sur votre quota : retirez des saisons.
+        Il ne reste que {unit(usage.remaining)} sur {member ? `le quota de ${member}` : 'votre quota'} : retirez des
+        saisons.
       </Notice>
     );
   return (
     <Notice tone="info">
-      Quota : il vous reste <strong>{unit(usage.remaining)}</strong> sur {usage.limit}, {period}. {approval}
+      Quota : il {member ? `reste à ${member}` : 'vous reste'} <strong>{unit(usage.remaining)}</strong> sur{' '}
+      {usage.limit}, {period}. {approval}
     </Notice>
   );
 }
@@ -329,7 +562,7 @@ function RequestSent({
   media: MediaSummary;
   onClose: () => void;
 }) {
-  const progress = requestProgress(request);
+  const progress = requestProgress(request, useMediaServerName());
   return (
     <div className="grid gap-5">
       <Notice tone="ok" role="status">

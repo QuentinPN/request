@@ -3,9 +3,18 @@ import { useCanGoBack, useNavigate, useParams, useRouter } from '@tanstack/react
 import { cn } from 'cn';
 import { ChevronLeft, Film, Play, User, X } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
+import { ReportIssueButton } from '@/components/issues/report-sheet';
+import { BlockedPill, BlockTitleButton } from '@/components/media/block-button';
 import { MediaRail, Rail, SectionHeading } from '@/components/media/rail';
-import { DownloadBar, StatusPill } from '@/components/media/status-pill';
-import { Backdrop, GlassPill, MetaLine, RequestButton } from '@/components/media/title-parts';
+import { DownloadBar, FourKPill, StatusPill } from '@/components/media/status-pill';
+import {
+  Backdrop,
+  GlassPill,
+  MetaLine,
+  Request4kButton,
+  RequestButton,
+  WatchlistButton,
+} from '@/components/media/title-parts';
 import { WatchLink } from '@/components/media/watch-link';
 import { Page } from '@/components/page';
 import { QueryState } from '@/components/query-state';
@@ -205,6 +214,7 @@ function Seasons({ media }: { media: MediaDetails }) {
                     {episodesLabel(season.episodes)}
                   </span>
                 )}
+                {season.fourK?.status && <FourKPill status={season.fourK.status} />}
               </div>
             </div>
             <DownloadBar
@@ -255,12 +265,22 @@ function Fiche({ media }: { media: MediaDetails }) {
           {media.title}
         </h1>
         <MetaLine parts={detailsMeta(media)} />
-        {media.status && <StatusPill status={media.status} />}
+        {(media.status || media.fourK?.status || media.blocked) && (
+          <div className="flex flex-wrap gap-2">
+            {media.blocked && <BlockedPill block={media.blocked} />}
+            {media.status && <StatusPill status={media.status} />}
+            {media.fourK?.status && <FourKPill status={media.fourK.status} />}
+          </div>
+        )}
         {media.overview && <p className="text-muted-foreground lg:text-[17px]">{media.overview}</p>}
         <div className="flex flex-wrap gap-3 pt-2">
           <RequestButton media={media} className="grow sm:grow-0" />
+          <Request4kButton media={media} className="grow sm:grow-0" />
           <WatchLink media={media} className="grow sm:grow-0" />
+          <WatchlistButton media={media} className="grow sm:grow-0" />
           {isYoutubeKey(media.trailerKey) && <TrailerButton title={media.title} trailerKey={media.trailerKey} />}
+          <ReportIssueButton media={media} className="grow sm:grow-0" />
+          <BlockTitleButton media={media} className="grow sm:grow-0" />
         </div>
       </FicheFrame>
 

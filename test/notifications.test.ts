@@ -6,9 +6,9 @@ import { type Db, openDataDir } from '../src/server/db/index.ts';
 import { notifications, requests } from '../src/server/db/schema.ts';
 import {
   createNotifications,
-  NOTIFICATION_RETENTION_MS,
   notificationMessage,
-  purgeReadNotifications,
+  purgeOldNotifications,
+  READ_NOTIFICATION_RETENTION_MS,
 } from '../src/server/services/notifications.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { createSync } from '../src/server/services/sync.ts';
@@ -17,7 +17,7 @@ import { NOTIFICATIONS_PAGE_SIZE, type NotificationKind, type NotificationPage }
 import type { RequestDetail } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { status } from './fake-server.ts';
-import { loginAs, queryPlan, trackFakeServers, trackTempDirs } from './helpers.ts';
+import { addArrServer, loginAs, queryPlan, trackFakeServers, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const startServer = trackFakeServers();
@@ -31,7 +31,7 @@ const DAY_MS = 24 * 3600 * 1000;
 // --- Texte des messages ---
 
 describe('notificationMessage', () => {
-  const full = { title: 'Dune', requesterName: 'Marie', detail: null };
+  const full = { title: 'Dune', requesterName: 'Marie', detail: null, serverName: 'Emby' };
 
   it.each<[NotificationKind, string | null, string, string]>([
     ['requested', null, 'Nouvelle demande à approuver', 'Marie a demandé « Dune ».'],
@@ -54,12 +54,12 @@ describe('notificationMessage', () => {
   });
 
   it('sans titre (TMDB en panne), sans demandeur ni détail (demande supprimée)', () => {
-    const none = { title: null, requesterName: null, detail: null };
+    const none = { title: null, requesterName: null, detail: null, serverName: 'Plex' };
     expect(notificationMessage('requested', none).body).toBe('Un membre a demandé un titre.');
     expect(notificationMessage('approved', none).body).toBe('Votre demande a été approuvée.');
     expect(notificationMessage('declined', none).body).toBe('Votre demande a été refusée.');
     expect(notificationMessage('available', none).body).toBe(
-      'Le titre que vous avez demandé est disponible dans Emby.',
+      'Le titre que vous avez demandé est disponible dans Plex.',
     );
     expect(notificationMessage('failed', none).body).toBe('L’envoi a échoué.');
   });
@@ -102,7 +102,7 @@ async function setup() {
   const data = openDataDir(tempDir());
   const { db, cryptoKey } = data;
   setSetting(db, cryptoKey, 'tmdb', { apiKey: 'abcdef0123456789abcdef0123456789' });
-  setSetting(db, cryptoKey, 'radarr', { url: radarr.url, apiKey: 'k', qualityProfileId: 1, rootFolderPath: '/films' });
+  addArrServer({ db, cryptoKey }, { type: 'radarr', url: radarr.url, rootFolderPath: '/films' });
   const app = await buildApp({ data, upstreams: { tmdbUrl: tmdb.url } });
   cleanups.push(() => app.close());
   const as = async (role: Role, id?: string): Promise<Actor> => {
@@ -169,15 +169,27 @@ describe('notifications des demandes', () => {
     expect(kindsOf(db, member.user.id)).toEqual(['approved']);
 
     radarrState.movies.push({ id: 42, tmdbId: 603, hasFile: true });
-    const sync = createSync(data, { availability: app.availability });
+    const sync = createSync(data, { availability: app.availability, mediaServers: app.mediaServers });
     const webhook = { eventType: 'Download', movie: { tmdbId: 603 } };
     await sync.handleWebhook('radarr', webhook);
     await sync.handleWebhook('radarr', webhook);
 
     expect(kindsOf(db, member.user.id)).toEqual(['approved', 'available']);
     expect(kindsOf(db, manager.user.id)).toEqual(['requested']);
+    // Le nom du serveur multimédia est lu à l'affichage : celui du réglage courant.
+    setSetting(db, data.cryptoKey, 'mediaServer', {
+      kind: 'jellyfin',
+      url: 'http://jellyfin.local',
+      apiKey: 'k',
+      libraryIds: [],
+      publicUrl: null,
+    });
     const [available] = (await member.get('/api/notifications')).json<NotificationPage>().results;
-    expect(available).toMatchObject({ kind: 'available', body: '« Matrix » est disponible dans Emby.' });
+    expect(available).toMatchObject({
+      kind: 'available',
+      title: 'Disponible dans Jellyfin',
+      body: '« Matrix » est disponible dans Jellyfin.',
+    });
   });
 
   it('refusée : le demandeur est prévenu avec le motif', async () => {
@@ -313,31 +325,33 @@ describe('notifications en base', () => {
     expect(queryPlan(data.db, service.unreadQuery(member.user.id))).toContain('notifications_unread_idx');
   });
 
-  it('purge : lues de plus de 90 jours seulement', async () => {
+  it('purge : lues de plus de 90 jours, non lues de plus de 365 jours', async () => {
     const { db, as } = await setup();
     const member = await as('member');
-    const old = new Date(Date.now() - NOTIFICATION_RETENTION_MS - DAY_MS);
-    const purged = seedNotification(db, member.user.id, { createdAt: old, readAt: old });
-    const unreadOld = seedNotification(db, member.user.id, { createdAt: old });
-    const readRecent = seedNotification(db, member.user.id, { readAt: new Date() });
+    const ago = (days: number) => new Date(Date.now() - days * DAY_MS);
+    const unread400 = seedNotification(db, member.user.id, { createdAt: ago(400) });
+    const read100 = seedNotification(db, member.user.id, { createdAt: ago(100), readAt: ago(100) });
+    const unread100 = seedNotification(db, member.user.id, { createdAt: ago(100) });
+    const read30 = seedNotification(db, member.user.id, { createdAt: ago(100), readAt: ago(30) });
 
-    expect(purgeReadNotifications(db, new Date(Date.now() - NOTIFICATION_RETENTION_MS))).toBe(1);
+    expect(purgeOldNotifications(db, new Date())).toBe(2);
     const left = db
       .select({ id: notifications.id })
       .from(notifications)
       .all()
       .map((n) => n.id);
-    expect(left).toEqual([unreadOld.id, readRecent.id]);
-    expect(left).not.toContain(purged.id);
+    expect(left).toEqual([unread100.id, read30.id]);
+    expect(left).not.toContain(unread400.id);
+    expect(left).not.toContain(read100.id);
   });
 
   it('le balayage complet purge les notifications lues anciennes', async () => {
     const { app, data, db, as } = await setup();
     const member = await as('member');
-    const old = new Date(Date.now() - NOTIFICATION_RETENTION_MS - DAY_MS);
+    const old = new Date(Date.now() - READ_NOTIFICATION_RETENTION_MS - DAY_MS);
     seedNotification(db, member.user.id, { createdAt: old, readAt: old });
 
-    await createSync(data, { availability: app.availability }).fullScan();
+    await createSync(data, { availability: app.availability, mediaServers: app.mediaServers }).fullScan();
     expect(db.select().from(notifications).all()).toEqual([]);
   });
 

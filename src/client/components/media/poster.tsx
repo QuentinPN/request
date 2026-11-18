@@ -1,10 +1,11 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { Film, Play, Plus } from 'lucide-react';
+import { titleLink } from '@/lib/catalogue';
 import { imageUrl, type MediaSummary, type MediaType } from '../../../shared/media.ts';
 import type { Availability } from '../../../shared/status.ts';
 import { summaryMeta } from '../../lib/catalogue.ts';
-import { useEmbyWatchUrl } from '../../lib/emby.ts';
+import { useMediaServerName, useWatchUrl } from '../../lib/media-server.ts';
 import { canRequest } from '../../lib/status.ts';
 import { useRequestAction } from '../requests/request-sheet.tsx';
 import { Button, buttonVariants } from '../ui/button.tsx';
@@ -39,10 +40,11 @@ export function Poster({
   to: { type: MediaType; id: number };
   layout?: PosterLayout;
   onRequest?: () => void;
-  /** « Regarder dans Emby » : adresse du titre dans l'interface web d'Emby (titre disponible ou partiel). */
+  /** « Regarder dans … » : adresse du titre dans l'interface web du serveur multimédia (titre disponible ou partiel). */
   watchUrl?: string;
 }) {
   const askable = onRequest !== undefined && canRequest(status);
+  const serverName = useMediaServerName();
   return (
     <article className={cn('group/poster relative', width[layout])}>
       <div className="relative aspect-2/3 overflow-hidden rounded-poster bg-(--media-base) ring-1 ring-border transition-[transform,box-shadow] duration-(--dur) ease-request group-focus-within/poster:scale-(--focus-scale) group-focus-within/poster:shadow-(--shadow-lift) group-focus-within/poster:ring-2 group-focus-within/poster:ring-ring group-hover/poster:scale-(--focus-scale) group-hover/poster:shadow-(--shadow-lift)">
@@ -53,11 +55,7 @@ export function Poster({
             <Film className="size-8" strokeWidth={1.5} />
           </div>
         )}
-        <Link
-          to="/titre/$type/$id"
-          params={{ type: to.type, id: String(to.id) }}
-          className="absolute inset-0 rounded-poster outline-none"
-        >
+        <Link {...titleLink({ type: to.type, tmdbId: to.id })} className="absolute inset-0 rounded-poster outline-none">
           <span className="sr-only">{subtitle ? `${title} (${subtitle})` : title}</span>
         </Link>
         {status && (
@@ -82,7 +80,7 @@ export function Poster({
                 href={watchUrl}
                 target="_blank"
                 rel="noreferrer"
-                aria-label={`Regarder ${title} dans Emby`}
+                aria-label={`Regarder ${title} dans ${serverName}`}
                 className={buttonVariants({
                   variant: askable ? 'secondary' : 'default',
                   size: askable ? 'icon-sm' : 'sm',
@@ -116,7 +114,7 @@ export function Poster({
  */
 export function MediaPoster({ media, layout }: { media: MediaSummary; layout?: PosterLayout }) {
   const onRequest = useRequestAction(media);
-  const watchUrl = useEmbyWatchUrl(media.embyItemId);
+  const watchUrl = useWatchUrl(media.embyItemId);
   return (
     <Poster
       title={media.title}

@@ -4,8 +4,10 @@ import { capabilitiesOf, type Role } from '../src/shared/roles.ts';
 import type { SetupState } from '../src/shared/setup.ts';
 
 const setupOf = (hasOwner: boolean, emby: boolean, complete: boolean): SetupState => ({
-  services: { emby, tmdb: complete, radarr: complete, sonarr: complete, rules: complete },
+  services: { mediaServer: emby, tmdb: complete, radarr: complete, sonarr: complete, rules: complete },
+  mediaServerKind: emby ? 'emby' : null,
   hasOwner,
+  hasMembers: hasOwner,
   complete,
 });
 const viewerAs = (role: Role) => ({
@@ -61,6 +63,10 @@ describe('guardRedirect', () => {
     expect(guard('/reglages', setup, 'member')).toEqual({ to: '/' });
     expect(guard('/compte', setup, 'member')).toBeNull();
     expect(guard('/demandes', setup, 'member')).toBeNull();
+  });
+
+  it('réglages : ouverts au gestionnaire (section Blocages seule)', () => {
+    expect(guard('/reglages', setupOf(true, true, true), 'manager')).toBeNull();
   });
 
   it('file d’approbation : réservée à qui gère les demandes', () => {

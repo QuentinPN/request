@@ -20,6 +20,71 @@ export function Input({ className, ...props }: React.ComponentProps<'input'>) {
   return <input className={cn(inputClass, className)} {...props} />;
 }
 
+/** Case à cocher et son libellé, dans un bandeau cliquable de 44 px (réglages, Compte). */
+export function CheckboxField({
+  className,
+  children,
+  ...props
+}: Omit<React.ComponentProps<'input'>, 'type'> & { children: React.ReactNode }) {
+  return (
+    <label className={cn('flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm', className)}>
+      <input type="checkbox" className="size-4 shrink-0 accent-(--accent-play)" {...props} />
+      {children}
+    </label>
+  );
+}
+
+/** Zone de saisie de plusieurs lignes (motif d'un refus, message d'un signalement). */
+export function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
+  return (
+    <textarea
+      className={cn(
+        'w-full resize-none rounded-(--r-button) border border-input bg-(--field-bg) px-3.5 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/20 disabled:opacity-50 aria-invalid:border-(--tint-danger-border)',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+/** Case à cocher avec son libellé et une explication (réglages, feuille de demande, approbation). */
+export function CheckboxRow({
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled,
+  className,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <label
+      className={cn(
+        'flex min-h-11 items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5 text-sm has-disabled:opacity-55',
+        className,
+      )}
+    >
+      <input
+        type="checkbox"
+        className="size-4 shrink-0 accent-(--accent-play)"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="flex flex-col">
+        <span className="font-medium">{label}</span>
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </label>
+  );
+}
+
 /** Liste déroulante native (clavier et lecteurs d'écran gérés par le navigateur), habillée comme un champ. */
 export function NativeSelect({ className, ...props }: React.ComponentProps<'select'>) {
   return (

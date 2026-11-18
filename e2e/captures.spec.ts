@@ -1,6 +1,6 @@
 import { fixtures, mockCatalogue, settleImages, tvWithEverySeasonStatus } from './catalogue-mocks.ts';
 import { makeRequest, mediaNamed, mockRequests } from './requests-mocks.ts';
-import { expect, field, sonarrTest, test, viewerAs } from './support/api.ts';
+import { arrServer, expect, field, fillSetupToken, freshSetup, sonarrTest, test, viewerAs } from './support/api.ts';
 
 // Captures de docs/captures, hors `npm run verify` : `npm run captures` pour les régénérer.
 test.skip(process.env.npm_lifecycle_event !== 'captures', 'captures générées à la demande');
@@ -29,17 +29,31 @@ test('captures de la connexion et de l’assistant (2.2)', async ({ page, api },
   // Comme la maquette R-Assistant : Emby, TMDB et Radarr testés, Sonarr ouvert et testé.
   api.state.viewer = viewerAs('owner');
   api.state.setup = {
-    services: { emby: true, tmdb: true, radarr: true, sonarr: false, rules: false },
+    services: { mediaServer: true, tmdb: true, radarr: true, sonarr: false, rules: false },
+    mediaServerKind: 'emby',
     hasOwner: true,
+    hasMembers: true,
     complete: false,
   };
-  await page.route('**/api/setup/sonarr/test', (route) => route.fulfill({ json: sonarrTest }));
+  api.state.arrServers = [arrServer(1, 'radarr')];
+  await page.route('**/api/arr-servers/test', (route) => route.fulfill({ json: sonarrTest }));
   await page.goto('/assistant');
   await field(page, 'Adresse').fill('http://192.0.2.20:8989');
   await field(page, 'Clé d’API').fill('4f2a9c1e8b7d4f2a');
   await page.getByRole('button', { name: 'Tester', exact: true }).click();
   await expect(page.getByText('Connexion réussie · Sonarr v4.0.11')).toBeVisible();
   await page.screenshot({ path: `${dir}/assistant-${width}.png`, fullPage: true });
+});
+
+test('captures du jeton d’installation (2.2)', async ({ page, api }, { project }) => {
+  const width = widthOf(project);
+  api.state.viewer = null;
+  api.state.setup = structuredClone(freshSetup);
+  await page.goto('/assistant');
+  await fillSetupToken(page);
+  await page.getByRole('radio', { name: /^Emby/ }).check();
+  await expect(field(page, 'Jeton d’installation')).toBeVisible();
+  await page.screenshot({ path: `docs/captures/2.2/assistant-jeton-${width}.png`, fullPage: true });
 });
 
 test('captures des pastilles de statut (3.2)', async ({ page }, { project }) => {

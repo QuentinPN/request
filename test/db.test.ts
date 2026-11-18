@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { decrypt, encrypt, loadOrCreateKey } from '../src/server/crypto.ts';
 import { openDataDir, openDb } from '../src/server/db/index.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
-import { notificationKinds } from '../src/shared/notifications.ts';
+import { requestNotificationKinds } from '../src/shared/notifications.ts';
 import { trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
@@ -22,7 +22,7 @@ describe('migrations', () => {
 
     const again = openDataDir(dir);
     const applied = again.db.$client.prepare('select count(*) as n from __drizzle_migrations').get() as { n: number };
-    expect(applied.n).toBe(10);
+    expect(applied.n).toBe(12);
     expect(again.db.$client.pragma('journal_mode', { simple: true })).toBe('wal');
     again.db.$client.close();
   });
@@ -64,24 +64,22 @@ describe('réglages', () => {
 
   it('chiffrent les secrets en base et les relisent en clair', () => {
     const db = openDb(':memory:');
-    const saved = setSetting(db, cryptoKey, 'radarr', {
-      url: 'http://radarr:7878/',
+    const saved = setSetting(db, cryptoKey, 'emby', {
+      url: 'http://emby:8096/',
       apiKey: ' abc123 ',
-      qualityProfileId: 4,
-      rootFolderPath: '/films',
+      libraryIds: ['4'],
     });
     expect(saved).toEqual({
-      url: 'http://radarr:7878',
+      url: 'http://emby:8096',
       apiKey: 'abc123',
-      qualityProfileId: 4,
-      rootFolderPath: '/films',
-      minimumAvailability: 'released',
+      libraryIds: ['4'],
+      publicUrl: null,
     });
 
-    const stored = raw(db, 'radarr');
+    const stored = raw(db, 'emby');
     expect(stored).not.toContain('abc123');
-    expect(JSON.parse(stored).url).toBe('http://radarr:7878');
-    expect(getSetting(db, cryptoKey, 'radarr')).toEqual(saved);
+    expect(JSON.parse(stored).url).toBe('http://emby:8096');
+    expect(getSetting(db, cryptoKey, 'emby')).toEqual(saved);
   });
 
   it('remplacent la valeur existante', () => {
@@ -94,18 +92,17 @@ describe('réglages', () => {
   it('renvoient null si absents et appliquent les valeurs par défaut', () => {
     const db = openDb(':memory:');
     expect(getSetting(db, cryptoKey, 'emby')).toBeNull();
-    const discord = { webhookUrl: null, enabled: false, events: notificationKinds };
+    const discord = { webhookUrl: null, enabled: false, events: requestNotificationKinds };
     expect(setSetting(db, cryptoKey, 'discord', {})).toEqual(discord);
     expect(getSetting(db, cryptoKey, 'discord')).toEqual(discord);
   });
 
   it('refusent une valeur invalide sans rien écrire', () => {
     const db = openDb(':memory:');
-    const target = { qualityProfileId: 1, rootFolderPath: '/series' };
-    expect(() => setSetting(db, cryptoKey, 'sonarr', { url: 'ftp://sonarr', apiKey: 'x', ...target })).toThrow();
-    expect(() => setSetting(db, cryptoKey, 'sonarr', { url: 'http://sonarr:8989', apiKey: '  ', ...target })).toThrow();
-    expect(() => setSetting(db, cryptoKey, 'sonarr', { url: 'http://sonarr:8989', apiKey: 'x' } as never)).toThrow();
-    expect(getSetting(db, cryptoKey, 'sonarr')).toBeNull();
+    expect(() => setSetting(db, cryptoKey, 'emby', { url: 'ftp://emby', apiKey: 'x' })).toThrow();
+    expect(() => setSetting(db, cryptoKey, 'emby', { url: 'http://emby:8096', apiKey: '  ' })).toThrow();
+    expect(() => setSetting(db, cryptoKey, 'emby', { url: 'http://emby:8096' } as never)).toThrow();
+    expect(getSetting(db, cryptoKey, 'emby')).toBeNull();
   });
 
   it('ne sont pas lisibles avec une autre clé', () => {

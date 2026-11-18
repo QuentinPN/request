@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -35,3 +35,6 @@ export function decrypt(key: Buffer, payload: string): string {
   decipher.setAuthTag(Buffer.from(tag, 'base64url'));
   return Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8');
 }
+
+/** Empreinte SHA-256 en hexadécimal : ce que la base garde d'un jeton ou d'une clé (jamais le secret lui-même). */
+export const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
