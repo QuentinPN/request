@@ -70,6 +70,21 @@ Dans Radarr (puis Sonarr) : Réglages › Connect › Ajouter › Webhook, colle
 
 Si Radarr ou Sonarr ne parvient pas à joindre le domaine public depuis l'hôte (pas de « hairpin NAT »), rattachez leur conteneur au réseau `request_proxy` et utilisez `http://request:3000/api/webhooks/…?token=…`.
 
+## Réseau local seul
+
+Le push et l'installation de l'appli (PWA) exigent le HTTPS. `compose.local.yml` l'obtient sans rien exposer sur Internet : Caddy (image construite avec le module `caddy-dns/cloudflare`, voir `caddy/`) prouve la possession du domaine par un enregistrement DNS créé chez Cloudflare (défi DNS-01), et le domaine pointe vers l'IP locale du mini-PC. Le conteneur de l'appli est celui de `compose.yml` (`extends`).
+
+1. **Cloudflare › DNS** : enregistrement `A` `demandes` → IP locale du mini-PC (ex. `192.0.2.14`), **nuage gris (DNS only)** : le proxy Cloudflare ne joint pas une IP privée. Fixez cette IP (bail DHCP réservé dans la box).
+2. **Cloudflare › Mon profil › Jetons d'API** : modèle « Modifier la zone DNS », zone `example.com` seule. C'est `CLOUDFLARE_API_TOKEN`.
+3. Variables : `DOMAIN=demandes.example.com`, `CLOUDFLARE_API_TOKEN=…`, `REQUEST_BIND=<IP locale de l'hôte>` (Caddy n'est publié que sur elle), `TZ` (défaut `Europe/Paris`), plus celles du tableau ci-dessus si besoin. `HTTPS_PORT` (défaut `8445`, le 443 de l'hôte étant laissé au Caddy public) fixe le port publié ; l'adresse est `https://<DOMAIN>:<port>`, reprise dans `PUBLIC_URL`.
+4. `docker compose -f compose.local.yml up -d --build`, puis ouvrez `https://demandes.example.com:8445` depuis le réseau local. Le premier certificat prend une à deux minutes (`docker compose -f compose.local.yml logs caddy`).
+
+L'appli rejoint aussi le réseau Docker externe `media` (à créer s'il n'existe pas : `docker network create media`) : dans l'assistant, Radarr, Sonarr et Emby se renseignent par leur nom de conteneur (`http://radarr:7878`, `http://sonarr:8989`), et leurs webhooks visent `http://request:3000/api/webhooks/…?token=…` sans passer par Caddy. `host.docker.internal` ne joint pas un port publié sur une seule IP de l'hôte (`192.0.2.14:7878`) : utilisez le nom de conteneur ou cette IP.
+
+Certaines box (protection « DNS rebinding ») refusent une réponse DNS en IP privée : le domaine ne se résout alors pas ; désactivez cette protection pour ce domaine, ou utilisez un autre résolveur (1.1.1.1).
+
+**Dockhand** : créez une stack depuis le dépôt Git (fichier `compose.local.yml`, dépôt privé : jeton GitHub requis), ou clonez le dépôt sur l'hôte et pointez la stack sur ce dossier ; les variables (dont `CLOUDFLARE_API_TOKEN`) se renseignent dans l'environnement de la stack, jamais dans le dépôt.
+
 ## Cohabiter avec Seerr sur le mini-PC
 
 Les deux tournent dans des conteneurs distincts : donnez à Request son propre domaine (ou sous-domaine) et son propre volume ; Seerr garde le sien et son port (5055 par défaut), sans rien partager. Les deux peuvent interroger Radarr, Sonarr et Emby en même temps. Pendant l'essai, ne laissez qu'un seul des deux envoyer à Radarr/Sonarr pour une même personne, afin d'éviter les doublons.

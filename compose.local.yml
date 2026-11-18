@@ -1,0 +1,62 @@
+# Request sur le réseau local, en HTTPS (certificat Let's Encrypt par défi DNS Cloudflare), sans rien exposer
+# sur Internet. Voir docs/DEPLOIEMENT.md (« Réseau local seul »).
+#   Variables : DOMAIN (ex. demandes.example.com), CLOUDFLARE_API_TOKEN, REQUEST_BIND (IP locale de l'hôte)
+#   docker compose -f compose.local.yml up -d --build
+#   Puis https://<DOMAIN>:8445 (HTTPS_PORT)
+name: request
+
+services:
+  # Même conteneur que compose.yml (durcissement, variables, volume) : seuls le proxy et les réseaux changent.
+  request:
+    extends:
+      file: compose.yml
+      service: request
+    mem_limit: 512m
+    environment:
+      # Fuseau de la sauvegarde quotidienne et des dates.
+      TZ: ${TZ:-Europe/Paris}
+      # Lien des courriels et contact push : le port fait partie de l'adresse.
+      PUBLIC_URL: https://${DOMAIN}:${HTTPS_PORT:-8445}
+    # `media` : Radarr, Sonarr et Emby se joignent par leur nom de conteneur (http://radarr:7878), et leurs
+    # webhooks visent http://request:3000.
+    networks: [proxy, media]
+
+  caddy:
+    build: ./caddy
+    image: request-caddy:local
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 128m
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN}
+    # Publié sur une seule IP de l'hôte, comme les autres stacks ; pas sur 443, pris par le Caddy public.
+    ports:
+      - '${REQUEST_BIND:?REQUEST_BIND}:${HTTPS_PORT:-8445}:443'
+    volumes:
+      - ./caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      # Certificat : se réobtient tout seul, inutile à sauvegarder.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      request:
+        condition: service_healthy
+    networks: [proxy]
+
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: ${PROXY_SUBNET:-172.28.80.0/24}
+  media:
+    external: true
+    name: media
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:
