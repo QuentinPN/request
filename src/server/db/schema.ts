@@ -290,6 +290,8 @@ export const requestSeasons = sqliteTable(
       .notNull()
       .references(() => requests.id, { onDelete: 'cascade' }),
     seasonNumber: integer().notNull(),
+    /** Date d'ajout de la saison à la demande : le quota (fenêtre glissante) compte chaque saison à sa date. */
+    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   },
   (table) => [primaryKey({ columns: [table.requestId, table.seasonNumber] })],
 );

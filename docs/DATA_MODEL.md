@@ -28,7 +28,7 @@ Index : `UNIQUE(tmdb_id, type)` (badge de chaque affiche : lecture par lot `WHER
 Index : `(user_id, created_at)` (« Mes demandes » + quota), `(status, created_at)` (file d'approbation), `(media_id, status)` (statut affiché d'un titre, sert aussi la clé étrangère), `(decided_by)` partiel, `UNIQUE(external_ref)` (6.2, migration `0009_import_seerr` : simple `ALTER TABLE … ADD`, sans recréation de table ; SQLite tient les `NULL` pour distincts, un index unique ordinaire suffit).
 Liste `GET /api/requests` (filtres `status=a,b`, `type`+`tmdbId`) : une page, les totaux par statut du périmètre en un `GROUP BY` (couvert par `(status, created_at)` pour un approbateur, `(user_id, created_at)` pour un membre ; un titre passe par `media(type, tmdb_id)` en sous-requête) et la raison du dernier échec des lignes `failed` en une requête (`request_events(request_id, created_at)`). Vérifié par `EXPLAIN QUERY PLAN` (`test/requests.test.ts`) : aucun index ajouté.
 
-**`request_seasons`** — **table séparée**, pas de JSON : le quota compte des saisons, Sonarr reçoit une liste, la frise affiche l'état par saison. `request_id` FK `ON DELETE CASCADE` · `season_number` · PK `(request_id, season_number)`.
+**`request_seasons`** — **table séparée**, pas de JSON : le quota compte des saisons, Sonarr reçoit une liste, la frise affiche l'état par saison. `request_id` FK `ON DELETE CASCADE` · `season_number` · PK `(request_id, season_number)` · `created_at` (date d'ajout de la saison, migration `0011_quota_season_date` : reprise de celle de la demande pour l'existant ; table recréée à la main, un `ADD COLUMN` SQLite n'accepte pas `DEFAULT (unixepoch())`). Le quota compte chaque saison à cette date, pas à celle de la demande : des saisons ajoutées à une vieille demande en attente comptent.
 
 **`request_events`** — **table séparée** pour la frise (Demandée → Approuvée → Envoyée → Recherche → Dans Emby) : chaque étape a sa date, un acteur, éventuellement un message d'erreur (échec rejouable), et l'historique reste vrai après une relance. `id` PK · `request_id` FK `ON DELETE CASCADE` · `type` text `CHECK IN requestEventTypes` · `actor_id` FK users `SET NULL` · `detail` text · `created_at`. Index `(request_id, created_at)`. Ajout uniquement, jamais modifiée.
 
@@ -50,10 +50,10 @@ SELECT count(*) FROM requests r JOIN media m ON m.id = r.media_id
 WHERE r.user_id = ? AND m.type = 'movie' AND r.status NOT IN ('declined','cancelled') AND r.created_at >= ?;
 -- saisons
 SELECT count(*) FROM request_seasons s JOIN requests r ON r.id = s.request_id
-WHERE r.user_id = ? AND r.status NOT IN ('declined','cancelled') AND r.created_at >= ?;
+WHERE r.user_id = ? AND r.status NOT IN ('declined','cancelled') AND s.created_at >= ?;
 ```
 
-Servies par `requests(user_id, created_at)`. Vérification et insertion dans **la même transaction** (`db.transaction`, synchrone avec better-sqlite3 : aucune course possible dans un seul processus).
+Films servis par `requests(user_id, created_at)`, saisons par `requests(user_id, created_at)` (sur `user_id`) puis la clé de `request_seasons` : aucun index ajouté. Vérification et insertion dans **la même transaction** (`db.transaction`, synchrone avec better-sqlite3 : aucune course possible dans un seul processus).
 
 ### Double clic
 

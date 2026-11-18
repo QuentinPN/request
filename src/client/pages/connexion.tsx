@@ -200,7 +200,14 @@ function PlexLogin({ notice }: { notice: ReactNode }) {
     meta: { authRedirect: false },
     retry: false,
     gcTime: 0,
-    refetchInterval: (query) => (query.state.data?.status === 'pending' ? PLEX_PIN_POLL_MS : false),
+    // Après une erreur, `data` garde `pending` : seule une erreur définitive (4xx hors 429) arrête le sondage, le
+    // serveur gardant le code après une erreur passagère (réseau, 5xx, 429 trop de tentatives).
+    refetchInterval: (query) => {
+      const { data, error } = query.state;
+      return data?.status === 'pending' && !(error instanceof ApiError && error.status < 500 && error.status !== 429)
+        ? PLEX_PIN_POLL_MS
+        : false;
+    },
   });
   const authorized = state.data?.status === 'authorized' ? state.data.viewer : null;
 

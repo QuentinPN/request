@@ -10,8 +10,10 @@ import {
   requests,
   seasons,
   seasons4k,
+  sessions,
 } from '../src/server/db/schema.ts';
 import { startJob } from '../src/server/services/jobs.ts';
+import { createSession, SESSION_TTL_MS, validateSession } from '../src/server/services/sessions.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import {
   createSync,
@@ -445,6 +447,16 @@ describe('balayages', () => {
     expect(requestStatus(db, requestId)).toBe('available');
     expect(mediaRow(db, downloading)?.status).toBe('available');
     expect(mediaRow(db, ignored)?.status).toBe('available'); // hors balayage léger
+  });
+
+  it('balayage complet : purge les sessions expirées et garde les valides', async () => {
+    const { db, sync } = await setup();
+    upsertFromEmby(db, { id: 'u', name: 'U', avatar: null, isEmbyAdmin: false });
+    createSession(db, 'u', null, new Date(Date.now() - SESSION_TTL_MS - DAY_MS));
+    const valid = createSession(db, 'u', null).token;
+    expect(await sync.fullScan()).toBe(true);
+    expect(db.select().from(sessions).all()).toHaveLength(1);
+    expect(validateSession(db, valid)?.id).toBe('u');
   });
 
   it('balayage complet : tout titre suivi recalculé, demandes avancées, titres oubliés purgés', async () => {

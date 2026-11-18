@@ -9,6 +9,7 @@ import {
   gte,
   inArray,
   max,
+  not,
   notExists,
   notInArray,
   or,
@@ -93,13 +94,12 @@ export const quotaMessage = (kind: QuotaKind, rule: QuotaRule) =>
   `Quota atteint : ${plural(rule.limit, QUOTA_UNIT[kind])} sur ${plural(rule.days, ['jour', 'jours'])}`;
 
 /**
- * Films (demandes) ou saisons (saisons demandées) d'un membre depuis `since`, hors refusées, annulées et demandes
+ * Films (demandes, à leur date) ou saisons (saisons demandées, à leur date d'ajout) d'un membre depuis `since`, hors refusées, annulées et demandes
  * exemptées (« Hors quota »). Servies par l'index `requests(user_id, created_at)`.
  */
 export function quotaUsageQuery(db: Pick<Db, 'select'>, userId: string, kind: QuotaKind, since: Date) {
   const counted = and(
     eq(requests.userId, userId),
-    gte(requests.createdAt, since),
     notInArray(requests.status, UNCOUNTED),
     eq(requests.quotaExempt, false),
   );
@@ -108,12 +108,12 @@ export function quotaUsageQuery(db: Pick<Db, 'select'>, userId: string, kind: Qu
         .select({ n: count() })
         .from(requests)
         .innerJoin(media, eq(media.id, requests.mediaId))
-        .where(and(counted, eq(media.type, 'movie')))
+        .where(and(counted, gte(requests.createdAt, since), eq(media.type, 'movie')))
     : db
         .select({ n: count() })
         .from(requestSeasons)
         .innerJoin(requests, eq(requests.id, requestSeasons.requestId))
-        .where(counted);
+        .where(and(counted, gte(requestSeasons.createdAt, since)));
 }
 
 // --- Lignes ---
@@ -304,12 +304,15 @@ const QUALITIES = [
   { is4k: true, status: media.status4k, seasons: seasonsTableOf(true) },
 ] as const;
 
+/** Demandes que l'arrivée du titre fait passer `available` : envoyées, et hors 4K aussi approuvées ou en échec. */
+const arrivable = (is4k: boolean): RequestStatus[] => (is4k ? ['sent'] : ['sent', 'approved', 'failed']);
+
 /**
- * Transition `sent → available`, la seule que la synchronisation pose : pour les titres `mediaIds` qui viennent d'être
- * recalculés, chaque demande envoyée dont le titre est arrivé dans sa qualité (film disponible ; série disponible, ou
- * chaque saison demandée disponible ; en 4K, d'après les serveurs 4K) passe `available`, avec l'évènement `available`.
- * Une saison encore manquante laisse la demande `sent`. Rejouée sur le même état (webhook en double, balayage), elle ne
- * trouve plus rien : aucun évènement en double.
+ * Transition vers `available`, la seule que la synchronisation pose : pour les titres `mediaIds` qui viennent d'être
+ * recalculés, chaque demande envoyée (hors 4K : ou approuvée, ou en échec) dont
+ * le titre est arrivé dans sa qualité (film disponible ; série : chaque saison demandée disponible ; en 4K, d'après les
+ * serveurs 4K) passe `available`, avec l'évènement `available`. Une saison encore manquante laisse la demande telle
+ * quelle. Rejouée sur le même état (webhook en double, balayage), elle ne trouve plus rien : aucun évènement en double.
  */
 export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date): number[] {
   if (mediaIds.length === 0) return [];
@@ -325,13 +328,18 @@ export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date)
           eq(seasons.status, 'available'),
         ),
       );
-    const everySeasonArrived = and(
-      exists(tx.select({ one }).from(requestSeasons).where(ofRequest)),
-      notExists(
-        tx
-          .select({ one })
-          .from(requestSeasons)
-          .where(and(ofRequest, notExists(seasonArrived))),
+    const hasSeasons = exists(tx.select({ one }).from(requestSeasons).where(ofRequest));
+    // Une demande de saisons n'est servie que par ses saisons ; sans saison (film), le statut du titre décide.
+    const arrivedFor = or(
+      and(not(hasSeasons), eq(status, 'available')),
+      and(
+        hasSeasons,
+        notExists(
+          tx
+            .select({ one })
+            .from(requestSeasons)
+            .where(and(ofRequest, notExists(seasonArrived))),
+        ),
       ),
     );
     return tx
@@ -339,12 +347,7 @@ export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date)
       .from(requests)
       .innerJoin(media, eq(media.id, requests.mediaId))
       .where(
-        and(
-          eq(requests.status, 'sent'),
-          eq(requests.is4k, is4k),
-          inArray(requests.mediaId, [...mediaIds]),
-          or(eq(status, 'available'), and(eq(media.type, 'tv'), everySeasonArrived)),
-        ),
+        and(inStatuses(arrivable(is4k)), eq(requests.is4k, is4k), inArray(requests.mediaId, [...mediaIds]), arrivedFor),
       )
       .all();
   });
@@ -358,7 +361,7 @@ export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date)
           requests.id,
           arrived.map((r) => r.id),
         ),
-        eq(requests.status, 'sent'),
+        inStatuses(arrivable(false)),
       ),
     )
     .returning({ id: requests.id })

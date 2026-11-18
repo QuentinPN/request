@@ -105,6 +105,28 @@ describe('création', () => {
     });
   });
 
+  it('même signalement ouvert du même membre (type, saison, épisode) → 409 sans notification ; résolu, il ne bloque pas', async () => {
+    const { db, as } = await setup();
+    const [member, other, manager] = [await as('member'), await as('member', 'autre-membre'), await as('manager')];
+    const tv = (extra: Partial<IssueCreateInput> = {}) =>
+      report({ mediaType: 'tv', tmdbId: 1399, seasonNumber: 1, ...extra });
+    const first = (await member.post('/api/issues', tv())).json<IssueDetail>();
+
+    const duplicate = await member.post('/api/issues', tv());
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json<{ error: string }>().error).toMatch(/déjà/);
+    expect(db.select().from(issues).all()).toHaveLength(1);
+    expect(kindsOf(db, manager.user.id)).toEqual(['issue_created']);
+
+    // Autre type, autre épisode ou autre membre : pas un doublon.
+    expect((await member.post('/api/issues', tv({ type: 'audio' }))).statusCode).toBe(201);
+    expect((await member.post('/api/issues', tv({ episodeNumber: 2 }))).statusCode).toBe(201);
+    expect((await other.post('/api/issues', tv())).statusCode).toBe(201);
+
+    await member.post(`/api/issues/${first.id}/resolve`);
+    expect((await member.post('/api/issues', tv())).statusCode).toBe(201);
+  });
+
   it('un titre pas dans la bibliothèque (ou inconnu) → 409', async () => {
     const { as } = await setup();
     const member = await as('member');
@@ -188,7 +210,9 @@ describe('droits de lecture', () => {
     const { db, as } = await setup();
     const manager = await as('manager');
     const first = await create(manager);
-    for (let i = 0; i < ISSUES_PAGE_SIZE; i++) await create(manager);
+    // Des signalements identiques et ouverts du même membre seraient refusés : un épisode différent chacun.
+    for (let i = 0; i < ISSUES_PAGE_SIZE; i++)
+      await create(manager, report({ mediaType: 'tv', tmdbId: 1399, seasonNumber: 1, episodeNumber: i + 1 }));
     await manager.post(`/api/issues/${first.id}/resolve`);
 
     const open = (await manager.get('/api/issues?status=open')).json<IssuePage>();

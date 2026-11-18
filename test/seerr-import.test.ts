@@ -261,6 +261,78 @@ describe('POST /api/import/seerr', () => {
     expect({ requests: countOf(db, requests), events: countOf(db, requestEvents) }).toEqual(snapshot);
   });
 
+  it('relancé après que la demande qui a absorbé la leur est terminée, n’insère pas de doublon', async () => {
+    const items = [
+      seerrRequest({ status: 1, tmdbId: 603 }),
+      seerrRequest({ status: 1, type: 'tv', tmdbId: 1396, seasons: [1] }),
+      seerrRequest({ status: 1, type: 'tv', tmdbId: 1396, seasons: [2] }),
+    ];
+    const { db, run } = await setup(items);
+    const mediaId = db
+      .insert(media)
+      .values({ type: 'movie', tmdbId: 603, statusUpdatedAt: new Date(0) })
+      .returning()
+      .get().id;
+    db.insert(requests).values({ mediaId, userId: 'a1b2c3d4e5f6', status: 'pending' }).run();
+
+    expect(resultOf(await run())).toMatchObject({ imported: 1, alreadyPresent: 2 });
+    db.update(requests).set({ status: 'available' }).run();
+    const before = countOf(db, requests);
+
+    expect(resultOf(await run())).toMatchObject({ imported: 0, alreadyPresent: 3 });
+    expect(countOf(db, requests)).toBe(before);
+  });
+
+  it('une demande en attente sur une série déjà envoyée crée une demande pour les saisons non couvertes, une fois', async () => {
+    const items = [
+      seerrRequest({ status: 1, type: 'tv', tmdbId: 1396, seasons: [1, 2] }),
+      // Saison déjà couverte par la demande envoyée : rien à créer.
+      seerrRequest({ status: 1, type: 'tv', tmdbId: 1396, seasons: [1] }),
+    ];
+    const { db, run } = await setup(items);
+    const mediaId = db
+      .insert(media)
+      .values({ type: 'tv', tmdbId: 1396, statusUpdatedAt: new Date(0) })
+      .returning()
+      .get().id;
+    const sent = db.insert(requests).values({ mediaId, userId: 'a1b2c3d4e5f6', status: 'sent' }).returning().get();
+    db.insert(requestSeasons).values({ requestId: sent.id, seasonNumber: 1 }).run();
+
+    expect(resultOf(await run())).toMatchObject({ imported: 1, alreadyPresent: 1 });
+    const added = rowsOf(db).filter((r) => r.id !== sent.id);
+    expect(added.map((r) => r.status)).toEqual(['pending']);
+    const seasons = db
+      .select()
+      .from(requestSeasons)
+      .where(eq(requestSeasons.requestId, added[0]?.id ?? 0))
+      .all();
+    expect(seasons.map((s) => s.seasonNumber)).toEqual([2]);
+
+    expect(resultOf(await run())).toMatchObject({ imported: 0, alreadyPresent: 2 });
+    expect(countOf(db, requests)).toBe(2);
+  });
+
+  it('saisons non couvertes d’une demande approuvée : pas de marqueur, reprises une fois la demande terminée', async () => {
+    const { db, run } = await setup([seerrRequest({ status: 1, type: 'tv', tmdbId: 1396, seasons: [1, 2] })]);
+    const mediaId = db
+      .insert(media)
+      .values({ type: 'tv', tmdbId: 1396, statusUpdatedAt: new Date(0) })
+      .returning()
+      .get().id;
+    const approved = db
+      .insert(requests)
+      .values({ mediaId, userId: 'a1b2c3d4e5f6', status: 'approved' })
+      .returning()
+      .get();
+    db.insert(requestSeasons).values({ requestId: approved.id, seasonNumber: 1 }).run();
+
+    expect(resultOf(await run())).toMatchObject({ imported: 0, alreadyPresent: 1 });
+    expect(countOf(db, requestEvents)).toBe(0);
+
+    db.update(requests).set({ status: 'available' }).run();
+    expect(resultOf(await run())).toMatchObject({ imported: 1, alreadyPresent: 0 });
+  });
+
   it('l’aperçu n’écrit rien et annonce les mêmes comptes que l’import', async () => {
     const items = [
       seerrRequest({ status: 1, tmdbId: 1 }),

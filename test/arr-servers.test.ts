@@ -151,6 +151,20 @@ describe('serveurs Radarr/Sonarr', () => {
     expect((await send('PUT', `${ARR_SERVERS_PATH}/99`, body())).statusCode).toBe(404);
   });
 
+  it('suppression : le dernier serveur non 4K d’un type est refusé (409), les serveurs 4K se suppriment', async () => {
+    const { body, send } = await setup();
+    const add = async (patch: object) => (await send('POST', ARR_SERVERS_PATH, body(patch))).json<ArrServer>();
+    const only = await add({ name: 'Films' });
+    const uhd = await add({ name: 'Films 4K', is4k: true });
+    const refused = await send('DELETE', `${ARR_SERVERS_PATH}/${only.id}`);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error).toContain('Gardez au moins un serveur Radarr');
+    expect((await send('DELETE', `${ARR_SERVERS_PATH}/${uhd.id}`)).statusCode).toBe(204);
+    const other = await add({ name: 'Films bis' });
+    expect((await send('DELETE', `${ARR_SERVERS_PATH}/${only.id}`)).statusCode).toBe(204);
+    expect((await send('DELETE', `${ARR_SERVERS_PATH}/${other.id}`)).statusCode).toBe(409);
+  });
+
   it('modification : clé gardée si laissée vide à la même adresse, exigée pour une nouvelle adresse', async () => {
     const { arr, body, send } = await setup();
     const { id } = (await send('POST', ARR_SERVERS_PATH, body())).json<ArrServer>();

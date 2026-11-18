@@ -133,6 +133,8 @@ export function authRoutes(app: FastifyInstance) {
       const token = await checkPlexPin(app.mediaServers.plex, pin).catch((error: unknown) => {
         // plex.tv ne connaît plus ce code (expiré de son côté).
         if (error instanceof IntegrationError && error.kind === 'not_found') throw expired();
+        // Erreur passagère : le code attend toujours, le sondage suivant le reprendra.
+        pins.set(secret, pin);
         throw error;
       });
       if (!token) {

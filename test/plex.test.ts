@@ -74,7 +74,7 @@ const resourcesXml = (owned: '0' | '1') => `<?xml version="1.0" encoding="UTF-8"
 /** Faux plex.tv : comptes par jeton, amis du propriétaire, appareils, codes PIN (état réglable). */
 async function fakePlexTv({ owned = '1' as '0' | '1', pinExpiresAt = new Date(Date.now() + 30 * 60_000) } = {}) {
   /** `slow` : plex.tv tarde à répondre (échanges simultanés). */
-  const pin = { authToken: null as string | null, gone: false, slow: false };
+  const pin = { authToken: null as string | null, gone: false, slow: false, down: false };
   const server = await serve({
     'GET /users/account.json': (req, res) => {
       const user = ACCOUNTS[String(tokenOf(req))];
@@ -85,6 +85,7 @@ async function fakePlexTv({ owned = '1' as '0' | '1', pinExpiresAt = new Date(Da
     'POST /api/v2/pins': { id: 77, code: 'CODE-PIN', expiresAt: pinExpiresAt.toISOString(), authToken: null },
     'GET /api/v2/pins/77': async (req, res) => {
       if (pin.slow) await new Promise((resolve) => setTimeout(resolve, 100));
+      if (pin.down) return status(503)(req, res);
       if (pin.gone) return status(404)(req, res);
       if (req.query.code !== 'CODE-PIN') return status(404)(req, res);
       return status(200, { id: 77, code: 'CODE-PIN', authToken: pin.authToken })(req, res);
@@ -427,6 +428,16 @@ describe('connexion Plex par code PIN', () => {
     const res = await check(app, created.cookie);
     expect(res.statusCode).toBe(410);
     expect(res.json()).toEqual({ error: 'Code de connexion Plex expiré, recommencez' });
+  });
+
+  it('erreur passagère de plex.tv : le code reste disponible pour le sondage suivant', async () => {
+    const { app, plexTv } = await plexApp();
+    const { cookie } = await startPin(app);
+    plexTv.pin.authToken = OWNER_TOKEN;
+    plexTv.pin.down = true;
+    expect((await check(app, cookie)).statusCode).toBeGreaterThanOrEqual(500);
+    plexTv.pin.down = false;
+    expect((await check(app, cookie)).json()).toMatchObject({ status: 'authorized' });
   });
 
   it('lié au navigateur : sans cookie, ou avec un cookie falsifié, l’échange est refusé (403)', async () => {

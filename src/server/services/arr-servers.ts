@@ -179,10 +179,26 @@ export function saveArrServer(data: Pick<Data, 'db' | 'cryptoKey'>, values: ArrS
 /**
  * Supprime un serveur. Ses demandes pas encore envoyées (en attente, approuvées, en échec) reviennent au serveur par
  * défaut avec ses réglages : profil et dossier, propres au serveur supprimé, sont effacés (une relance les reprend du
- * défaut). Les demandes envoyées gardent leur historique ; `server_id` passe à `NULL` (clé étrangère).
+ * défaut). Les demandes envoyées gardent leur historique ; `server_id` passe à `NULL` (clé étrangère). Le dernier
+ * serveur non 4K d'un type ne se supprime pas (409) : l'installation redeviendrait incomplète.
  */
 export function deleteArrServer(db: Db, id: number) {
   db.transaction((tx) => {
+    const current = tx.select().from(arrServers).where(eq(arrServers.id, id)).get();
+    if (!current) throw new HttpError(404, NOT_FOUND);
+    const label = arrKindLabels[current.type];
+    if (
+      !current.is4k &&
+      !tx
+        .select({ id: arrServers.id })
+        .from(arrServers)
+        .where(and(eq(arrServers.type, current.type), eq(arrServers.is4k, false), ne(arrServers.id, id)))
+        .get()
+    )
+      throw new HttpError(
+        409,
+        `Gardez au moins un serveur ${label} : ajoutez-en un autre avant de supprimer celui-ci.`,
+      );
     tx.update(requests)
       .set({ serverId: null, qualityProfileId: null, rootFolder: null })
       .where(and(eq(requests.serverId, id), inArray(requests.status, ['pending', 'approved', 'failed'])))

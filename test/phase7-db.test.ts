@@ -77,12 +77,20 @@ describe('migration 0010 (phase 7) sur une base existante', { timeout: 20_000 },
         ('b', 'declined', 1, 'Motif', 1700000100);
     `);
     const snapshot = (table: string) => sqlite.prepare(`select * from ${table} order by rowid`).all();
-    const kept = ['sessions', 'request_seasons', 'request_events', 'seasons'].map((t) => [t, snapshot(t)] as const);
+    const kept = ['sessions', 'request_events', 'seasons'].map((t) => [t, snapshot(t)] as const);
     const notificationsBefore = snapshot('notifications');
 
     migrate(drizzle({ client: sqlite }), { migrationsFolder });
 
     for (const [table, rows] of kept) expect(snapshot(table)).toEqual(rows);
+    // Migration 0011 : chaque saison de demande reprend la date de sa demande.
+    expect(
+      sqlite
+        .prepare(
+          'select s.request_id, s.season_number, s.created_at = r.created_at as same from request_seasons s join requests r on r.id = s.request_id',
+        )
+        .all(),
+    ).toEqual([{ request_id: 2, season_number: 1, same: 1 }]);
     expect(snapshot('notifications')).toEqual(notificationsBefore.map((n) => ({ ...(n as object), issue_id: null })));
     expect(snapshot('users')).toEqual([
       expect.objectContaining({ id: 'a', role: 'owner', email: null, email_notifications: 1, push_notifications: 1 }),

@@ -3,12 +3,13 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { type Db, openDataDir, openDb } from '../src/server/db/index.ts';
-import { media, requestSeasons, requests } from '../src/server/db/schema.ts';
+import { media, requestSeasons, requests, seasons } from '../src/server/db/schema.ts';
 import { deleteArrServer, saveArrServer } from '../src/server/services/arr-servers.ts';
 import { requestStatesFor } from '../src/server/services/availability.ts';
 import {
   ACTIVE_CONFLICT,
   lastFailureQuery,
+  markAvailable,
   quotaUsageQuery,
   requestPageQuery,
   requestTotalsQuery,
@@ -686,6 +687,22 @@ describe('quotas', () => {
     });
   });
 
+  it('une saison ajoutée à une vieille demande en attente compte à sa date d’ajout', () => {
+    const db = openDb(':memory:');
+    upsertFromEmby(db, { id: 'a', name: 'a', avatar: null, isEmbyAdmin: false });
+    const old = seedRequest(db, {
+      userId: 'a',
+      tmdbId: 1396,
+      type: 'tv',
+      createdAt: new Date(Date.now() - 30 * DAY_MS),
+    });
+    db.insert(requestSeasons).values({ requestId: old.id, seasonNumber: 1, createdAt: old.createdAt }).run();
+    db.insert(requestSeasons).values({ requestId: old.id, seasonNumber: 2 }).run();
+    const since = new Date(Date.now() - 7 * DAY_MS);
+    expect(quotaUsageQuery(db, 'a', 'seasons', since).get()?.n).toBe(1);
+    db.$client.close();
+  });
+
   it('les requêtes de quota passent par l’index (user_id, created_at)', () => {
     const db = openDb(':memory:');
     for (const kind of ['movies', 'seasons'] as const)
@@ -1159,6 +1176,47 @@ describe('tables des demandes', () => {
     expect(() =>
       db.$client.prepare("insert into request_events (request_id, type) values (?, 'perdu')").run(id),
     ).toThrow(/CHECK constraint failed/);
+    db.$client.close();
+  });
+});
+
+describe('markAvailable', () => {
+  const setup = () => {
+    const db = openDb(':memory:');
+    upsertFromEmby(db, { id: 'a', name: 'a', avatar: null, isEmbyAdmin: false });
+    return db;
+  };
+  const statusOf = (db: Db, id: number) => db.select().from(requests).where(eq(requests.id, id)).get()?.status;
+
+  it.each(['approved', 'failed'] as const)('une demande %s dont le titre est arrivé passe « disponible »', (status) => {
+    const db = setup();
+    const { id, mediaId } = seedRequest(db, { userId: 'a', tmdbId: 1, status });
+    db.update(media).set({ status: 'available' }).where(eq(media.id, mediaId)).run();
+    expect(markAvailable(db, [mediaId], new Date())).toEqual([id]);
+    expect(statusOf(db, id)).toBe('available');
+    db.$client.close();
+  });
+
+  it('ne touche ni une demande en attente ni une demande 4K non envoyée', () => {
+    const db = setup();
+    const pending = seedRequest(db, { userId: 'a', tmdbId: 1 });
+    const fourK = seedRequest(db, { userId: 'a', tmdbId: 2, status: 'failed' });
+    db.update(requests).set({ is4k: true }).where(eq(requests.id, fourK.id)).run();
+    db.update(media).set({ status: 'available', status4k: 'available' }).run();
+    expect(markAvailable(db, [pending.mediaId, fourK.mediaId], new Date())).toEqual([]);
+    db.$client.close();
+  });
+
+  it('une série n’est disponible que si chaque saison demandée l’est', () => {
+    const db = setup();
+    const { id, mediaId } = seedRequest(db, { userId: 'a', tmdbId: 1396, type: 'tv', status: 'sent', seasons: [3] });
+    db.update(media).set({ status: 'available' }).where(eq(media.id, mediaId)).run();
+    db.insert(seasons)
+      .values([1, 2].map((seasonNumber) => ({ mediaId, seasonNumber, status: 'available' as const })))
+      .run();
+    expect(markAvailable(db, [mediaId], new Date())).toEqual([]);
+    db.insert(seasons).values({ mediaId, seasonNumber: 3, status: 'available' }).run();
+    expect(markAvailable(db, [mediaId], new Date())).toEqual([id]);
     db.$client.close();
   });
 });

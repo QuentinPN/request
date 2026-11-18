@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, getTableColumns, inArray, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   ISSUES_PAGE_SIZE,
@@ -30,6 +30,10 @@ type ListQuery = z.output<typeof issueListQuerySchema>;
 const NOT_FOUND = 'Signalement introuvable';
 /** Seule une copie présente dans la bibliothèque peut avoir un problème (le statut affiché, lui, suit les demandes). */
 const REPORTABLE: readonly LibraryStatus[] = ['available', 'partial'];
+
+/** `col = valeur`, ou `col IS NULL` : en SQL, `= NULL` ne correspond jamais. */
+const eqOrNull = (col: Parameters<typeof eq>[0], value: number | null) =>
+  value === null ? isNull(col) : eq(col, value);
 
 const selectRows = (db: Pick<Db, 'select'>) =>
   db
@@ -179,6 +183,22 @@ export function createIssues(
         throw new HttpError(400, `La saison ${input.seasonNumber} n’existe pas pour ce titre`);
     }
     const id = db.transaction((tx) => {
+      // Double clic ou requête rejouée : le même signalement encore ouvert du même membre n'est pas recréé.
+      const duplicate = tx
+        .select({ id: issues.id })
+        .from(issues)
+        .where(
+          and(
+            eq(issues.mediaId, mediaId),
+            eq(issues.userId, viewer.user.id),
+            eq(issues.status, 'open'),
+            eq(issues.type, input.type),
+            eqOrNull(issues.seasonNumber, input.seasonNumber),
+            eqOrNull(issues.episodeNumber, input.episodeNumber),
+          ),
+        )
+        .get();
+      if (duplicate) throw new HttpError(409, 'Vous avez déjà un signalement ouvert identique sur ce titre');
       const at = new Date(now());
       const created = tx
         .insert(issues)
