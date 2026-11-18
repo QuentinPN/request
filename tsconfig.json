@@ -17,6 +17,8 @@
     "moduleDetection": "force",
     "skipLibCheck": true,
     "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsconfig.tsbuildinfo",
     "paths": {
       "@/*": ["./src/client/*"],
       "@shared/*": ["./src/shared/*"]

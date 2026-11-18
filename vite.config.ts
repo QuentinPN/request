@@ -29,5 +29,6 @@ export default defineConfig({
   resolve: { alias: { '@': resolve(root, 'src/client'), '@shared': resolve(root, 'src/shared') } },
   server: { port: 3000, strictPort: true },
   build: { outDir: resolve(root, 'dist/client'), emptyOutDir: true },
-  test: { root, include: ['test/**/*.test.ts'] },
+  // 6 workers (un par cœur physique) : borne la RAM quand plusieurs sessions testent en même temps.
+  test: { root, include: ['test/**/*.test.ts'], maxWorkers: 6 },
 });
