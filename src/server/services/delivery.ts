@@ -37,7 +37,9 @@ export function createDelivery(
 
   async function deliver(created: CreatedNotifications) {
     const ids = created.rows.map((r) => r.userId);
-    const smtp = email.active();
+    // Courriel : seulement les types que le propriétaire a cochés (`smtp.events`), en plus du choix du membre.
+    const config = email.active();
+    const smtp = config?.events.includes(created.kind) ? config : null;
     const people = db
       .select({
         id: users.id,

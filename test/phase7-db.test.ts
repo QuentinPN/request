@@ -409,6 +409,7 @@ describe('réglages de la phase 7', () => {
       username: null,
       password: null,
       from: 'appli@exemple.fr',
+      events: notificationKinds,
     });
     expect(() => settingSchemas.mediaServer.parse({ kind: 'kodi', url: 'http://x', apiKey: 'k' })).toThrow();
     expect(() => settingSchemas.smtp.parse({ host: 'h', from: 'f', port: 70000 })).toThrow();

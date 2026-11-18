@@ -209,3 +209,18 @@ export function createClient(config: ClientConfig) {
     delete: <T>(path: string, schema: z.ZodType<T>, options?: RequestOptions) => send('DELETE', path, schema, options),
   };
 }
+
+/**
+ * Exécute `call` et relance toute `IntegrationError` sans son `url` : pour un service dont l'adresse porte un secret
+ * (jeton d'un webhook Discord, d'un bot Telegram dans le chemin), que `redactUrl` ne masque pas.
+ */
+export async function withoutUrl<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    if (!(error instanceof IntegrationError)) throw error;
+    throw new IntegrationError(error.kind, error.service, error.message, {
+      ...(error.status !== undefined && { status: error.status }),
+    });
+  }
+}

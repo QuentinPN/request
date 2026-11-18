@@ -34,6 +34,26 @@ export const notificationKinds = [
 ] as const;
 export type NotificationKind = (typeof notificationKinds)[number];
 
+/**
+ * Évènements que reçoivent les agents (Discord, ntfy, Telegram, webhook sortant) : ceux des demandes, plus
+ * `auto_approved` (demande approuvée sans passer par un gestionnaire, pour prévenir ceux qui suivent les demandes). Ce
+ * dernier n'est pas dans `notificationKinds` : il n'a pas de ligne dans la cloche (contrainte `CHECK` de la table).
+ */
+export const agentEventKinds = [...requestNotificationKinds, 'auto_approved'] as const;
+export type AgentEventKind = (typeof agentEventKinds)[number];
+
+/** Version des réglages d'agent écrite à chaque enregistrement : sa présence dit que `events` est un choix du propriétaire. */
+export const AGENT_EVENTS_VERSION = 2;
+
+/**
+ * Anciennes configurations d'agent (sans `eventsVersion`) : `approved` sans `auto_approved` (ajouté après) reçoit aussi
+ * les approbations automatiques, comme avant. Une configuration enregistrée depuis est prise telle quelle.
+ */
+export const withAutoApproved = <T extends { events: AgentEventKind[]; eventsVersion?: number }>(agent: T): T =>
+  agent.eventsVersion === undefined && agent.events.includes('approved') && !agent.events.includes('auto_approved')
+    ? { ...agent, events: [...agent.events, 'auto_approved'] }
+    : agent;
+
 // --- Entrées ---
 
 export const NOTIFICATIONS_PAGE_SIZE = 20;

@@ -1,5 +1,5 @@
 import type { ArrKind } from '@shared/arr-servers.ts';
-import type { RequestNotificationKind } from '@shared/notifications.ts';
+import type { AgentEventKind, NotificationKind } from '@shared/notifications.ts';
 import {
   type IntegrationKey,
   type MediaServerKind,
@@ -36,6 +36,9 @@ export type SectionId =
   | 'webhooks'
   | 'seerr'
   | 'discord'
+  | 'ntfy'
+  | 'telegram'
+  | 'outgoingWebhook'
   | 'smtp'
   | 'trakt'
   | 'api'
@@ -51,6 +54,9 @@ export const settingsSectionOrder = [
   'webhooks',
   'seerr',
   'discord',
+  'ntfy',
+  'telegram',
+  'outgoingWebhook',
   'smtp',
   'trakt',
   'api',
@@ -62,13 +68,22 @@ export const settingsSectionOrder = [
   'about',
 ] as const satisfies readonly SectionId[];
 
-/** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande (au nom du serveur multimédia choisi). */
-export const discordEventLabels = (serverName: string): Record<RequestNotificationKind, string> => ({
+/**
+ * Libellé de chaque type de notification, seule liste : évènements des agents (dans l'ordre de la frise d'une demande)
+ * et types du courriel (au nom du serveur multimédia choisi).
+ */
+export const eventLabels = (serverName: string): Record<NotificationKind | AgentEventKind, string> => ({
   requested: 'Nouvelle demande à approuver',
   approved: 'Demande approuvée',
+  auto_approved: 'Demande approuvée automatiquement',
   declined: 'Demande refusée',
   available: `Titre disponible dans ${serverName}`,
   failed: 'Échec de l’envoi à Radarr ou Sonarr',
+  requested_on_behalf: 'Demande faite à la place du membre',
+  issue_created: 'Nouveau signalement',
+  issue_commented: 'Signalement commenté',
+  issue_resolved: 'Signalement résolu',
+  issue_reopened: 'Signalement rouvert',
 });
 
 export const sectionText: Record<SectionId, { title: string; description: string }> = {
@@ -84,6 +99,12 @@ export const sectionText: Record<SectionId, { title: string; description: string
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
   seerr: { title: 'Importer depuis Seerr', description: 'Reprendre une fois les demandes de Jellyseerr ou Overseerr' },
   discord: { title: 'Notifications Discord', description: 'Facultatif : les évènements des demandes dans un salon' },
+  ntfy: { title: 'Notifications ntfy', description: 'Facultatif : les évènements des demandes sur un sujet ntfy' },
+  telegram: { title: 'Notifications Telegram', description: 'Facultatif : les évènements des demandes par un bot' },
+  outgoingWebhook: {
+    title: 'Webhook sortant',
+    description: 'Facultatif : un POST JSON à chaque évènement, pour vos propres outils',
+  },
   smtp: { title: 'Notifications par courriel', description: 'Facultatif : serveur SMTP pour écrire aux membres' },
   trakt: { title: 'Listes externes', description: 'Facultatif : import des listes de souhaits Trakt des membres' },
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },

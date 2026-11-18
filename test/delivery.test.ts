@@ -184,6 +184,18 @@ describe('distribution des notifications', () => {
     }
   });
 
+  it('courriel : seulement les types cochés dans le réglage SMTP, le push n’en dépend pas', async () => {
+    const { as, sent } = await setup({ smtp: { events: ['issue_created'] } });
+    const member = await as('member');
+    const manager = await as('manager');
+    await manager.prefer({ email: 'gestion@exemple.fr' });
+    await manager.subscribe(1);
+    await requestMovie(member);
+    const { mails, pushes } = await sent();
+    expect(mails).toEqual([]);
+    expect(pushes).toHaveLength(1);
+  });
+
   it('transaction annulée : ni courriel ni push', async () => {
     const { as, sent, data } = await setup({ smtp: {} });
     const member = await as('member');

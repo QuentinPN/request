@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { agentRequired, NTFY_DEFAULT_URL } from './agents.ts';
 import { appTitleSchema, DEFAULT_APP_TITLE } from './app-info.ts';
 import { blockedKeywordSchema } from './blocklist.ts';
 import { JOB, jobIntervalSchema } from './jobs.ts';
-import { requestNotificationKinds } from './notifications.ts';
+import { AGENT_EVENTS_VERSION, agentEventKinds, notificationKinds } from './notifications.ts';
 import { quotaRuleSchema } from './roles.ts';
 
 /** Adresse d'un service telle qu'enregistrée : sans `/` final. */
@@ -84,6 +85,27 @@ const mediaServer = service.extend({
 /** Sécurité de la connexion SMTP : aucune, STARTTLS (port 587) ou TLS implicite (port 465). */
 export const smtpSecurities = ['none', 'starttls', 'tls'] as const;
 
+/**
+ * Réglage d'un agent de notification (`shared/agents.ts`) : activé ou non, évènements envoyés (tous par défaut), et sa
+ * configuration (`shape`). Activé, il exige les champs de `required` (champ → message).
+ */
+function agent<S extends z.ZodRawShape>(shape: S, required: Record<string, string>) {
+  return z
+    .object({
+      enabled: z.boolean().default(false),
+      events: z.array(z.enum(agentEventKinds)).default([...agentEventKinds]),
+      /** Écrit par le serveur à chaque enregistrement : `events` est alors pris tel quel (`withAutoApproved`). */
+      eventsVersion: z.literal(AGENT_EVENTS_VERSION).optional(),
+      ...shape,
+    })
+    .superRefine((value, ctx) => {
+      const fields: Record<string, unknown> = value;
+      if (!fields.enabled) return;
+      for (const [field, message] of Object.entries(required))
+        if (fields[field] == null) ctx.addIssue({ code: 'custom', message, path: [field] });
+    });
+}
+
 /** Une seule définition des réglages : validée côté serveur, réutilisée par les formulaires. */
 export const settingSchemas = {
   /** Ancien réglage d'Emby, relu comme `mediaServer` de type `emby` tant que celui-ci n'existe pas (`getMediaServer`). */
@@ -98,20 +120,63 @@ export const settingSchemas = {
   }),
   tmdb: connectionSchemas.tmdb,
   /** Notifications Discord, facultatives : rien n'est envoyé tant que `enabled` est faux ou l'adresse absente. */
-  discord: z
-    .object({
+  discord: agent(
+    {
       webhookUrl: z
         .url({ protocol: /^https$/ })
         .refine(isDiscordWebhook, 'Adresse attendue : https://discord.com/api/webhooks/…')
         .nullable()
         .default(null),
-      enabled: z.boolean().default(false),
-      events: z.array(z.enum(requestNotificationKinds)).default([...requestNotificationKinds]),
-    })
-    .refine((d) => !d.enabled || d.webhookUrl !== null, {
-      message: 'Adresse du webhook requise',
-      path: ['webhookUrl'],
-    }),
+    },
+    agentRequired.discord,
+  ),
+  /** Notifications ntfy : `topic` sur `url` ; `token` (Bearer) ou `username` et `password` (Basic), tous facultatifs. */
+  ntfy: agent(
+    {
+      url: url.default(NTFY_DEFAULT_URL),
+      topic: z
+        .string()
+        .trim()
+        .regex(/^[A-Za-z0-9_-]{1,64}$/, 'Sujet : lettres, chiffres, _ et - (64 au plus)')
+        .nullable()
+        .default(null),
+      token: z.string().trim().min(1).nullable().default(null),
+      username: z.string().trim().min(1).nullable().default(null),
+      password: z.string().min(1).nullable().default(null),
+    },
+    agentRequired.ntfy,
+  ),
+  /** Notifications Telegram : bot (BotFather) qui écrit dans `chatId`, éventuellement dans un sujet (`threadId`). */
+  telegram: agent(
+    {
+      botToken: z
+        .string()
+        .trim()
+        .regex(/^\d+:[A-Za-z0-9_-]+$/, 'Jeton attendu : 123456:ABC…')
+        .nullable()
+        .default(null),
+      chatId: z.string().trim().min(1).max(64).nullable().default(null),
+      threadId: z.number().int().positive().nullable().default(null),
+      silent: z.boolean().default(false),
+    },
+    agentRequired.telegram,
+  ),
+  /**
+   * Webhook sortant : POST JSON (`OutgoingWebhookPayload`) vers `url`, avec `authorization` en en-tête `Authorization`
+   * s'il est renseigné.
+   */
+  outgoingWebhook: agent(
+    {
+      url: url.nullable().default(null),
+      authorization: z
+        .string()
+        .trim()
+        .regex(/^[\x20-\x7e]+$/, 'En-tête invalide')
+        .nullable()
+        .default(null),
+    },
+    agentRequired.outgoingWebhook,
+  ),
   /** Règles de demande : quotas par défaut, sur une fenêtre glissante (le rôle décide de l'approbation auto). */
   rules: z.object({
     defaultQuota: z
@@ -132,6 +197,8 @@ export const settingSchemas = {
     username: z.string().trim().min(1).nullable().default(null),
     password: z.string().min(1).nullable().default(null),
     from: z.string().trim().min(1, 'Expéditeur requis'),
+    /** Notifications envoyées par courriel (toutes par défaut), en plus du choix de chaque membre. */
+    events: z.array(z.enum(notificationKinds)).default([...notificationKinds]),
   }),
   /** Clés VAPID des notifications push, générées par le serveur, jamais saisies. La publique va aux navigateurs. */
   vapid: z.object({ publicKey: z.string().min(1), privateKey: z.string().min(1) }),
@@ -170,6 +237,9 @@ export const secretFields = {
   mediaServer: ['apiKey'],
   tmdb: ['apiKey'],
   discord: ['webhookUrl'],
+  ntfy: ['token', 'password'],
+  telegram: ['botToken'],
+  outgoingWebhook: ['authorization'],
   rules: [],
   webhooks: ['token'],
   smtp: ['password'],

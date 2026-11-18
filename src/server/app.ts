@@ -13,12 +13,12 @@ import { createLogBuffer, type LogBuffer, redactRequestUrl, serializeRequest } f
 import { setAppLog } from './lib/logger.ts';
 import { parseSetupToken, registerAuth } from './plugins/auth.ts';
 import { aboutRoutes } from './routes/about.ts';
+import { agentRoutes } from './routes/agents.ts';
 import { apiKeysRoutes } from './routes/api-keys.ts';
 import { arrServersRoutes } from './routes/arr-servers.ts';
 import { authRoutes } from './routes/auth.ts';
 import { blocklistRoutes } from './routes/blocklist.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
-import { discordRoutes } from './routes/discord.ts';
 import { generalRoutes } from './routes/general.ts';
 import { imageRoutes } from './routes/images.ts';
 import { importRoutes } from './routes/import.ts';
@@ -35,11 +35,11 @@ import { usersRoutes } from './routes/users.ts';
 import { watchlistRoutes } from './routes/watchlist.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
 import { type AfterCommit, createAfterCommit } from './services/after-commit.ts';
+import { type AgentsService, createAgents } from './services/agents.ts';
 import { adoptLegacyArrSettings } from './services/arr-servers.ts';
 import { type AvailabilityService, createAvailability } from './services/availability.ts';
 import { createBackups, parseBackupKeep } from './services/backup.ts';
 import { createDelivery } from './services/delivery.ts';
-import { createDiscord, type DiscordService } from './services/discord.ts';
 import { createEmail, type MailTransport, smtpTransport } from './services/email.ts';
 import { createImageCache, parseImageCacheMaxBytes } from './services/images.ts';
 import { createJobCenter, scanIntervalsOf } from './services/job-center.ts';
@@ -60,9 +60,9 @@ declare module 'fastify' {
     mediaServers: MediaServers;
     /** Statut de disponibilité des titres (serveur multimédia, Radarr, Sonarr), en cache dans `media`. */
     availability: AvailabilityService;
-    /** Notifications Discord (facultatives). */
-    discord: DiscordService;
-    /** Envois des notifications après validation (Discord, courriel, push) ; les tests les attendent avec `idle()`. */
+    /** Agents de notification (Discord, ntfy, Telegram, webhook sortant), facultatifs. */
+    agents: AgentsService;
+    /** Envois des notifications après validation (agents, courriel, push) ; les tests les attendent avec `idle()`. */
     afterCommit: AfterCommit;
     /** Journal en mémoire (dernières lignes de `app.log`, expurgées des secrets), lu par Réglages › Journaux. */
     logs: LogBuffer;
@@ -75,6 +75,8 @@ export interface Upstreams {
   imagesUrl?: string;
   /** Remplace l'hôte des webhooks Discord ; l'adresse enregistrée reste, elle, celle de discord.com. */
   discordUrl?: string;
+  /** Remplace l'hôte de l'API Telegram (api.telegram.org) ; le jeton du bot reste dans le chemin. */
+  telegramUrl?: string;
   /** Remplace l'API publique de Trakt (import des listes de souhaits). */
   traktUrl?: string;
   /** Remplace plex.tv (code PIN de connexion, comptes et amis du propriétaire d'un serveur Plex). */
@@ -158,17 +160,18 @@ export async function buildApp({
   // Canaux de notification : l'appli (`notify`), puis Discord, courriel et push après la validation de la transaction.
   const afterCommit = createAfterCommit();
   app.decorate('afterCommit', afterCommit);
-  const discord = createDiscord(data, {
+  const agents = createAgents(data, {
     tmdb: app.tmdb,
     afterCommit,
-    ...(upstreams.discordUrl && { baseUrl: upstreams.discordUrl }),
+    ...(upstreams.discordUrl && { discordUrl: upstreams.discordUrl }),
+    ...(upstreams.telegramUrl && { telegramUrl: upstreams.telegramUrl }),
   });
-  app.decorate('discord', discord);
+  app.decorate('agents', agents);
   const notificationService = createNotifications(data, { tmdb: app.tmdb });
   const email = createEmail(data, { transport: upstreams.mailTransport ?? smtpTransport, publicUrl });
   const push = createPush(data, { send: upstreams.pushSender ?? webPushSender, subject: vapidSubject(publicUrl) });
   const delivery = createDelivery(data, { afterCommit, notifications: notificationService, email, push });
-  const unsubscribe = [onRequestEvent(discord.enqueue), onNotificationsCreated(delivery.enqueue)];
+  const unsubscribe = [onRequestEvent(agents.enqueue), onNotificationsCreated(delivery.enqueue)];
   // Le balayage, la sauvegarde et les envois de notifications en cours finissent avant la fermeture de la base.
   app.addHook('onClose', async () => {
     for (const stop of unsubscribe) stop();
@@ -210,7 +213,7 @@ export async function buildApp({
   issuesRoutes(app);
   notificationsRoutes(app, { service: notificationService, email, push });
   pushRoutes(app, push);
-  discordRoutes(app, discord);
+  agentRoutes(app, agents);
   smtpRoutes(app, email);
   webhookRoutes(app, sync);
   apiKeysRoutes(app);

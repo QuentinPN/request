@@ -1,7 +1,7 @@
+import { type AgentKey, agentSettingsPath } from '@shared/agents.ts';
 import { API_KEYS_PATH, type ApiKey } from '@shared/api-keys.ts';
 import { ABOUT_PATH, aboutSchema, GENERAL_SETTINGS_PATH } from '@shared/app-info.ts';
 import { ARR_SERVERS_PATH, type ArrServer, type ArrServerInput } from '@shared/arr-servers.ts';
-import { DISCORD_SETTINGS_PATH } from '@shared/discord.ts';
 import { SMTP_SETTINGS_PATH } from '@shared/notifications.ts';
 import type { MaskedSetting, Setting, SettingInput } from '@shared/settings.ts';
 import { type SettingSection, settingPath } from '@shared/setup.ts';
@@ -38,11 +38,12 @@ export const webhooksQuery = queryOptions({
   queryFn: ({ signal }) => apiGet<WebhookSettings>(WEBHOOK_SETTINGS_PATH, undefined, signal),
 });
 
-/** Notifications Discord : l'adresse du webhook est masquée (`{ set }`), le reste est lisible (propriétaire seulement). */
-export const discordQuery = queryOptions({
-  queryKey: ['settings', 'discord'],
-  queryFn: ({ signal }) => apiGet<MaskedSetting<'discord'>>(DISCORD_SETTINGS_PATH, undefined, signal),
-});
+/** Un agent de notification (Discord, ntfy, Telegram, webhook sortant) : secrets masqués (`{ set }`), le reste lisible (propriétaire seulement). */
+export const agentQuery = <K extends AgentKey>(key: K) =>
+  queryOptions({
+    queryKey: ['settings', key],
+    queryFn: ({ signal }) => apiGet<MaskedSetting<K>>(agentSettingsPath(key), undefined, signal),
+  });
 
 /** Client ID Trakt : masqué (`{ set }`), jamais renvoyé (propriétaire seulement). */
 export const traktQuery = queryOptions({

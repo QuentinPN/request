@@ -14,6 +14,7 @@ import {
 import { withStoredSecrets } from '../src/server/services/settings.ts';
 import {
   NOTIFICATION_PREFERENCES_PATH,
+  notificationKinds,
   SERVICE_WORKER_PATH,
   SMTP_SETTINGS_PATH,
   SMTP_TEST_PATH,
@@ -71,12 +72,20 @@ describe('réglage SMTP', () => {
     expect((await manager.post(SMTP_TEST_PATH, {})).statusCode).toBe(403);
   });
 
+  it('types envoyés par courriel : tous par défaut, ceux cochés enregistrés, un type inconnu refusé', async () => {
+    const { as } = await setup();
+    const owner = await as('owner');
+    const chosen = await owner.put(SMTP_SETTINGS_PATH, { ...SMTP, events: ['issue_created', 'declined'] });
+    expect(chosen.json()).toMatchObject({ events: ['issue_created', 'declined'] });
+    expect((await owner.put(SMTP_SETTINGS_PATH, { ...SMTP, events: ['auto_approved'] })).statusCode).toBe(400);
+  });
+
   it('le mot de passe est chiffré, jamais renvoyé, gardé si le champ est vide', async () => {
     const { as, data } = await setup();
     const owner = await as('owner');
     expect((await owner.get(SMTP_SETTINGS_PATH)).statusCode).toBe(404);
     const saved = await owner.put(SMTP_SETTINGS_PATH, SMTP);
-    expect(saved.json()).toEqual({ ...SMTP, enabled: true, password: { set: true } });
+    expect(saved.json()).toEqual({ ...SMTP, enabled: true, events: notificationKinds, password: { set: true } });
     expect((await owner.get(SMTP_SETTINGS_PATH)).body).not.toContain('mot-de-passe-smtp');
     const raw = data.db.select().from(settings).where(eq(settings.key, 'smtp')).get()?.value ?? '';
     expect(raw).not.toContain('mot-de-passe-smtp');
@@ -152,6 +161,7 @@ describe('réglage SMTP', () => {
         enabled: true,
         username: null,
         password: null,
+        events: [...notificationKinds],
       };
       const attempt = email.test(config, 'proprio@exemple.fr');
       const outcome = expect(attempt).rejects.toMatchObject({

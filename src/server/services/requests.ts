@@ -228,9 +228,10 @@ function addEvent(
   actorId: string | null,
   at: Date,
   detail: string | null = null,
+  auto?: true,
 ) {
   tx.insert(requestEvents).values({ requestId, type, actorId, detail, createdAt: at }).run();
-  notifyRequestEvent(tx, { requestId, type, actorId, detail, at });
+  notifyRequestEvent(tx, { requestId, type, actorId, detail, at, auto });
 }
 
 /**
@@ -672,7 +673,12 @@ export function createRequests(
     });
   }
 
-  async function approve(id: number, actor: User, choice: ApproveRequestInput = {}): Promise<RequestDetail> {
+  async function approve(
+    id: number,
+    actor: User,
+    choice: ApproveRequestInput = {},
+    auto?: true,
+  ): Promise<RequestDetail> {
     const row = requireRow(id);
     // Serveur choisi par l'approbateur (du bon type et de la bonne qualité, sinon 400), sinon celui de la demande
     // (import Seerr), sinon le serveur par défaut. Aucun serveur : l'envoi échouera avec un message clair.
@@ -692,7 +698,7 @@ export function createRequests(
         // « Hors quota » coché ou décoché à l'approbation ; absent, la demande garde le sien.
         ...(choice.quotaExempt !== undefined && { quotaExempt: choice.quotaExempt }),
       });
-      addEvent(tx, id, 'approved', actor.id, new Date(now()));
+      addEvent(tx, id, 'approved', actor.id, new Date(now()), null, auto);
     });
     await send(id, actor);
     return detailOf(id);
@@ -863,7 +869,7 @@ export function createRequests(
     const autoApprove = is4k ? capabilities.autoApprove4k : capabilities.autoApprove;
     if (autoApprove && rowOf(outcome.id)?.status === 'pending') {
       try {
-        return { request: await approve(outcome.id, user), created: outcome.created };
+        return { request: await approve(outcome.id, user, {}, true), created: outcome.created };
       } catch (error) {
         // Double clic : un appel concurrent l'a déjà approuvée ou envoyée, on renvoie son état actuel.
         if (!(error instanceof HttpError && error.statusCode === 409)) throw error;

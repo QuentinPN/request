@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { httpRequest, IntegrationError } from './http.ts';
+import { httpRequest, withoutUrl } from './http.ts';
 
 export interface DiscordEmbed {
   title: string;
@@ -33,12 +33,7 @@ export async function postDiscord(
   options: { baseUrl?: string } = {},
 ): Promise<void> {
   const url = new URL(webhookUrl);
-  try {
-    await sendDiscord(url, embed, options.baseUrl);
-  } catch (error) {
-    if (!(error instanceof IntegrationError)) throw error;
-    throw new IntegrationError(error.kind, error.service, error.message, { status: error.status });
-  }
+  await withoutUrl(() => sendDiscord(url, embed, options.baseUrl));
 }
 
 function sendDiscord(url: URL, embed: DiscordEmbed, baseUrl: string | undefined) {

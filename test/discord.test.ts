@@ -4,7 +4,7 @@ import { openDataDir } from '../src/server/db/index.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { createSync } from '../src/server/services/sync.ts';
 import { DISCORD_SETTINGS_PATH, DISCORD_TEST_PATH } from '../src/shared/discord.ts';
-import { type RequestNotificationKind, requestNotificationKinds } from '../src/shared/notifications.ts';
+import { AGENT_EVENTS_VERSION, type AgentEventKind, agentEventKinds } from '../src/shared/notifications.ts';
 import type { RequestDetail } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { status } from './fake-server.ts';
@@ -43,7 +43,7 @@ interface DiscordMessage {
 }
 
 /** Appli branchée sur de faux TMDB, Radarr et Discord ; le webhook n'est enregistré que si `discord` est fourni. */
-async function setup(discord?: { enabled?: boolean; events?: readonly RequestNotificationKind[]; reply?: number }) {
+async function setup(discord?: { enabled?: boolean; events?: readonly AgentEventKind[]; reply?: number }) {
   const radarrState = { movies: [] as Array<{ id: number; tmdbId: number; hasFile: boolean }>, down: false };
   const tmdb = await startServer({ 'GET /movie/603': matrix });
   const radarr = await startServer({
@@ -84,7 +84,7 @@ async function setup(discord?: { enabled?: boolean; events?: readonly RequestNot
   };
   /** Messages reçus par Discord, une fois les envois planifiés terminés. */
   const sent = async () => {
-    await app.discord.idle();
+    await app.agents.idle();
     return fake.requests.map((r) => ({ path: r.path, method: r.method, message: r.body as DiscordMessage }));
   };
   return { app, data, radarrState, fake, tmdb, as, sent };
@@ -166,10 +166,30 @@ describe('messages Discord des évènements', () => {
     expect(byTitle('Échec de l’envoi')?.fields.map((f) => f.name)).toEqual(['Demandé par', 'Raison']);
   });
 
-  it('une demande d’un rôle à approbation automatique n’est pas « à approuver »', async () => {
+  it('une demande d’un rôle à approbation automatique n’est pas « à approuver » : un message d’approbation automatique', async () => {
     const { as, sent } = await setup({});
     await requestMovie(await as('auto_approve'));
-    expect((await sent()).map((m) => m.message.embeds[0]?.title)).toEqual(['Demande approuvée']);
+    expect((await sent()).map((m) => m.message.embeds[0]?.title)).toEqual(['Demande approuvée automatiquement']);
+  });
+
+  it('approbation automatique : seulement pour qui a coché cet évènement ; « approuvée » seul (ancien réglage) la reçoit aussi', async () => {
+    const approvedOnly = await setup({ events: ['approved'] });
+    await requestMovie(await approvedOnly.as('auto_approve'));
+    expect((await approvedOnly.sent()).map((m) => m.message.embeds[0]?.title)).toEqual([
+      'Demande approuvée automatiquement',
+    ]);
+
+    const declinedOnly = await setup({ events: ['declined'] });
+    await requestMovie(await declinedOnly.as('auto_approve'));
+    expect(await declinedOnly.sent()).toEqual([]);
+
+    const auto = await setup({ events: ['auto_approved'] });
+    await requestMovie(await auto.as('auto_approve'));
+    expect((await auto.sent()).map((m) => m.message.embeds[0]?.title)).toEqual(['Demande approuvée automatiquement']);
+    // Approuvée à la main : l'évènement reste « approuvée ».
+    const request = await requestMovie(await auto.as('member'));
+    await (await auto.as('owner')).post(`/api/requests/${request.id}/approve`);
+    expect(await auto.sent()).toHaveLength(1);
   });
 
   it('seuls les évènements choisis sont envoyés', async () => {
@@ -202,7 +222,14 @@ describe('messages Discord des évènements', () => {
     const { app, as, sent } = await setup({});
     const request = await requestMovie(await as('member'));
     const before = (await sent()).length;
-    app.discord.enqueue({ requestId: request.id, type: 'declined', actorId: null, detail: null, at: new Date() });
+    app.agents.enqueue({
+      requestId: request.id,
+      type: 'declined',
+      kind: 'declined',
+      actorId: null,
+      detail: null,
+      at: new Date(),
+    });
     expect(await sent()).toHaveLength(before);
   });
 
@@ -224,7 +251,7 @@ describe('réglages Discord', () => {
   it('par défaut : désactivé, tous les évènements, aucune adresse', async () => {
     const { as } = await setup();
     const response = await (await as('owner')).get(DISCORD_SETTINGS_PATH);
-    expect(response.json()).toEqual({ webhookUrl: { set: false }, enabled: false, events: requestNotificationKinds });
+    expect(response.json()).toEqual({ webhookUrl: { set: false }, enabled: false, events: agentEventKinds });
   });
 
   it('propriétaire seulement', async () => {
@@ -241,7 +268,12 @@ describe('réglages Discord', () => {
     const owner = await as('owner');
     const saved = await owner.put(DISCORD_SETTINGS_PATH, { webhookUrl: WEBHOOK, enabled: true, events: ['failed'] });
     expect(saved.statusCode).toBe(200);
-    expect(saved.json()).toEqual({ webhookUrl: { set: true }, enabled: true, events: ['failed'] });
+    expect(saved.json()).toEqual({
+      webhookUrl: { set: true },
+      enabled: true,
+      events: ['failed'],
+      eventsVersion: AGENT_EVENTS_VERSION,
+    });
     expect(saved.body).not.toContain(TOKEN);
     expect((await owner.get(DISCORD_SETTINGS_PATH)).body).not.toContain(TOKEN);
 
@@ -250,7 +282,12 @@ describe('réglages Discord', () => {
 
     // Champ vide ou absent : on garde l'adresse enregistrée.
     const kept = await owner.put(DISCORD_SETTINGS_PATH, { webhookUrl: '', enabled: false, events: ['failed'] });
-    expect(kept.json()).toEqual({ webhookUrl: { set: true }, enabled: false, events: ['failed'] });
+    expect(kept.json()).toEqual({
+      webhookUrl: { set: true },
+      enabled: false,
+      events: ['failed'],
+      eventsVersion: AGENT_EVENTS_VERSION,
+    });
     expect((await owner.put(DISCORD_SETTINGS_PATH, { enabled: true })).statusCode).toBe(200);
   });
 

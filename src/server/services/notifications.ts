@@ -2,6 +2,7 @@ import { and, count, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'd
 import type { z } from 'zod';
 import { keyOf } from '../../shared/media.ts';
 import {
+  type AgentEventKind,
   type IssueNotificationKind,
   isRequestNotificationKind,
   type markNotificationsReadSchema,
@@ -83,6 +84,12 @@ export function notificationMessage(
     case 'issue_reopened':
       return { title: 'Signalement rouvert', body: `Votre signalement sur ${quoted ?? 'un titre'} a été rouvert.` };
   }
+}
+
+/** Titre court d'un évènement d'agent : celui de la notification du membre, sauf l'approbation automatique. */
+export function agentEventTitle(kind: AgentEventKind, serverName: string): string {
+  if (kind === 'auto_approved') return 'Demande approuvée automatiquement';
+  return notificationMessage(kind, { title: null, requesterName: null, detail: null, serverName }).title;
 }
 
 // --- Écriture (dans la transaction de l'évènement) ---
@@ -172,9 +179,14 @@ export interface RequestEventFact {
   actorId: string | null;
   detail: string | null;
   at: Date;
+  /** Approbation automatique (droits du membre, aucun gestionnaire) : les agents la reçoivent comme `auto_approved`. */
+  auto?: true;
 }
 
-type RequestEventListener = (event: RequestEventFact) => void;
+/** Évènement de demande vu par les agents : `type` est celui de la frise, `kind` ce que l'agent en fait (`auto_approved`). */
+export type AgentRequestEvent = RequestEventFact & { kind: AgentEventKind };
+
+type RequestEventListener = (event: AgentRequestEvent) => void;
 const requestEventListeners = new Set<RequestEventListener>();
 
 /**
@@ -192,11 +204,11 @@ export function onRequestEvent(listener: RequestEventListener): () => void {
  * idempotente), un webhook rejoué n'en crée pas de nouvelles. Le membre qui agit n'est jamais prévenu de sa propre
  * action (approbation automatique, refus par un gestionnaire de sa propre demande). Une nouvelle demande ne prévient
  * les gestionnaires que si elle attend une approbation : pas pour un rôle à approbation automatique, ni pour des
- * saisons ajoutées à une demande déjà en attente (évènement `requested` avec détail). Les abonnés (Discord) sont
+ * saisons ajoutées à une demande déjà en attente (évènement `requested` avec détail). Les agents (Discord, ntfy, Telegram, webhook) sont
  * prévenus de ces mêmes évènements, sans l'exclusion de l'acteur : un salon n'est pas un destinataire.
  */
 export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: RequestEventFact) {
-  const { type: kind, requestId, actorId, detail, at } = event;
+  const { type: kind, requestId, actorId, detail, at, auto } = event;
   if (!isRequestNotificationKind(kind)) return;
   const request = tx
     .select({ userId: requests.userId, role: users.role })
@@ -206,7 +218,8 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
     .get();
   if (!request) return;
   if (kind === 'requested' && (detail !== null || capabilitiesOf(request.role).autoApprove)) return;
-  for (const listener of requestEventListeners) listener(event);
+  const agentEvent = { ...event, kind: auto ? ('auto_approved' as const) : kind };
+  for (const listener of requestEventListeners) listener(agentEvent);
   const recipients = RECIPIENTS[kind] === 'requester' ? [request.userId] : memberIdsWithRoles(tx, managerRoles);
   notify(tx, { kind, recipients, actorId, requestId, detail, at });
 }

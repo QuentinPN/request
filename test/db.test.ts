@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { decrypt, encrypt, loadOrCreateKey } from '../src/server/crypto.ts';
 import { openDataDir, openDb } from '../src/server/db/index.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
-import { requestNotificationKinds } from '../src/shared/notifications.ts';
+import { agentEventKinds } from '../src/shared/notifications.ts';
 import { trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
@@ -92,7 +92,7 @@ describe('réglages', () => {
   it('renvoient null si absents et appliquent les valeurs par défaut', () => {
     const db = openDb(':memory:');
     expect(getSetting(db, cryptoKey, 'emby')).toBeNull();
-    const discord = { webhookUrl: null, enabled: false, events: requestNotificationKinds };
+    const discord = { webhookUrl: null, enabled: false, events: agentEventKinds };
     expect(setSetting(db, cryptoKey, 'discord', {})).toEqual(discord);
     expect(getSetting(db, cryptoKey, 'discord')).toEqual(discord);
   });

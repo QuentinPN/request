@@ -43,3 +43,31 @@ curl -H "X-Api-Key: ur_…" https://requetes.exemple.fr/api/auth/me
 Le **statut** d'un titre (`status` dans la fiche et dans les résultats de recherche) dit s'il est disponible dans Emby, demandé, en attente d'approbation, etc. ; un titre absent de la bibliothèque et jamais demandé n'a pas de `status`.
 
 Avec une clé, ces routes voient ce que voit son créateur (un propriétaire : toutes les demandes). Les autres routes de l'application (`/api/*`) acceptent aussi la clé ; les formats exacts sont les contrats Zod de `src/shared`.
+
+## Webhook sortant (Réglages › Webhook sortant)
+
+Le propriétaire peut recevoir chaque évènement d'une demande dans ses propres outils : un `POST` JSON vers son adresse (`http` ou `https`), avec, s'il est renseigné, l'en-tête `Authorization` saisi (chiffré en base, jamais renvoyé). Un message par évènement (pas un par destinataire), envoyé après la validation de l'évènement, **sans nouvelle tentative** ; seul le statut de la réponse compte (2xx attendu, délai 5 s). Un échec est journalisé sans l'adresse ni l'en-tête et n'affecte pas la demande.
+
+Corps, toujours ces six champs (`OutgoingWebhookPayload`, `src/shared/agents.ts`) :
+
+```json
+{
+  "type": "requested",
+  "title": "Nouvelle demande à approuver",
+  "message": "Matrix (1999)\nDemandé par Alice",
+  "media": { "type": "movie", "tmdbId": 603, "title": "Matrix" },
+  "request": { "id": 12, "status": "pending" },
+  "user": { "name": "Alice" }
+}
+```
+
+| Champ     | Contenu                                                                                                                                                           |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`    | `requested`, `approved`, `auto_approved`, `declined`, `available`, `failed`, ou `test` (bouton « Tester »)                                                        |
+| `title`   | Titre court, en français (« Demande approuvée », « Demande approuvée automatiquement »…)                                                                          |
+| `message` | Lignes séparées par `\n` : titre et année, « Demandé par … », puis « Motif : … » (refus) ou « Raison : … » (échec)                                                |
+| `media`   | `{ type: "movie" \| "tv", tmdbId, title }` ; `title` vaut `null` si TMDB ne répond pas ; `null` pour `test`                                                       |
+| `request` | `{ id, status }` : statut de la demande au moment de l'envoi (`pending`, `approved`, `declined`, `cancelled`, `sent`, `failed`, `available`) ; `null` pour `test` |
+| `user`    | `{ name }` : le membre qui a demandé ; `null` pour `test`                                                                                                         |
+
+`auto_approved` : demande approuvée sans passer par un gestionnaire (droits du membre) ; il remplace `approved` pour cette demande. Chaque agent (Discord, ntfy, Telegram, webhook sortant) choisit les types qu'il reçoit.

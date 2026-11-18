@@ -1,4 +1,4 @@
-import { SMTP_SETTINGS_PATH, SMTP_TEST_PATH } from '@shared/notifications.ts';
+import { type NotificationKind, notificationKinds, SMTP_SETTINGS_PATH, SMTP_TEST_PATH } from '@shared/notifications.ts';
 import { type MaskedSetting, type SettingInput, settingSchemas, smtpSecurities } from '@shared/settings.ts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -7,6 +7,7 @@ import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
 import { CheckboxField, FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
 import { ApiError, apiSend } from '@/lib/http';
+import { EventsFieldset, toggleKind } from './agent-form';
 import { smtpSecurityOptions } from './config';
 import { smtpQuery } from './queries';
 import {
@@ -32,6 +33,7 @@ function SmtpForm({ stored, ...frame }: SectionFrameProps & { stored: Smtp | nul
   // Vide : garder le mot de passe enregistré (il ne revient jamais du serveur), même serveur et même compte seulement.
   const [password, setPassword] = useState('');
   const [from, setFrom] = useState(stored?.from ?? '');
+  const [events, setEvents] = useState<NotificationKind[]>(stored?.events ?? [...notificationKinds]);
 
   const value: SettingInput<'smtp'> = {
     enabled,
@@ -41,6 +43,7 @@ function SmtpForm({ stored, ...frame }: SectionFrameProps & { stored: Smtp | nul
     username: username.trim() || null,
     ...(password && { password }),
     from: from.trim(),
+    events,
   };
   const valid = settingSchemas.smtp.safeParse(value).success;
 
@@ -174,6 +177,13 @@ function SmtpForm({ stored, ...frame }: SectionFrameProps & { stored: Smtp | nul
           />
           <FieldHint id={field('from-hint')}>Adresse seule, ou « Nom &lt;adresse&gt; ».</FieldHint>
         </div>
+        <EventsFieldset
+          legend="Notifications envoyées par courriel"
+          kinds={notificationKinds}
+          selected={events}
+          onToggle={(kind, on) => edit(() => setEvents((current) => toggleKind(notificationKinds, current, kind, on)))}
+          hint="Décochez un type pour qu’il ne parte jamais par courriel, quel que soit le choix des membres."
+        />
         <div role="status" className="empty:hidden">
           {save.isError ? (
             <Notice tone="error">{save.error.message}</Notice>
