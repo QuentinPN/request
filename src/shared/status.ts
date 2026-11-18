@@ -27,6 +27,9 @@ export const mediaStatusShortLabel: Record<MediaStatus, string> = { ...mediaStat
 export const requestStatuses = ['pending', 'approved', 'declined', 'cancelled', 'sent', 'failed', 'available'] as const;
 export type RequestStatus = (typeof requestStatuses)[number];
 export const requestStatusSchema = z.enum(requestStatuses);
+/** Compteurs de demandes par statut, tous à 0 : point de départ des totaux (liste, statistiques, À propos). */
+export const emptyRequestCounts = () =>
+  Object.fromEntries(requestStatuses.map((s) => [s, 0])) as Record<RequestStatus, number>;
 
 /**
  * Demandes « en cours » : une seule par membre et par titre (index `requests_active`), elles couvrent leurs saisons,

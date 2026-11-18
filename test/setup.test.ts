@@ -45,6 +45,7 @@ describe('GET /api/setup/state', () => {
       hasOwner: false,
       hasMembers: false,
       complete: false,
+      appTitle: 'Request',
     });
 
     const { db, cryptoKey } = app.data;

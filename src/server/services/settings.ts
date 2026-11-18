@@ -52,6 +52,13 @@ export function getSetting<K extends SettingKey>(db: Db, cryptoKey: Buffer, key:
   return settingSchemas[key].parse(mapSecrets(key, JSON.parse(row.value), (s) => decrypt(cryptoKey, s))) as Setting<K>;
 }
 
+/** Réglages Général, ceux par défaut tant qu'ils n'ont pas été enregistrés. */
+export const getGeneral = (db: Db, cryptoKey: Buffer): Setting<'general'> =>
+  getSetting(db, cryptoKey, 'general') ?? settingSchemas.general.parse({});
+
+/** Titre de l'appli (Réglages › Général), celui par défaut tant qu'il n'a pas été choisi. Lu à chaque envoi. */
+export const getAppTitle = (db: Db, cryptoKey: Buffer) => getGeneral(db, cryptoKey).appTitle;
+
 /** Clés des réglages déjà enregistrés. */
 export function savedKeys(db: Db): Set<string> {
   return new Set(

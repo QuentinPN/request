@@ -3,7 +3,7 @@ import type { Setting } from '../../shared/settings.ts';
 import type { Data } from '../db/index.ts';
 import { HttpError } from '../lib/api-errors.ts';
 import { type OutgoingMessage, testMessage } from './delivery.ts';
-import { getSetting } from './settings.ts';
+import { getAppTitle, getSetting } from './settings.ts';
 
 type SmtpSetting = Setting<'smtp'>;
 
@@ -42,24 +42,25 @@ export const smtpTransport: MailTransport = (config) =>
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 
-const FOOTER =
-  'Vous recevez ce courriel car les notifications par courriel sont activées dans votre Compte Request.';
+const footerOf = (appTitle: string) =>
+  `Vous recevez ce courriel car les notifications par courriel sont activées dans votre Compte ${appTitle}.`;
 
 /** Courriel sobre : texte brut et HTML simple (styles en ligne), lien vers l'appli si son adresse publique est connue. */
-export function mailContent({ title, body, path }: OutgoingMessage, publicUrl: string | null) {
+export function mailContent({ title, body, path }: OutgoingMessage, publicUrl: string | null, appTitle: string) {
+  const footer = footerOf(appTitle);
   const link = publicUrl ? `${publicUrl}${path}` : null;
-  const text = [body, ...(link ? [`Ouvrir Request : ${link}`] : []), `-- \n${FOOTER}`].join('\n\n');
+  const text = [body, ...(link ? [`Ouvrir ${appTitle} : ${link}`] : []), `-- \n${footer}`].join('\n\n');
   const button = link
-    ? `<p style="margin:24px 0 0"><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#e8c9a6;color:#0a0a0c;font-weight:600;text-decoration:none">Ouvrir Request</a></p>`
+    ? `<p style="margin:24px 0 0"><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#e8c9a6;color:#0a0a0c;font-weight:600;text-decoration:none">Ouvrir ${escapeHtml(appTitle)}</a></p>`
     : '';
   const html = `<!doctype html>
 <html lang="fr"><body style="margin:0;padding:24px;background:#f2f2f5;color:#1d1d1f;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif">
 <div style="max-width:520px;margin:0 auto;padding:24px;border-radius:16px;background:#ffffff">
-<p style="margin:0 0 8px;font-size:13px;color:#6e6e73">Request</p>
+<p style="margin:0 0 8px;font-size:13px;color:#6e6e73">${escapeHtml(appTitle)}</p>
 <h1 style="margin:0 0 12px;font-size:20px;line-height:1.3">${escapeHtml(title)}</h1>
 <p style="margin:0;font-size:15px;line-height:1.5">${escapeHtml(body)}</p>${button}
 </div>
-<p style="max-width:520px;margin:16px auto 0;font-size:12px;color:#6e6e73">${escapeHtml(FOOTER)}</p>
+<p style="max-width:520px;margin:16px auto 0;font-size:12px;color:#6e6e73">${escapeHtml(footer)}</p>
 </body></html>`;
   return { subject: title, text, html };
 }
@@ -87,7 +88,9 @@ const smtpErrorMessage = (error: unknown) => {
 export function createEmail(data: Data, deps: { transport: MailTransport; publicUrl: string | null }) {
   const { db, cryptoKey } = data;
   const send = (config: SmtpSetting, to: string, message: OutgoingMessage) =>
-    deps.transport(config).sendMail({ from: config.from, to, ...mailContent(message, deps.publicUrl) });
+    deps
+      .transport(config)
+      .sendMail({ from: config.from, to, ...mailContent(message, deps.publicUrl, getAppTitle(db, cryptoKey)) });
 
   return {
     /** Réglage SMTP actif, ou `null` (jamais réglé, ou désactivé) : rien ne part alors par courriel. */
@@ -114,7 +117,10 @@ export function createEmail(data: Data, deps: { transport: MailTransport; public
           send(
             config,
             to,
-            testMessage('Le serveur SMTP fonctionne : les notifications des membres partiront par courriel.'),
+            testMessage(
+              getAppTitle(db, cryptoKey),
+              'Le serveur SMTP fonctionne : les notifications des membres partiront par courriel.',
+            ),
           ),
           deadline,
         ]);

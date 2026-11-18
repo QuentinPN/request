@@ -1,8 +1,9 @@
 import { API_KEYS_PATH, type ApiKey } from '@shared/api-keys.ts';
+import { ABOUT_PATH, aboutSchema, GENERAL_SETTINGS_PATH } from '@shared/app-info.ts';
 import { ARR_SERVERS_PATH, type ArrServer, type ArrServerInput } from '@shared/arr-servers.ts';
 import { DISCORD_SETTINGS_PATH } from '@shared/discord.ts';
 import { SMTP_SETTINGS_PATH } from '@shared/notifications.ts';
-import type { MaskedSetting, SettingInput } from '@shared/settings.ts';
+import type { MaskedSetting, Setting, SettingInput } from '@shared/settings.ts';
 import { type SettingSection, settingPath } from '@shared/setup.ts';
 import { TRAKT_SETTINGS_PATH } from '@shared/watchlist.ts';
 import { WEBHOOK_SETTINGS_PATH, type WebhookSettings } from '@shared/webhooks.ts';
@@ -48,6 +49,32 @@ export const traktQuery = queryOptions({
   queryKey: ['settings', 'trakt'],
   queryFn: ({ signal }) => apiGet<MaskedSetting<'trakt'>>(TRAKT_SETTINGS_PATH, undefined, signal),
 });
+
+/** Titre de l'application (Réglages › Général, propriétaire seulement). */
+export const generalQuery = queryOptions({
+  queryKey: ['settings', 'general'],
+  queryFn: ({ signal }) => apiGet<Setting<'general'>>(GENERAL_SETTINGS_PATH, undefined, signal),
+});
+
+/** Enregistre le titre ; l'onglet et le reste de l'appli le lisent dans l'état public de l'installation. */
+export function useSaveGeneral() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (value: SettingInput<'general'>) => apiSend<Setting<'general'>>('PUT', GENERAL_SETTINGS_PATH, value),
+    onSuccess: async (saved) => {
+      queryClient.setQueryData(generalQuery.queryKey, saved);
+      await queryClient.invalidateQueries({ queryKey: setupStateQuery.queryKey });
+    },
+  });
+}
+
+/** Version, environnement et compteurs (Réglages › À propos, propriétaire seulement). `enabled` : section ouverte. */
+export const aboutQuery = (enabled: boolean) =>
+  queryOptions({
+    queryKey: ['about'],
+    queryFn: ({ signal }) => apiGet(ABOUT_PATH, aboutSchema, signal),
+    enabled,
+  });
 
 /** Clés d'API publiques, révoquées comprises, sans leur secret (propriétaire seulement). */
 export const apiKeysQuery = queryOptions({

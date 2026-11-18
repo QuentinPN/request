@@ -40,6 +40,8 @@ export interface SetupState {
   hasMembers: boolean;
   /** Toutes les sections enregistrées et un propriétaire désigné. */
   complete: boolean;
+  /** Titre de l'appli (Réglages › Général) : public, l'onglet du navigateur le porte dès la page de connexion. */
+  appTitle: string;
 }
 
 /** Bibliothèque d'un serveur multimédia (section Plex), classée films, séries ou autre. */

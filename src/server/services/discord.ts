@@ -14,7 +14,7 @@ import type { AfterCommit } from './after-commit.ts';
 import { DEFAULT_UPSTREAM as TMDB_IMAGES_URL } from './images.ts';
 import { mediaServerName } from './media-server.ts';
 import { notificationMessage, type RequestEventFact } from './notifications.ts';
-import { getSetting } from './settings.ts';
+import { getAppTitle, getSetting } from './settings.ts';
 import { loadSummaries } from './tmdb.ts';
 
 const COLORS: Record<RequestNotificationKind | 'test', number> = {
@@ -93,7 +93,7 @@ export function createDiscord(
     /** Message de test vers cette adresse ; `IntegrationError` (message lisible) si Discord la refuse. */
     test: (webhookUrl: string) =>
       send(webhookUrl, {
-        title: 'Test de Request',
+        title: `Test de ${getAppTitle(db, cryptoKey)}`,
         description: 'Le webhook fonctionne : les notifications choisies arriveront dans ce salon.',
         color: COLORS.test,
       }),

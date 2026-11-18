@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -8,13 +8,16 @@ import { normalizeUrl } from '../shared/settings.ts';
 import type { Data } from './db/index.ts';
 import type { TmdbClient } from './integrations/tmdb.ts';
 import { apiErrorHandler, HttpError } from './lib/api-errors.ts';
+import { version } from './lib/build-info.ts';
 import { parseSetupToken, registerAuth } from './plugins/auth.ts';
+import { aboutRoutes } from './routes/about.ts';
 import { apiKeysRoutes } from './routes/api-keys.ts';
 import { arrServersRoutes } from './routes/arr-servers.ts';
 import { authRoutes } from './routes/auth.ts';
 import { blocklistRoutes } from './routes/blocklist.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
 import { discordRoutes } from './routes/discord.ts';
+import { generalRoutes } from './routes/general.ts';
 import { imageRoutes } from './routes/images.ts';
 import { importRoutes } from './routes/import.ts';
 import { issuesRoutes } from './routes/issues.ts';
@@ -83,7 +86,6 @@ export function parsePublicUrl(env: string | undefined): string | null {
 }
 
 const root = resolve(import.meta.dirname, '../..');
-const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { version: string };
 
 /** `/api`, `/api/...` et `/api?...` appartiennent à l'API, jamais à la SPA. */
 export const isApiPath = (url: string) => /^\/api(?:[/?]|$)/.test(url);
@@ -187,6 +189,8 @@ export async function buildApp({
   watchlistRoutes(app, upstreams);
   statsRoutes(app);
   blocklistRoutes(app);
+  generalRoutes(app);
+  aboutRoutes(app);
   await app.register(catalogueRoutes);
   await app.register(mediaServerRoutes);
   await app.register(

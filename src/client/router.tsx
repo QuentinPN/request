@@ -12,6 +12,7 @@ import {
 } from '@tanstack/react-router';
 import { AppShell } from '@/components/shell/app-shell';
 import { ErrorState, LoadingState } from '@/components/states';
+import { useDocumentTitle } from '@/hooks/use-document-title';
 import { browseSearch } from '@/lib/catalogue';
 import { issueSearchSchema } from '@/lib/issues';
 import { requestsSearchSchema } from '@/lib/requests';
@@ -41,9 +42,14 @@ function RouteError({ error, reset }: ErrorComponentProps) {
 
 export type RouterContext = { queryClient: QueryClient };
 
+function RootLayout() {
+  useDocumentTitle();
+  return <Outlet />;
+}
+
 // Garde global : état de l'installation et session lus avant d'afficher quoi que ce soit (aucune page protégée ne clignote).
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  component: Outlet,
+  component: RootLayout,
   beforeLoad: async ({ context: { queryClient }, location }) => {
     const [setup, viewer] = await Promise.all([
       queryClient.fetchQuery(setupStateQuery),

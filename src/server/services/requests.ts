@@ -41,6 +41,7 @@ import { capabilitiesOf, isQuotaExempt, type QuotaRule } from '../../shared/role
 import { DEFAULT_SERIES_TYPE, settingSchemas } from '../../shared/settings.ts';
 import {
   activeRequestStatuses,
+  emptyRequestCounts,
   lockedRequestStatuses,
   preSendRequestStatuses,
   type RequestEventType,
@@ -880,7 +881,7 @@ export function createRequests(
       ...(userId !== undefined && { userId }),
       ...(query.type && { title: { type: query.type, tmdbId: query.tmdbId } }),
     };
-    const totals = Object.fromEntries(requestStatuses.map((s) => [s, 0])) as RequestPage['totals'];
+    const totals: RequestPage['totals'] = emptyRequestCounts();
     for (const { status, n } of requestTotalsQuery(db, scope).all()) totals[status] = n;
     const counted: readonly RequestStatus[] = query.status ?? requestStatuses;
     const total = counted.reduce((sum, s) => sum + totals[s], 0);

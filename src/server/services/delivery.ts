@@ -15,8 +15,8 @@ export interface OutgoingMessage {
 }
 
 /** Message des « Envoyer un essai » (courriel, push) : il renvoie vers Compte, où se règlent les notifications. */
-export const testMessage = (body: string): OutgoingMessage => ({
-  title: 'Essai de Request',
+export const testMessage = (appTitle: string, body: string): OutgoingMessage => ({
+  title: `Essai de ${appTitle}`,
   body,
   path: '/compte',
 });

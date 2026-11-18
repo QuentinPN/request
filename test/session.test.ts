@@ -18,6 +18,7 @@ const fresh: SetupState = {
   hasOwner: false,
   hasMembers: false,
   complete: false,
+  appTitle: 'Request',
 };
 const embyOnly: SetupState = {
   services: { ...services(false), mediaServer: true },
@@ -25,6 +26,7 @@ const embyOnly: SetupState = {
   hasOwner: false,
   hasMembers: false,
   complete: false,
+  appTitle: 'Request',
 };
 const partial: SetupState = {
   services: { ...services(true), rules: false },
@@ -32,6 +34,7 @@ const partial: SetupState = {
   hasOwner: true,
   hasMembers: true,
   complete: false,
+  appTitle: 'Request',
 };
 const complete: SetupState = {
   services: services(true),
@@ -39,6 +42,7 @@ const complete: SetupState = {
   hasOwner: true,
   hasMembers: true,
   complete: true,
+  appTitle: 'Request',
 };
 
 describe('guardRedirect', () => {

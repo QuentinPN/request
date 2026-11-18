@@ -13,6 +13,7 @@ import { HttpError, parseRequest } from '../lib/api-errors.ts';
 import { viewerOf } from '../plugins/auth.ts';
 import { testMessage } from '../services/delivery.ts';
 import type { PushService } from '../services/push.ts';
+import { getAppTitle } from '../services/settings.ts';
 
 const USER_AGENT_MAX = 300;
 
@@ -42,7 +43,10 @@ export function pushRoutes(app: FastifyInstance, push: PushService) {
   app.post(PUSH_TEST_PATH, async (req) => {
     let reached: number;
     try {
-      reached = await push.sendTo(viewerOf(req).user.id, testMessage('Les notifications arrivent sur cet appareil.'));
+      reached = await push.sendTo(
+        viewerOf(req).user.id,
+        testMessage(getAppTitle(app.data.db, app.data.cryptoKey), 'Les notifications arrivent sur cet appareil.'),
+      );
     } catch {
       throw new HttpError(422, 'Le service de notifications du navigateur a refusé l’essai');
     }

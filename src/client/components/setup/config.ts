@@ -39,7 +39,9 @@ export type SectionId =
   | 'smtp'
   | 'trakt'
   | 'api'
-  | 'blocklist';
+  | 'blocklist'
+  | 'general'
+  | 'about';
 export const settingsSectionOrder = [
   ...sectionOrder,
   'members',
@@ -50,6 +52,8 @@ export const settingsSectionOrder = [
   'trakt',
   'api',
   'blocklist',
+  'general',
+  'about',
 ] as const satisfies readonly SectionId[];
 
 /** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande (au nom du serveur multimédia choisi). */
@@ -78,6 +82,8 @@ export const sectionText: Record<SectionId, { title: string; description: string
   trakt: { title: 'Listes externes', description: 'Facultatif : import des listes de souhaits Trakt des membres' },
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
   blocklist: { title: 'Blocages', description: 'Titres et mots-clés TMDB qui ne peuvent pas être demandés' },
+  general: { title: 'Général', description: 'Titre de l’application, affiché dans l’onglet et les messages' },
+  about: { title: 'À propos', description: 'Version, environnement et compteurs, en lecture seule' },
 };
 
 /** Service qui se teste à la connexion : une intégration (réglage) ou un serveur Radarr/Sonarr. */

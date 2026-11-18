@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { appTitleSchema, DEFAULT_APP_TITLE } from './app-info.ts';
 import { blockedKeywordSchema } from './blocklist.ts';
 import { requestNotificationKinds } from './notifications.ts';
 import { quotaRuleSchema } from './roles.ts';
@@ -142,6 +143,8 @@ export const settingSchemas = {
   }),
   /** Mots-clés TMDB bloqués : rangées Découvrir filtrées (`without_keywords`), demande refusée par le serveur. */
   blockedKeywords: z.object({ keywords: z.array(blockedKeywordSchema).default([]) }),
+  /** Titre de l'appli : onglet du navigateur, courriels et messages d'essai (jamais le logo). Pas un secret. */
+  general: z.object({ appTitle: appTitleSchema.default(DEFAULT_APP_TITLE) }),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;
@@ -164,6 +167,7 @@ export const secretFields = {
   trakt: ['clientId'],
   discover: [],
   blockedKeywords: [],
+  general: [],
 } as const satisfies { [K in SettingKey]: readonly (keyof Setting<K>)[] };
 
 export type SecretField<K extends SettingKey> = (typeof secretFields)[K][number];

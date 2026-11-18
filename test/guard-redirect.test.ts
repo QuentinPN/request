@@ -9,6 +9,7 @@ const setupOf = (hasOwner: boolean, emby: boolean, complete: boolean): SetupStat
   hasOwner,
   hasMembers: hasOwner,
   complete,
+  appTitle: 'Request',
 });
 const viewerAs = (role: Role) => ({
   id: role,

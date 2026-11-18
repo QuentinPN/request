@@ -197,12 +197,12 @@ describe('gabarit de courriel', () => {
       body: 'Votre demande de « A & B » a été approuvée.',
       path: '/titre/movie/1',
     };
-    const linked = mailContent(message, 'https://demandes.exemple.fr');
+    const linked = mailContent(message, 'https://demandes.exemple.fr', 'Request');
     expect(linked.subject).toBe('Demande approuvée');
     expect(linked.text).toContain('Ouvrir Request : https://demandes.exemple.fr/titre/movie/1');
     expect(linked.html).toContain('href="https://demandes.exemple.fr/titre/movie/1"');
     expect(linked.html).toContain('« A &amp; B »');
-    const plain = mailContent(message, null);
+    const plain = mailContent(message, null, 'Request');
     expect(plain.text).not.toContain('Ouvrir');
     expect(plain.html).not.toContain('href');
   });

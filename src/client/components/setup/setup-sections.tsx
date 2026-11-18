@@ -7,11 +7,13 @@ import { Loading } from '@/components/states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
 import { setupStateQuery } from '@/lib/session';
+import { AboutSection } from './about-section';
 import { ApiKeysSection } from './api-keys-section';
 import { ArrServersSection } from './arr-servers-section';
 import { BlocklistSection } from './blocklist-section';
 import { type SectionId, sectionOrder } from './config';
 import { DiscordSection } from './discord-section';
+import { GeneralSection } from './general-section';
 import { IntegrationSection } from './integration-section';
 import { MembersSection } from './members-section';
 import { arrServersQuery, settingQuery } from './queries';
@@ -73,6 +75,8 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <TraktSection section="trakt" open={open === 'trakt'} onToggle={() => toggle('trakt')} />
           <ApiKeysSection section="api" open={open === 'api'} onToggle={() => toggle('api')} />
           <BlocklistSection section="blocklist" open={open === 'blocklist'} onToggle={() => toggle('blocklist')} />
+          <GeneralSection section="general" open={open === 'general'} onToggle={() => toggle('general')} />
+          <AboutSection section="about" open={open === 'about'} onToggle={() => toggle('about')} />
         </>
       )}
     </div>
