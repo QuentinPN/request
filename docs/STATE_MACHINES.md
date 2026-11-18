@@ -49,7 +49,7 @@ Un commentaire ne change pas le statut (commenter un signalement résolu est per
 
 ## 4. Notifications
 
-État : `read_at` nul (non lue) → non nul (lue), sans retour. `notify()` (`server/services/notifications.ts`) écrit dans la transaction de l'évènement ; la distribution aux canaux (Discord, courriel, push) part après validation (`after-commit.ts`), sans nouvelle tentative, et n'échoue jamais la requête. Les notifications lues de plus de 90 jours sont purgées par la synchro.
+État : `read_at` nul (non lue) → non nul (lue), sans retour. `notify()` (`server/services/notifications.ts`) écrit dans la transaction de l'évènement ; la distribution aux canaux (Discord, courriel, push) part après validation (`after-commit.ts`), sans nouvelle tentative, et n'échoue jamais la requête. Les notifications lues depuis plus de 90 jours, ou non lues depuis plus de 365 jours, sont purgées par la synchro.
 
 ## 5. Abonnement push
 
@@ -103,12 +103,12 @@ Verrou en base `job_runs_running` (une exécution par tâche), libéré au déma
 | Import Seerr : saisons perdues quand le membre a déjà une demande envoyée                      | saisons non couvertes reprises dans une demande en attente            |
 | Suppression du dernier serveur Radarr/Sonarr : propriétaire renvoyé vers l'assistant           | 409 sur le dernier serveur non 4K d'un type                           |
 | Sessions expirées jamais purgées                                                               | purge au balayage complet                                             |
+| Notifications non lues jamais purgées : table non bornée                                       | non lues de plus de 365 jours purgées au balayage complet             |
 
 ## Défauts connus, non corrigés
 
 - **Membre désactivé dans le serveur multimédia** : sa session reste valide jusqu'à 30 jours d'inactivité ; il n'existe pas encore de révocation par le propriétaire (fonction à concevoir).
 - **Amorçage ouvert** : tant qu'aucun propriétaire ne s'est connecté, n'importe qui peut régler le serveur multimédia ; installer et se connecter aussitôt après le démarrage.
 - **Changement d'instance** : seul le type de serveur multimédia est figé, pas son URL.
-- **Notifications non lues** : jamais purgées.
 - **Import Seerr** : les demandes importées refusées ou envoyées n'ont pas de `decided_by` ; des saisons Seerr sur un titre dont la demande est `approved`/`failed` ne sont pas reprises (comme le 409 du parcours normal).
 - **Distribution après annulation** : course théorique très étroite (id réutilisé dans la même seconde) pouvant doubler un courriel ou un push.

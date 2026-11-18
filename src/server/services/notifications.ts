@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { keyOf } from '../../shared/media.ts';
 import {
@@ -25,8 +25,10 @@ import { loadSummaries } from './tmdb.ts';
 type ListQuery = z.output<typeof notificationListQuerySchema>;
 type ReadInput = z.output<typeof markNotificationsReadSchema>;
 
-/** Les notifications lues plus anciennes que ce délai sont supprimées par le balayage complet. */
-export const NOTIFICATION_RETENTION_MS = 90 * DAY_MS;
+/** Les notifications lues depuis plus longtemps que ce délai sont supprimées par le balayage complet. */
+export const READ_NOTIFICATION_RETENTION_MS = 90 * DAY_MS;
+/** Les notifications jamais lues, créées avant ce délai, le sont aussi (la table reste bornée). */
+export const UNREAD_NOTIFICATION_RETENTION_MS = 365 * DAY_MS;
 
 // --- Texte ---
 
@@ -256,11 +258,18 @@ export function notifyIssueEvent(tx: Pick<Db, 'select' | 'insert'>, { issueId, k
   notify(tx, { kind, recipients: to, actorId, issueId, detail: null, at });
 }
 
-/** Supprime les notifications lues créées avant `before` (balayage complet quotidien). */
-export function purgeReadNotifications(db: Db, before: Date): number {
+/** Supprime les notifications lues et non lues trop anciennes (balayage complet quotidien). */
+export function purgeOldNotifications(db: Db, now: Date): number {
+  const readBefore = new Date(+now - READ_NOTIFICATION_RETENTION_MS);
+  const unreadBefore = new Date(+now - UNREAD_NOTIFICATION_RETENTION_MS);
   return db
     .delete(notifications)
-    .where(and(isNotNull(notifications.readAt), lt(notifications.readAt, before)))
+    .where(
+      or(
+        and(isNotNull(notifications.readAt), lt(notifications.readAt, readBefore)),
+        and(isNull(notifications.readAt), lt(notifications.createdAt, unreadBefore)),
+      ),
+    )
     .run().changes;
 }
 

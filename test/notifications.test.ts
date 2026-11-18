@@ -6,9 +6,9 @@ import { type Db, openDataDir } from '../src/server/db/index.ts';
 import { notifications, requests } from '../src/server/db/schema.ts';
 import {
   createNotifications,
-  NOTIFICATION_RETENTION_MS,
   notificationMessage,
-  purgeReadNotifications,
+  purgeOldNotifications,
+  READ_NOTIFICATION_RETENTION_MS,
 } from '../src/server/services/notifications.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { createSync } from '../src/server/services/sync.ts';
@@ -325,28 +325,30 @@ describe('notifications en base', () => {
     expect(queryPlan(data.db, service.unreadQuery(member.user.id))).toContain('notifications_unread_idx');
   });
 
-  it('purge : lues de plus de 90 jours seulement', async () => {
+  it('purge : lues de plus de 90 jours, non lues de plus de 365 jours', async () => {
     const { db, as } = await setup();
     const member = await as('member');
-    const old = new Date(Date.now() - NOTIFICATION_RETENTION_MS - DAY_MS);
-    const purged = seedNotification(db, member.user.id, { createdAt: old, readAt: old });
-    const unreadOld = seedNotification(db, member.user.id, { createdAt: old });
-    const readRecent = seedNotification(db, member.user.id, { readAt: new Date() });
+    const ago = (days: number) => new Date(Date.now() - days * DAY_MS);
+    const unread400 = seedNotification(db, member.user.id, { createdAt: ago(400) });
+    const read100 = seedNotification(db, member.user.id, { createdAt: ago(100), readAt: ago(100) });
+    const unread100 = seedNotification(db, member.user.id, { createdAt: ago(100) });
+    const read30 = seedNotification(db, member.user.id, { createdAt: ago(100), readAt: ago(30) });
 
-    expect(purgeReadNotifications(db, new Date(Date.now() - NOTIFICATION_RETENTION_MS))).toBe(1);
+    expect(purgeOldNotifications(db, new Date())).toBe(2);
     const left = db
       .select({ id: notifications.id })
       .from(notifications)
       .all()
       .map((n) => n.id);
-    expect(left).toEqual([unreadOld.id, readRecent.id]);
-    expect(left).not.toContain(purged.id);
+    expect(left).toEqual([unread100.id, read30.id]);
+    expect(left).not.toContain(unread400.id);
+    expect(left).not.toContain(read100.id);
   });
 
   it('le balayage complet purge les notifications lues anciennes', async () => {
     const { app, data, db, as } = await setup();
     const member = await as('member');
-    const old = new Date(Date.now() - NOTIFICATION_RETENTION_MS - DAY_MS);
+    const old = new Date(Date.now() - READ_NOTIFICATION_RETENTION_MS - DAY_MS);
     seedNotification(db, member.user.id, { createdAt: old, readAt: old });
 
     await createSync(data, { availability: app.availability }).fullScan();
