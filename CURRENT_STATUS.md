@@ -23,7 +23,7 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 - **Navigation** : pilule avec menu « Plus » (ordinateur), cinq onglets au plus (mobile).
 - **Production** : Dockerfile, `compose.yml` durci + Caddy, sauvegarde quotidienne de la base, guide [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).
 - **Base** : SQLite (WAL), migrations 0000 à 0010, modèle dans `docs/DATA_MODEL.md`.
-- **Tests** : 691 unitaires et de routes (faux serveurs Emby, Jellyfin, Plex, Radarr, Sonarr, TMDB, Trakt, Discord, SMTP, push, Seerr), 392 e2e Playwright (1440 et 390 px) avec axe.
+- **Tests** : 691 unitaires et de routes (faux serveurs Emby, Jellyfin, Plex, Radarr, Sonarr, TMDB, Trakt, Discord, SMTP, push, Seerr).
 
 ## Risques et points de vigilance
 

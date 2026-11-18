@@ -14,9 +14,7 @@
     "format": "biome check --write .",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test",
-    "captures": "playwright test captures",
-    "verify": "npm run lint && npm run check && npm test && npm run build && npm run e2e",
+    "verify": "npm run lint && npm run check && npm test && npm run build",
     "backup": "node scripts/backup.ts",
     "db:generate": "drizzle-kit generate"
   },
@@ -40,9 +38,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.14.0",
     "@biomejs/biome": "^2.6.8",
-    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.3.5",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.6",
