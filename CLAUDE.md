@@ -42,6 +42,10 @@ This file, the project's own `.claude/skills/` and the agents above take precede
 - `systematic-debugging`, `test-driven-development` and `receiving-code-review` apply as is.
 - Database work: `database-architect` (`.claude/skills/`) before any new table, relation or migration (the `coder`/`checker` brief says to read it); `database-optimizer` when reviewing queries, indexes or a slow path. Both are generic: apply them to SQLite (WAL, `EXPLAIN QUERY PLAN`, partial and composite indexes, no server-side tuning). The data model lives in `docs/DATA_MODEL.md`.
 
+## Documentation lookup (context7)
+
+Always use the context7 MCP server (`resolve-library-id`, then `query-docs`) whenever you need library, framework, SDK or API documentation, code examples, setup or configuration steps, without being asked. Prefer it over memory and web search; fall back to web search only when context7 has no match. Delegated lookups go to `explorer`, which has the context7 tools.
+
 ## DRY (mandatory)
 
 Code MUST be DRY. Do not duplicate definitions or logic. When the same constant, type, validation, or block of logic appears in more than one place, abstract it into a shared helper/utility and reuse it. Flag copy-pasted logic and repeated literals/definitions that should be centralized.
