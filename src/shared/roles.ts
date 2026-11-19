@@ -282,6 +282,21 @@ export function memberEditRefusal(
   return missing ? `Vous ne pouvez pas accorder un droit que vous n’avez pas : ${permissionLabel(missing)}` : null;
 }
 
+/**
+ * Refus (message en français) de la suppression de `target` par `actor` (dont l'id est `actorId`), ou `null` : ni le
+ * propriétaire ni soi-même, puis la garde contre l'escalade d'une modification sans changement (`memberEditRefusal`) :
+ * on supprime qui l'on peut modifier. Même règle pour le serveur (403) et le bouton « Supprimer ce membre ».
+ */
+export function memberDeleteRefusal(
+  actor: Capabilities,
+  actorId: string | undefined,
+  target: PermissionHolder & { id: string },
+): string | null {
+  if (target.role === 'owner') return 'Le propriétaire ne se supprime pas depuis l’appli';
+  if (target.id === actorId) return 'Vous ne pouvez pas supprimer votre propre compte';
+  return memberEditRefusal(actor, target, target);
+}
+
 /** Ce que `actor` peut accorder (case modifiable), pour l'interface : la garde serveur reste `memberEditRefusal`. */
 export const canGrant = (actor: Capabilities, key: Permission): boolean =>
   actor.isOwner || (actor[key] && key !== 'canManageUsers');

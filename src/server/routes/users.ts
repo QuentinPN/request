@@ -22,6 +22,7 @@ import { revokeAllForUser } from '../services/sessions.ts';
 import { setSetting } from '../services/settings.ts';
 import {
   applyAccessChange,
+  deleteUser,
   getUser,
   importFromEmby,
   listUsers,
@@ -90,6 +91,17 @@ export function usersRoutes(app: FastifyInstance) {
       return quotaOverride !== undefined ? setQuotaOverride(tx, id, quotaOverride) : next;
     });
     return toMember(updated);
+  });
+
+  /**
+   * Supprime un membre et ses données (voir `deleteUser`) : refusé pour le propriétaire, pour soi-même et pour qui ne se
+   * modifierait pas (garde contre l'escalade). Les titres déjà envoyés restent chez Radarr et Sonarr ; le membre
+   * revient, avec les droits par défaut, à sa prochaine connexion.
+   */
+  app.delete<IdParams>(userPath(':id'), canManageUsers, async (req, reply) => {
+    const { user, capabilities } = viewerOf(req);
+    db.transaction((tx) => deleteUser(tx, capabilities, user.id, req.params.id));
+    return reply.code(204).send();
   });
 
   /**

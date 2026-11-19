@@ -136,6 +136,22 @@ export function useUpdateMember() {
   });
 }
 
+/**
+ * Suppression d'un membre (droit « Gérer les membres ») : ses demandes disparaissent, donc le statut des titres, les
+ * compteurs, les listes et les statistiques sont relus avec la liste des membres.
+ */
+export function useDeleteMember() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiSend<void>('DELETE', userPath(encodeURIComponent(id))),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: membersQuery.queryKey });
+      void client.invalidateQueries({ queryKey: ['stats'] });
+      invalidateAfterRequest(client);
+    },
+  });
+}
+
 /** Rôle et droits de plusieurs membres en une fois ; la liste renvoyée remplace celle en cache. */
 export function useBulkUpdateMembers() {
   const client = useQueryClient();

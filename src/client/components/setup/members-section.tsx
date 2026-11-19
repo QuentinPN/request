@@ -1,5 +1,5 @@
 import type { Member } from '@shared/auth.ts';
-import { type Capabilities, memberEditRefusal, roleLabels } from '@shared/roles.ts';
+import { type Capabilities, memberDeleteRefusal, memberEditRefusal, roleLabels } from '@shared/roles.ts';
 import { plural } from '@shared/text.ts';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { useViewer } from '@/hooks/use-viewer';
 import { formatDateTime, membersQuery, signOutMemberEverywhere } from '@/lib/requests';
+import { MemberDeleteDialog } from './member-delete-dialog';
 import { MemberEditDialog } from './member-edit-dialog';
 import { MemberDefaultsDialog } from './member-permissions';
 import { MembersBulkDialog } from './members-bulk-dialog';
@@ -184,6 +185,8 @@ export function MembersSection(frame: SectionFrameProps) {
   const [editing, setEditing] = useState<Member | null>(null);
   const [signingOut, setSigningOut] = useState<Member | null>(null);
   const [signedOut, setSignedOut] = useState<Member | null>(null);
+  const [deleting, setDeleting] = useState<Member | null>(null);
+  const [deleted, setDeleted] = useState<Member | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [defaultsOpen, setDefaultsOpen] = useState(false);
@@ -219,6 +222,11 @@ export function MembersSection(frame: SectionFrameProps) {
                     Droits par défaut
                   </Button>
                 </div>
+              )}
+              {deleted && (
+                <Notice tone="ok" role="status">
+                  {deleted.name} est supprimé.
+                </Notice>
               )}
               {signedOut && (
                 <Notice tone="ok" role="status">
@@ -276,7 +284,23 @@ export function MembersSection(frame: SectionFrameProps) {
                 </section>
               )}
             </div>
-            {editing && actor && <MemberEditDialog member={editing} actor={actor} onClose={() => setEditing(null)} />}
+            {editing && actor && (
+              <MemberEditDialog
+                member={editing}
+                actor={actor}
+                onClose={() => setEditing(null)}
+                onDelete={
+                  memberDeleteRefusal(actor, viewer?.id, editing) === null
+                    ? () => {
+                        setEditing(null);
+                        setDeleted(null);
+                        setDeleting(editing);
+                      }
+                    : undefined
+                }
+              />
+            )}
+            {deleting && <MemberDeleteDialog member={deleting} onClose={() => setDeleting(null)} onDone={setDeleted} />}
             {bulkOpen && actor && (
               <MembersBulkDialog
                 members={chosen}

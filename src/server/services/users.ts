@@ -5,6 +5,7 @@ import {
   type Capabilities,
   capabilitiesOf,
   effectivePermissions,
+  memberDeleteRefusal,
   memberEditRefusal,
   type PermissionOverrides,
   permissionOverridesOf,
@@ -154,6 +155,20 @@ export function getUser(db: Db, id: string): User | null {
 
 export function listUsers(db: Db): User[] {
   return db.select().from(users).orderBy(asc(users.name)).all();
+}
+
+/**
+ * Supprime un membre, dans la transaction de l'appelant, après la garde (`memberDeleteRefusal`, 403 sinon) ; inconnu →
+ * `not_found`. Les clés étrangères font le reste : sessions (le membre est déconnecté), demandes (avec saisons et
+ * frise), notifications, signalements, liste, appareils push et clés d'API disparaissent ; ce qu'il a décidé, bloqué,
+ * résolu ou commenté reste, sans auteur (`SET NULL`).
+ */
+export function deleteUser(tx: Pick<Db, 'select' | 'delete'>, actor: Capabilities, actorId: string, id: string): void {
+  const user = tx.select().from(users).where(eq(users.id, id)).get();
+  if (!user) throw new UsersError('not_found', 'Membre introuvable');
+  const refusal = memberDeleteRefusal(actor, actorId, user);
+  if (refusal) throw new UsersError('forbidden', refusal);
+  tx.delete(users).where(eq(users.id, id)).run();
 }
 
 /** Modifie un membre et le renvoie ; membre inconnu → `not_found`. */

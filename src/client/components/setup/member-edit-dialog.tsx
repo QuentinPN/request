@@ -56,10 +56,13 @@ export function MemberEditDialog({
   member,
   actor,
   onClose,
+  onDelete,
 }: {
   member: Member;
   actor: Capabilities;
   onClose: () => void;
+  /** Absent quand le serveur refuserait la suppression (`memberDeleteRefusal`) : l'action n'est alors pas proposée. */
+  onDelete?: () => void;
 }) {
   const id = useId();
   // Les quotas par défaut sont un réglage du propriétaire : les autres voient ceux d'origine.
@@ -171,6 +174,17 @@ export function MemberEditDialog({
             </Notice>
           )}
           <DialogFooter>
+            {onDelete && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-destructive hover:text-destructive sm:mr-auto"
+                onClick={onDelete}
+                disabled={save.isPending}
+              >
+                Supprimer ce membre
+              </Button>
+            )}
             <Button type="button" variant="secondary" onClick={onClose} disabled={save.isPending}>
               Annuler
             </Button>
