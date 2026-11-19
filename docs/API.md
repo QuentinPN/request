@@ -76,3 +76,21 @@ Corps, toujours ces six champs (`OutgoingWebhookPayload`, `src/shared/agents.ts`
 | `user`    | `{ name }` : le membre qui a demandé ; `null` pour `test`                                                                                                         |
 
 `auto_approved` : demande approuvée sans passer par un gestionnaire (droits du membre) ; il remplace `approved` pour cette demande. Chaque agent (Discord, ntfy, Telegram, webhook sortant) choisit les types qu'il reçoit.
+
+## Clients natifs
+
+Les applications natives (Viewer, Windows et Android TV) ouvrent une session avec le **jeton d'accès Emby ou Jellyfin** qu'elles détiennent déjà pour le membre, sans son mot de passe :
+
+```http
+POST /api/auth/emby-token
+Content-Type: application/json
+
+{ "userId": "…", "accessToken": "…", "deviceName": "Salon (Android TV)" }
+```
+
+- `userId` : id du compte (1 à 64 caractères : lettres, chiffres, `_`, `-`) ; `accessToken` : jeton du membre (1 à 512 caractères, sans espace ni guillemet) ; `deviceName` : nom de l'appareil, rogné, 1 à 64 caractères sans caractère de contrôle.
+- Request demande au serveur multimédia, avec ce jeton, s'il vaut pour `userId` (comparé sans casse ni tirets) : Jellyfin, `GET /Users/Me` ; Emby (sans `/Users/Me`), `GET /Sessions` avec un appareil de vérification neuf à chaque connexion (`request-verify-<nonce>`) : la session qu'Emby crée pour cet appareil doit appartenir à ce compte. Chaque connexion par jeton laisse une entrée « Verification Viewer » dans Emby › Appareils (rare : la session dure ensuite 30 jours), à nettoyer au besoin. Jeton refusé, autre compte, compte désactivé ou inconnu : `401`. Serveur injoignable : `502`, comme `POST /api/auth/login`.
+- Réponse `200` : `{ "token", "expiresAt", "viewer" }` (`embyTokenSessionSchema`, `src/shared/auth.ts`). Le jeton de session n'est montré qu'une fois et expire 30 jours après sa dernière utilisation. **Aucun cookie** n'est posé. Son envoi en `Authorization: Bearer` sur les autres routes arrive dans une version suivante.
+- Ni en-tête `X-Request` ni contrôle d'origine (pas de cookie, donc pas de CSRF). Limite partagée avec la connexion par mot de passe : 10 essais par adresse IP en 5 minutes, puis `429` (`Retry-After`).
+- Serveur Plex, ou aucun serveur : `400`. Corps invalide : `400`.
+- Le jeton Emby/Jellyfin n'est ni conservé ni journalisé.

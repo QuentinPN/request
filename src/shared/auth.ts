@@ -1,13 +1,14 @@
 import { z } from 'zod';
 import {
   assignableRoleSchema,
-  type Capabilities,
+  capabilitiesSchema,
   type PermissionOverrides,
   permissionKeys,
   permissionOverridesSchema,
   type QuotaOverride,
   quotaOverrideSchema,
   type Role,
+  roleSchema,
 } from './roles.ts';
 
 /**
@@ -22,6 +23,8 @@ export const CSRF_HEADERS: Readonly<Record<string, string>> = { [CSRF_HEADER]: C
 export const LOGIN_PATH = '/api/auth/login';
 export const LOGOUT_PATH = '/api/auth/logout';
 export const VIEWER_PATH = '/api/auth/me';
+/** Connexion d'un client natif (Viewer) par son jeton d'accès Emby ou Jellyfin : session renvoyée dans le corps. */
+export const EMBY_TOKEN_PATH = '/api/auth/emby-token';
 
 export const USERS_PATH = '/api/users';
 export const USERS_IMPORT_PATH = `${USERS_PATH}/import`;
@@ -39,15 +42,47 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.input<typeof loginSchema>;
 
-/** Le membre connecté, tel que le navigateur le voit. */
-export interface Viewer {
-  id: string;
-  name: string;
-  role: Role;
-  capabilities: Capabilities;
-  /** Adresse relative à l'appli (relais de l'image Emby), `null` sans photo. */
-  avatarUrl: string | null;
-}
+/** Sans caractère de contrôle (retour à la ligne, tabulation…) : le nom s'affiche dans la liste des sessions. */
+const NO_CONTROL_CHAR = /^\P{Cc}*$/u;
+/** Jeton d'accès Emby/Jellyfin (32 hexadécimaux en pratique) : ni guillemet, ni espace, ni caractère non ASCII, qui
+ * casseraient l'en-tête `Authorization: MediaBrowser … Token="…"` ou feraient échouer l'appel. */
+const ACCESS_TOKEN = /^[\w.~+/=-]+$/;
+
+export const embyTokenLoginSchema = z.object({
+  /** Id du compte que le client croit détenir : jamais cru, le serveur multimédia doit confirmer que le jeton vaut pour lui. */
+  userId: z
+    .string()
+    .trim()
+    .min(1, 'Id du compte requis')
+    .max(64)
+    .regex(/^[\w-]+$/, 'Id du compte invalide'),
+  accessToken: z.string().min(1, 'Jeton requis').max(512).regex(ACCESS_TOKEN, 'Jeton invalide'),
+  deviceName: z
+    .string()
+    .trim()
+    .min(1, "Nom de l'appareil requis")
+    .max(64)
+    .regex(NO_CONTROL_CHAR, "Nom de l'appareil invalide"),
+});
+export type EmbyTokenLogin = z.input<typeof embyTokenLoginSchema>;
+
+/** Le membre connecté, tel que le client le voit. `avatarUrl` : adresse relative à l'appli (relais de l'image Emby), `null` sans photo. */
+export const viewerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  role: roleSchema,
+  capabilities: capabilitiesSchema,
+  avatarUrl: z.string().nullable(),
+});
+export type Viewer = z.output<typeof viewerSchema>;
+
+/** Réponse de `EMBY_TOKEN_PATH` : le jeton de session (montré une seule fois), son expiration et le membre. */
+export const embyTokenSessionSchema = z.object({
+  token: z.string(),
+  expiresAt: z.iso.datetime(),
+  viewer: viewerSchema,
+});
+export type EmbyTokenSession = z.output<typeof embyTokenSessionSchema>;
 
 /** Droits de demande d'un membre : ce qu'il faut pour demander à sa place sans voir le reste de ses droits. */
 export const memberRequestKeys = [

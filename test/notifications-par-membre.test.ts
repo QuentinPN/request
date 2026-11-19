@@ -86,7 +86,10 @@ describe('migration 0014 sur une base 0013 peuplée', { timeout: 20_000 }, () =>
     expect(JSON.stringify(plan)).toContain('notifications_unread_idx');
 
     // Membres et sessions intacts (`users` n'est pas recréée : les sessions ne sont pas effacées en cascade).
-    expect(rows(sqlite, 'select * from sessions')).toEqual(sessionsBefore);
+    // Migration 0016 : les sessions existantes n'ont pas de nom d'appareil.
+    expect(rows(sqlite, 'select * from sessions')).toEqual(
+      sessionsBefore.map((s) => ({ ...(s as object), device_name: null })),
+    );
     expect(
       rows(sqlite, 'select id, role, permissions, notification_types, watchlist_auto_request from users order by id'),
     ).toEqual([

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { keyOf } from '../../shared/media.ts';
 import { mediaServerKindLabels, type ServiceConnection } from '../../shared/settings.ts';
@@ -10,8 +11,23 @@ export type EmbyConfig = ServiceConnection;
 const SERVICE = mediaServerKindLabels.emby;
 /** Nombre maximal d'identifiants par requête `AnyProviderIdEquals` (liste séparée par des virgules). */
 const PROVIDER_ID_CHUNK = 50;
-/** Forme documentée par l'API REST d'Emby 4.10 (`Emby Client=…, Device=…, DeviceId=…, Version=…`). */
-const AUTHORIZATION = 'Emby Client="Request", Device="Server", DeviceId="request", Version="1.0"';
+/**
+ * `X-Emby-Authorization`, forme documentée par l'API REST d'Emby 4.10 (`Emby Client=…, Device=…, DeviceId=…,
+ * Version=…`), avec le jeton d'un membre si besoin. Valeurs ASCII sans guillemet (le jeton est validé en amont).
+ */
+const embyAuthorization = ({
+  scheme = 'Emby',
+  device = 'Server',
+  deviceId = 'request',
+  token,
+}: {
+  scheme?: 'Emby' | 'MediaBrowser';
+  device?: string;
+  deviceId?: string;
+  token?: string;
+} = {}) =>
+  `${scheme} Client="Request", Device="${device}", DeviceId="${deviceId}", Version="1.0"${token === undefined ? '' : `, Token="${token}"`}`;
+const AUTHORIZATION = embyAuthorization();
 
 /**
  * Client d'un serveur de la famille Emby (Emby, Jellyfin) : seuls le nom et l'en-tête d'authentification diffèrent,
@@ -162,13 +178,34 @@ export async function serverIdWith(client: EmbyFamilyClient): Promise<string> {
 
 export const getEmbyServerId = (config: EmbyConfig): Promise<string> => serverIdWith(embyClient(config));
 
+/** Adresse et en-têtes d'un appel au nom d'un membre (Emby, Jellyfin : seuls le nom et l'en-tête diffèrent). */
+export interface EmbyFamilyEndpoint {
+  service: string;
+  baseUrl: string;
+  headers: Record<string, string>;
+}
+
+/** Compte qui existe mais auquel le serveur refuse l'accès : même message par mot de passe et par jeton. */
+const refusedAccount = (service: string, details: { status?: number; url?: string } = {}) =>
+  new IntegrationError('unauthorized', service, `Compte ${service} désactivé ou non autorisé`, details);
+
+/** 403 : le compte existe mais le serveur refuse l'accès (désactivé, hors horaires…), pas un mauvais identifiant. */
+const rewriteForbidden = (error: unknown): never => {
+  if (error instanceof IntegrationError && error.status === 403)
+    throw refusedAccount(error.service, {
+      status: error.status,
+      ...(error.url !== undefined && { url: error.url }),
+    });
+  throw error;
+};
+
 /**
  * `POST /Users/AuthenticateByName`, commun à Emby et Jellyfin (seuls le nom du service et l'en-tête diffèrent).
  * Le mot de passe n'est ni conservé ni journalisé ; le jeton d'accès renvoyé est écarté (Request ouvre sa propre
  * session).
  */
 export async function authenticateWith(
-  { service, baseUrl, headers }: { service: string; baseUrl: string; headers: Record<string, string> },
+  { service, baseUrl, headers }: EmbyFamilyEndpoint,
   username: string,
   password: string,
 ): Promise<EmbyUser> {
@@ -181,17 +218,82 @@ export async function authenticateWith(
     body: { Username: username, Pw: password },
     schema: authenticationSchema,
     messages: { unauthorized: `Identifiant ou mot de passe ${service} incorrect` },
-  }).catch((error: unknown) => {
-    // 403 : le compte existe mais le serveur refuse l'accès (désactivé, hors horaires…), pas un mauvais mot de passe.
-    if (error instanceof IntegrationError && error.status === 403) {
-      throw new IntegrationError(error.kind, error.service, `Compte ${service} désactivé ou non autorisé`, {
-        status: error.status,
-        ...(error.url !== undefined && { url: error.url }),
-      });
-    }
-    throw error;
-  });
+  }).catch(rewriteForbidden);
   return toEmbyUser(User);
+}
+
+/** Id de compte comparable : Emby et Jellyfin l'écrivent avec ou sans tirets, en majuscules ou non. */
+const accountKey = (id: string) => id.replaceAll('-', '').toLowerCase();
+
+/** Même refus pour un jeton inconnu et pour un jeton qui ne vaut pas pour ce compte : rien à apprendre en essayant. */
+export const tokenRefused = (service: string) => `Jeton ${service} refusé`;
+
+/**
+ * Compte lu avec le jeton d'un membre (`headers`) à `path`, qui doit être `userId` ; désactivé : refusé comme à la
+ * connexion par mot de passe. Le jeton n'est ni conservé ni journalisé.
+ */
+async function accountWithToken(
+  { service, baseUrl, headers }: EmbyFamilyEndpoint,
+  path: string,
+  userId: string,
+): Promise<EmbyUser> {
+  const user = await httpRequest({
+    service,
+    baseUrl,
+    path,
+    headers,
+    schema: userSchema,
+    messages: { unauthorized: tokenRefused(service) },
+  }).catch(rewriteForbidden);
+  if (accountKey(user.Id) !== accountKey(userId))
+    throw new IntegrationError('unauthorized', service, tokenRefused(service));
+  if (user.Policy?.IsDisabled) throw refusedAccount(service);
+  return toEmbyUser(user);
+}
+
+/**
+ * Jellyfin : `GET /Users/Me` avec le jeton du membre. Le compte est celui que le serveur associe au jeton ; `userId`
+ * annoncé par le client n'est que comparé. Pas de repli sur `/Users/{id}`, que tout jeton valide lit pour n'importe
+ * quel compte.
+ */
+export const verifyUserTokenWith = (endpoint: EmbyFamilyEndpoint, userId: string): Promise<EmbyUser> =>
+  accountWithToken(endpoint, '/Users/Me', userId);
+
+const sessionsSchema = z.array(z.object({ UserId: id.nullish(), DeviceId: z.string().nullish() }));
+
+/** Nom de l'appareil de vérification dans Emby › Appareils (ASCII : un en-tête HTTP n'est pas sûr au-delà). */
+const VERIFY_DEVICE = 'Verification Viewer';
+
+/**
+ * Emby (4.10.2 n'a pas `/Users/Me`, constaté ; `/Users/{id}` est lisible par tout jeton valide, donc ne prouve rien) :
+ * `GET /Sessions` avec le jeton dans `X-Emby-Authorization` et un appareil de vérification **neuf à chaque appel**
+ * (nonce). Emby crée la session de cet appareil, rattachée au propriétaire du jeton, et la renvoie dans la même
+ * réponse : une session à ce `DeviceId` ne peut venir que de cet appel, quelles que soient les sessions existantes ou
+ * les appels simultanés. Le jeton vaut pour `userId` si exactement une session porte cet appareil et qu'elle appartient
+ * à `userId` (administrateur comme membre) ; sinon refusé (échec fermé). Le compte (nom, administrateur, photo) est
+ * ensuite lu à `GET /Users/{id}` avec le même en-tête ; inconnu → `not_found`. Coût : une entrée d'appareil par
+ * connexion par jeton dans Emby.
+ */
+export async function verifyEmbyUserToken(config: EmbyConfig, token: string, userId: string): Promise<EmbyUser> {
+  const deviceId = `request-verify-${randomUUID().replaceAll('-', '')}`;
+  const endpoint = {
+    service: SERVICE,
+    baseUrl: config.url,
+    headers: {
+      'X-Emby-Authorization': embyAuthorization({ scheme: 'MediaBrowser', device: VERIFY_DEVICE, deviceId, token }),
+    },
+  };
+  const sessions = await httpRequest({
+    ...endpoint,
+    path: '/Sessions',
+    schema: sessionsSchema,
+    messages: { unauthorized: tokenRefused(SERVICE) },
+  }).catch(rewriteForbidden);
+  const [verified, ...others] = sessions.filter((session) => session.DeviceId === deviceId);
+  if (!verified?.UserId || others.length > 0 || accountKey(verified.UserId) !== accountKey(userId))
+    throw new IntegrationError('unauthorized', SERVICE, tokenRefused(SERVICE));
+  // Id tel qu'Emby l'écrit.
+  return accountWithToken(endpoint, `/Users/${encodeURIComponent(verified.UserId)}`, userId);
 }
 
 /** Connexion d'un membre avec ses identifiants Emby. */

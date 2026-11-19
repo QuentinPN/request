@@ -16,6 +16,7 @@ import {
   listEmbyLibraries,
   listEmbyUsers,
   testEmby,
+  verifyEmbyUserToken,
 } from './emby.ts';
 import { IntegrationError } from './http.ts';
 
@@ -71,6 +72,12 @@ export interface MediaServer {
   serverId: () => Promise<string>;
   /** Membre authentifié ; `unauthorized` si refusé. Aucun mot de passe ni jeton n'est conservé. */
   authenticate: (credentials: MemberCredentials) => Promise<MediaServerUser>;
+  /**
+   * Compte `userId`, si ce jeton d'accès vaut pour lui (clients natifs ; Emby et Jellyfin, Plex refuse) :
+   * `unauthorized` sinon, `not_found` si le serveur ne connaît pas l'appel ou le compte. Le jeton n'est ni conservé ni
+   * journalisé.
+   */
+  verifyUserToken: (token: string, userId: string) => Promise<MediaServerUser>;
   /** Comptes importables ; le propriétaire du serveur y est marqué `isAdmin`. */
   listUsers: () => Promise<MediaServerListedUser[]>;
   listLibraries: () => Promise<MediaLibrary[]>;
@@ -123,6 +130,7 @@ export function embyServer(config: Setting<'mediaServer'>): MediaServer {
       credentials.method === 'password'
         ? authenticateEmbyUser(config, credentials.username, credentials.password)
         : refuseCredentials('emby'),
+    verifyUserToken: (token, userId) => verifyEmbyUserToken(config, token, userId),
     listUsers: () => listEmbyUsers(config),
     listLibraries: () => listEmbyLibraries(config),
     lookup: {

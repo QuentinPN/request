@@ -12,17 +12,21 @@ export const SESSION_REFRESH_MS = 3600_000;
 /** Le jeton ne quitte jamais le cookie : la base ne garde que son empreinte SHA-256. */
 const hashToken = sha256Hex;
 
-/** Ouvre une session. Le jeton en clair n'est renvoyé qu'ici, une seule fois. */
+/**
+ * Ouvre une session. Le jeton en clair n'est renvoyé qu'ici, une seule fois. `deviceName` : nom de l'appareil d'un
+ * client natif (Viewer), `null` pour une session de navigateur.
+ */
 export function createSession(
   db: Db,
   userId: string,
   userAgent: string | null,
   now = new Date(),
+  deviceName: string | null = null,
 ): { token: string; expiresAt: Date } {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
   db.insert(sessions)
-    .values({ id: hashToken(token), userId, createdAt: now, lastSeenAt: now, expiresAt, userAgent })
+    .values({ id: hashToken(token), userId, createdAt: now, lastSeenAt: now, expiresAt, userAgent, deviceName })
     .run();
   return { token, expiresAt };
 }

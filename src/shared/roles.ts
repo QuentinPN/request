@@ -48,13 +48,16 @@ export const permissionKeys = [
 ] as const;
 export type Permission = (typeof permissionKeys)[number];
 
-export type Capabilities = Record<Permission, boolean> & {
+/** Droits effectifs d'un membre : la seule définition, dont dérive le type `Capabilities`. */
+export const capabilitiesSchema = z.object({
+  ...(Object.fromEntries(permissionKeys.map((key) => [key, z.boolean()])) as Record<Permission, z.ZodBoolean>),
   /** Suit ses propres demandes (liste, fiche, annulation) : tout membre connecté, quels que soient ses droits. */
-  canRequest: boolean;
-  isOwner: boolean;
+  canRequest: z.boolean(),
+  isOwner: z.boolean(),
   /** Hors quotas de demandes, par son rôle (gestionnaire, propriétaire) : pas un droit réglable. */
-  quotaExempt: boolean;
-};
+  quotaExempt: z.boolean(),
+});
+export type Capabilities = z.output<typeof capabilitiesSchema>;
 
 /** Droits que donne un rôle, avant les remplacements propres au membre. */
 export function rolePermissions(role: Role): Record<Permission, boolean> {

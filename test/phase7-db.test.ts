@@ -77,12 +77,15 @@ describe('migration 0010 (phase 7) sur une base existante', { timeout: 20_000 },
         ('b', 'declined', 1, 'Motif', 1700000100);
     `);
     const snapshot = (table: string) => sqlite.prepare(`select * from ${table} order by rowid`).all();
-    const kept = ['sessions', 'request_events', 'seasons'].map((t) => [t, snapshot(t)] as const);
+    const kept = ['request_events', 'seasons'].map((t) => [t, snapshot(t)] as const);
+    const sessionsBefore = snapshot('sessions');
     const notificationsBefore = snapshot('notifications');
 
     migrate(drizzle({ client: sqlite }), { migrationsFolder });
 
     for (const [table, rows] of kept) expect(snapshot(table)).toEqual(rows);
+    // Migration 0016 : les sessions existantes n'ont pas de nom d'appareil.
+    expect(snapshot('sessions')).toEqual(sessionsBefore.map((s) => ({ ...(s as object), device_name: null })));
     // Migration 0011 : chaque saison de demande reprend la date de sa demande.
     expect(
       sqlite

@@ -114,6 +114,8 @@ export const sessions = sqliteTable(
     expiresAt: integer({ mode: 'timestamp' }).notNull(),
     lastSeenAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
     userAgent: text(),
+    /** Nom de l'appareil d'un client natif (`POST /api/auth/emby-token`) ; `NULL` pour une session de navigateur. */
+    deviceName: text(),
   },
   (table) => [index('sessions_user_id_idx').on(table.userId), index('sessions_expires_at_idx').on(table.expiresAt)],
 );

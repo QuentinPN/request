@@ -3,7 +3,7 @@ import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { API_KEY_HEADER } from '../../shared/api-keys.ts';
 import { API_VERSION_PATH } from '../../shared/api-version.ts';
-import { CSRF_HEADER, CSRF_VALUE, LOGIN_PATH, LOGOUT_PATH } from '../../shared/auth.ts';
+import { CSRF_HEADER, CSRF_VALUE, EMBY_TOKEN_PATH, LOGIN_PATH, LOGOUT_PATH } from '../../shared/auth.ts';
 import { HEALTH_PATH } from '../../shared/health.ts';
 import { PLEX_PIN_CHECK_PATH, PLEX_PIN_PATH } from '../../shared/media-server.ts';
 import { type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
@@ -58,7 +58,15 @@ const PUBLIC_ROUTES = new Set([
   `POST ${PLEX_PIN_CHECK_PATH}`,
   `POST ${LOGOUT_PATH}`,
   `GET ${SETUP_STATE_PATH}`,
+  `POST ${EMBY_TOKEN_PATH}`,
 ]);
+/**
+ * Routes publiques des clients natifs (Viewer), sans contrôle CSRF (ni `X-Request` ni origine) : appelées par
+ * du code natif, pas par un navigateur. Le garde lit le cookie comme partout (`readViewer`), mais la route ne s'en
+ * sert pas et n'en pose aucun (la session revient dans le corps) : un formulaire d'un autre site ne peut rien y faire
+ * au nom du visiteur, et ne lirait pas la réponse (CORS).
+ */
+const NATIVE_ROUTES = new Set([`POST ${EMBY_TOKEN_PATH}`]);
 /**
  * Webhooks entrants Radarr/Sonarr, ces deux routes exactement : authentifiés par leur propre jeton (routes/webhooks.ts),
  * sans session ni en-tête CSRF (Radarr et Sonarr ne peuvent envoyer ni l'un ni l'autre).
@@ -250,7 +258,8 @@ export async function registerAuth(app: FastifyInstance, { setupToken }: { setup
     if (!url?.startsWith('/api/') || WEBHOOK_ROUTES.has(routeKey(req))) return;
     // Avant le CSRF : une requête à clé n'a pas de cookie à protéger.
     if (req.headers[API_KEY_HEADER] !== undefined) return authenticateWithApiKey(req, reply, apiKeyLimiter);
-    if (!passesCsrf(req)) return reply.code(403).send({ error: 'Requête refusée' });
+    if (!NATIVE_ROUTES.has(routeKey(req)) && !passesCsrf(req))
+      return reply.code(403).send({ error: 'Requête refusée' });
     req.viewer = readViewer(req);
     if (req.viewer) return;
     // Limite atteinte : même le bon jeton est refusé (429), sinon la limite ne freinerait pas un devinage.
