@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ArrServerSummary } from './arr-servers.ts';
 import { type MediaSummary, type MediaType, mediaTypeSchema, type Paged, type Season } from './media.ts';
+import type { Capabilities } from './roles.ts';
 import { profileId, rootFolderPath, type SeriesType, seriesTypes } from './settings.ts';
 import type { ArrTestResult } from './setup.ts';
 import {
@@ -92,14 +93,33 @@ const quotaExempt = z.boolean().optional();
  */
 const requestOptions = { is4k, forUserId: z.string().min(1).optional(), quotaExempt };
 
-/** Film, ou saisons d'une série (`'all'`, par défaut : toutes les saisons diffusées encore manquantes). */
+/**
+ * Choix d'envoi (demande avancée, approbation) : serveur du bon type et de la bonne qualité, profil de qualité et
+ * dossier racine de ce serveur. Le type de série ne vaut que pour une série.
+ */
+const sendChoiceFields = {
+  serverId: z.number().int().positive().optional(),
+  qualityProfileId: profileId.optional(),
+  rootFolderPath: rootFolderPath.optional(),
+};
+const seriesTypeField = { seriesType: z.enum(seriesTypes).optional() };
+
+/** Saisons choisies d'une série. */
+const seasonList = z.array(seasonNumber).min(1).max(100);
+
+/**
+ * Film, ou saisons d'une série (`'all'`, par défaut : toutes les saisons diffusées encore manquantes). Les choix d'envoi
+ * (« Options avancées ») demandent le droit « Demande avancée ».
+ */
 export const createRequestSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('movie'), tmdbId, ...requestOptions }),
+  z.strictObject({ type: z.literal('movie'), tmdbId, ...requestOptions, ...sendChoiceFields }),
   z.strictObject({
     type: z.literal('tv'),
     tmdbId,
-    seasons: z.union([z.literal('all'), z.array(seasonNumber).min(1).max(100)]).default('all'),
+    seasons: z.union([z.literal('all'), seasonList]).default('all'),
     ...requestOptions,
+    ...sendChoiceFields,
+    ...seriesTypeField,
   }),
 ]);
 export type CreateRequestInput = z.input<typeof createRequestSchema>;
@@ -117,14 +137,85 @@ export const declineRequestSchema = z.object({ reason: declineReason });
  * Choix de l'approbateur avant envoi ; chaque champ absent prend la valeur du serveur. `serverId` : serveur du bon type
  * et de la bonne qualité (4K ou non), par défaut celui de la demande, sinon le serveur par défaut.
  */
-export const approveRequestSchema = z.object({
-  serverId: z.number().int().positive().optional(),
-  qualityProfileId: profileId.optional(),
-  rootFolderPath: rootFolderPath.optional(),
-  seriesType: z.enum(seriesTypes).optional(),
-  quotaExempt,
-});
+export const approveRequestSchema = z.object({ ...sendChoiceFields, ...seriesTypeField, quotaExempt });
 export type ApproveRequestInput = z.input<typeof approveRequestSchema>;
+
+/**
+ * Modification d'une demande en attente : ses saisons (série ; au moins une, sinon on l'annule) et ses choix d'envoi.
+ * Un choix d'envoi présent remplace tout celui enregistré (un champ absent revient à la valeur du serveur) ; aucun : il
+ * reste tel quel.
+ */
+export const updateRequestSchema = z
+  .strictObject({ seasons: seasonList.optional(), ...sendChoiceFields, ...seriesTypeField })
+  .refine((input) => Object.values(input).some((v) => v !== undefined), 'Rien à modifier');
+export type UpdateRequestInput = z.input<typeof updateRequestSchema>;
+
+/** Choix d'envoi d'une entrée (création, modification, approbation). */
+export type SendChoiceInput = Pick<
+  ApproveRequestInput,
+  'serverId' | 'qualityProfileId' | 'rootFolderPath' | 'seriesType'
+>;
+const SEND_CHOICE_KEYS = ['serverId', 'qualityProfileId', 'rootFolderPath', 'seriesType'] as const;
+
+/** L'entrée porte-t-elle un choix d'envoi ? */
+export const hasSendChoice = (input: SendChoiceInput) => SEND_CHOICE_KEYS.some((key) => input[key] !== undefined);
+
+/**
+ * Qui peut faire des choix d'envoi : le droit « Demande avancée » ; en modification d'une demande en attente, aussi le
+ * droit de gérer les demandes.
+ */
+export const canChooseSend = (capabilities: Capabilities, editing = false) =>
+  capabilities.canAdvancedRequest || (editing && capabilities.canManageRequests);
+
+/**
+ * Un niveau de choix d'envoi. `serverId` absent : le niveau vaut pour n'importe quel serveur ; présent : ses profil,
+ * dossier et type de série ne valent que si c'est le serveur retenu (ceux d'un autre serveur n'y existent pas).
+ */
+export interface SendChoiceLayer {
+  serverId?: number | null | undefined;
+  qualityProfileId?: number | null | undefined;
+  rootFolderPath?: string | null | undefined;
+  seriesType?: SeriesType | null | undefined;
+}
+
+/** Choix d'envoi seul, à envoyer : sans les autres champs de l'entrée ni les valeurs absentes. */
+export const sendChoiceOf = (layer: SendChoiceLayer): SendChoiceInput =>
+  Object.fromEntries(SEND_CHOICE_KEYS.flatMap((key) => (layer[key] == null ? [] : [[key, layer[key]]])));
+
+/** Début du détail de l'évènement `requested` d'une modification (frise : « Modifiée par X »). */
+export const REQUEST_EDITED_DETAIL = 'Demande modifiée';
+
+/** Choix enregistré sur une demande (serveur, profil, dossier, type de série). */
+export const storedSendChoice = (request: {
+  serverId: number | null;
+  qualityProfileId: number | null;
+  rootFolder: string | null;
+  seriesType: SeriesType | null;
+}): SendChoiceLayer => ({
+  serverId: request.serverId,
+  qualityProfileId: request.qualityProfileId,
+  rootFolderPath: request.rootFolder,
+  seriesType: request.seriesType,
+});
+
+/**
+ * Ordre de priorité des choix d'envoi, le seul endroit où il est défini (voir DECISIONS.md) : niveaux du plus fort au
+ * plus faible, d'ordinaire 1. choix du gestionnaire à l'approbation, 2. choix enregistré sur la demande, 3. valeurs par
+ * défaut du serveur. Le serveur retenu est le premier donné (sinon `fallbackServerId`, le serveur par défaut) ; chaque
+ * autre champ prend la première valeur d'un niveau qui vaut pour ce serveur.
+ */
+export function resolveSendChoice(layers: readonly SendChoiceLayer[], fallbackServerId?: number) {
+  const serverId = layers.find((layer) => layer.serverId != null)?.serverId ?? fallbackServerId;
+  const applies = layers.filter((layer) => layer.serverId == null || layer.serverId === serverId);
+  const pick = <K extends keyof SendChoiceLayer>(key: K) =>
+    applies.map((layer) => layer[key]).find((value) => value != null) ?? undefined;
+  return {
+    serverId: serverId ?? undefined,
+    qualityProfileId: pick('qualityProfileId') as number | undefined,
+    rootFolderPath: pick('rootFolderPath') as string | undefined,
+    seriesType: pick('seriesType') as SeriesType | undefined,
+  };
+}
 
 export const REQUEST_BATCH_MAX = 100;
 const batchIds = z.array(requestId).min(1).max(REQUEST_BATCH_MAX);
@@ -207,7 +298,7 @@ export interface RequestView {
   rootFolder: string | null;
   seriesType: SeriesType | null;
   is4k: boolean;
-  /** Serveur Radarr/Sonarr choisi à l'approbation ; `null` = serveur par défaut au moment de l'envoi. */
+  /** Serveur Radarr/Sonarr choisi (demande avancée, approbation) ; `null` = serveur par défaut au moment de l'envoi. */
   server: { id: number; name: string } | null;
   /** ISO 8601. */
   createdAt: string;
@@ -249,9 +340,10 @@ export interface SendOptions {
   serverId: number;
   qualityProfiles: ArrTestResult['qualityProfiles'];
   rootFolders: ArrTestResult['rootFolders'];
-  /** Profil et dossier par défaut : ceux de l'anime si `anime`. */
+  /** Profil, dossier et type de série par défaut : ceux de l'anime si `anime` ; type de série `null` pour Radarr. */
   defaultProfileId: number;
   defaultFolder: string;
+  defaultSeriesType: SeriesType | null;
   /** Série d'animation d'un serveur qui route les animes : ses valeurs par défaut sont celles de l'anime. */
   anime: boolean;
 }

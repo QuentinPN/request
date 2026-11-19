@@ -7,8 +7,11 @@ import {
   type RequestDetail,
   type RequestView,
   requestPath,
+  resolveSendChoice,
+  type SendChoiceLayer,
   type SendOptions,
   sendOptionsPath,
+  storedSendChoice,
 } from '@shared/requests.ts';
 import type { RequestStatus } from '@shared/status.ts';
 import { keepPreviousData, queryOptions, useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
@@ -95,6 +98,34 @@ export function useSendOptions(targets: readonly SendTarget[]) {
   return (target: SendTarget) =>
     results[unique.findIndex((t) => targetKey(t).join(':') === targetKey(target).join(':'))];
 }
+
+/** Choix d'envoi enregistré sur une demande (demande avancée, import Seerr), pour pré-remplir l'approbation. */
+export const requestSendChoice = (request: RequestView): SendChoiceLayer =>
+  storedSendChoice({ ...request, serverId: request.server?.id ?? null });
+
+export type ShownSendChoice = ReturnType<typeof resolveSendChoice>;
+
+/**
+ * Valeurs d'envoi affichées : les niveaux de `resolveSendChoice` (choix en cours, puis choix enregistré), puis les
+ * valeurs par défaut des listes du serveur retenu, s'il y en a.
+ */
+export const shownSendChoice = (
+  options: SendOptions | null | undefined,
+  layers: readonly SendChoiceLayer[],
+): ShownSendChoice =>
+  options
+    ? resolveSendChoice(
+        [
+          ...layers,
+          {
+            qualityProfileId: options.defaultProfileId,
+            rootFolderPath: options.defaultFolder,
+            seriesType: options.defaultSeriesType,
+          },
+        ],
+        options.serverId,
+      )
+    : resolveSendChoice(layers);
 
 /** Nom du profil de qualité ; « Par défaut » tant que la liste n'est pas connue (en chargement, service muet). */
 export const profileName = (options: SendOptions | null | undefined, id: number | null | undefined) =>

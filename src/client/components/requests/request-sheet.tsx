@@ -1,23 +1,38 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { cn } from 'cn';
-import { X } from 'lucide-react';
-import { createContext, type FormEvent, type ReactNode, useCallback, useContext, useId, useRef, useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
+import {
+  createContext,
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { MemberOption } from '../../../shared/auth.ts';
 import type { MediaDetails, MediaSummary, Season } from '../../../shared/media.ts';
 import {
   type CreateRequestInput,
+  canChooseSend,
   isAiredSeason,
   isoDay,
   isRequestable,
   type RequestDetail,
   type RequestQuota,
+  type RequestView,
   requestableSeasons,
+  sendChoiceOf,
+  type UpdateRequestInput,
 } from '../../../shared/requests.ts';
 import { autoApproves, requestRefusal } from '../../../shared/roles.ts';
 import { lockedRequestStatuses } from '../../../shared/status.ts';
 import { plural } from '../../../shared/text.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
+import { requestSendChoice, type SendChoice, sendOptionsQuery, shownSendChoice } from '../../lib/approvals.ts';
 import { blockLabel } from '../../lib/blocklist.ts';
 import { mediaQuery, regularSeasons, seasonMeta, seasonTitle, summaryMeta } from '../../lib/catalogue.ts';
 import { errorMessage } from '../../lib/http.ts';
@@ -29,6 +44,7 @@ import {
   requestProgress,
   requestQuotaQuery,
   useCreateRequest,
+  useUpdateRequest,
 } from '../../lib/requests.ts';
 import { ChoiceRow } from '../choice-row.tsx';
 import { StatusPill } from '../media/status-pill.tsx';
@@ -40,8 +56,14 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { CheckboxRow, Input, Label } from '../ui/field.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { RequestThumb } from './request-progress.tsx';
+import { SendChoiceFields } from './send-choice-fields.tsx';
 
-const RequestSheetContext = createContext<((media: MediaSummary, is4k: boolean) => void) | null>(null);
+/** Ouvre la feuille : nouvelle demande d'un titre (`open`), ou modification d'une demande en attente (`edit`). */
+interface RequestSheetActions {
+  open: (media: MediaSummary, is4k: boolean) => void;
+  edit: (request: RequestView & { media: MediaSummary }) => void;
+}
+const RequestSheetContext = createContext<RequestSheetActions | null>(null);
 
 /** Titre de la fiche (saisons connues) ou d'une affiche, d'un hero, d'une liste (résumé seul) : voir `isRequestable`. */
 export type RequestableMedia = MediaSummary | MediaDetails;
@@ -53,11 +75,11 @@ export type RequestableMedia = MediaSummary | MediaDetails;
  * déjà demandée reste fermée.
  */
 export function useRequestAction(media: RequestableMedia | undefined): (() => void) | undefined {
-  const open = useContext(RequestSheetContext);
+  const sheet = useContext(RequestSheetContext);
   const viewer = useViewer();
   const inFlight = useOwnRequestInFlight(media, false);
   if (
-    !open ||
+    !sheet ||
     !media ||
     media.blocked ||
     inFlight ||
@@ -66,7 +88,21 @@ export function useRequestAction(media: RequestableMedia | undefined): (() => vo
     !isRequestable(media, isoDay())
   )
     return undefined;
-  return () => open(media, false);
+  return () => sheet.open(media, false);
+}
+
+/**
+ * Action « Modifier » d'une demande en attente : à son demandeur, ou à un gestionnaire (le serveur applique la même
+ * règle). `undefined` s'il n'y a rien à modifier (film sans droit de choisir l'envoi) ou si TMDB n'a pas répondu.
+ */
+export function useEditRequestAction(request: RequestView | undefined): (() => void) | undefined {
+  const sheet = useContext(RequestSheetContext);
+  const viewer = useViewer();
+  if (!sheet || !viewer || request?.status !== 'pending' || !request.media) return undefined;
+  if (request.requester.id !== viewer.id && !viewer.capabilities.canManageRequests) return undefined;
+  if (request.type === 'movie' && !canChooseSend(viewer.capabilities, true)) return undefined;
+  const editable = { ...request, media: request.media };
+  return () => sheet.edit(editable);
 }
 
 /**
@@ -113,11 +149,11 @@ const can4k = (viewer: ReturnType<typeof useViewer>, media: MediaDetails | undef
 
 /** Action « Demander en 4K » de la fiche (voir `can4k`) : ouvre la feuille en 4K. */
 export function useRequest4kAction(media: MediaDetails | undefined): (() => void) | undefined {
-  const open = useContext(RequestSheetContext);
+  const sheet = useContext(RequestSheetContext);
   const viewer = useViewer();
   const inFlight = useOwnRequestInFlight(media, true);
-  if (!open || inFlight || !can4k(viewer, media)) return undefined;
-  return () => open(media, true);
+  if (!sheet || inFlight || !can4k(viewer, media)) return undefined;
+  return () => sheet.open(media, true);
 }
 
 /** Saison vue en 4K : statut, progression et épisodes de la version 4K à la place de ceux de la version normale. */
@@ -135,25 +171,31 @@ export const bottomSheet = cn(
 
 /** Feuille de demande, montée une fois pour toute l'appli : affiches, hero et fiche l'ouvrent par `useRequestAction`. */
 export function RequestSheetProvider({ children }: { children: ReactNode }) {
-  const [media, setMedia] = useState<MediaSummary | null>(null);
-  const [is4k, setIs4k] = useState(false);
+  // Titre, version et, en modification, la demande en attente.
+  const [target, setTarget] = useState<{ media: MediaSummary; is4k: boolean; editing?: RequestView } | null>(null);
   const [open, setOpen] = useState(false);
   // Chaque ouverture repart d'un formulaire neuf (sélection, erreur, confirmation).
   const [session, setSession] = useState(0);
-  const show = useCallback((next: MediaSummary, fourK: boolean) => {
-    setMedia(next);
-    setIs4k(fourK);
+  const show = useCallback((next: NonNullable<typeof target>) => {
+    setTarget(next);
     setSession((n) => n + 1);
     setOpen(true);
   }, []);
+  const actions = useMemo<RequestSheetActions>(
+    () => ({
+      open: (media, is4k) => show({ media, is4k }),
+      edit: (request) => show({ media: request.media, is4k: request.is4k, editing: request }),
+    }),
+    [show],
+  );
   return (
-    <RequestSheetContext value={show}>
+    <RequestSheetContext value={actions}>
       {children}
       <Dialog open={open} onOpenChange={setOpen}>
-        {media && (
+        {target && (
           <DialogContent showCloseButton={false} className={bottomSheet}>
             <SheetHandle />
-            <RequestForm key={session} media={media} is4k={is4k} onClose={() => setOpen(false)} />
+            <RequestForm key={session} {...target} onClose={() => setOpen(false)} />
           </DialogContent>
         )}
       </Dialog>
@@ -193,7 +235,18 @@ export function SheetHeader({
   );
 }
 
-function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; is4k: boolean; onClose: () => void }) {
+function RequestForm({
+  media,
+  is4k: opened4k,
+  editing,
+  onClose,
+}: {
+  media: MediaSummary;
+  is4k: boolean;
+  /** Demande en attente à modifier : ni changement de version, ni « pour un autre », ni « Hors quota ». */
+  editing?: RequestView | undefined;
+  onClose: () => void;
+}) {
   // Détails lus aussi pour un film : ils disent si la 4K se demande (`fourK`).
   const details = useQuery(mediaQuery(media.type, media.tmdbId));
   const viewer = useViewer();
@@ -202,9 +255,9 @@ function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; 
   const [forUser, setForUser] = useState<MemberOption | null>(null);
   const [quotaExempt, setQuotaExempt] = useState(false);
   // Choix de la version quand les deux se demandent ; ouverte en 4K depuis la fiche, la version normale peut être déjà là.
-  const choice = can4k(viewer, details.data) && isRequestable(details.data, isoDay());
+  const choice = !editing && can4k(viewer, details.data) && isRequestable(details.data, isoDay());
   // Changer de version repart d'une sélection neuve (les saisons manquantes ne sont pas les mêmes).
-  const bodyProps = { media, is4k, onClose, forUser, quotaExempt };
+  const bodyProps = { media, is4k, onClose, forUser, quotaExempt, editing };
   let body: ReactNode;
   // Bloqué (liste ou mot-clé, connu par la fiche) : le serveur refuserait, la feuille le dit d'emblée.
   if (details.data?.blocked)
@@ -236,7 +289,7 @@ function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; 
         posterPath={media.posterPath}
         eyebrow={
           <>
-            {media.type === 'movie' ? 'Demander un film' : 'Demander une série'}
+            {editing ? 'Modifier la demande' : media.type === 'movie' ? 'Demander un film' : 'Demander une série'}
             {is4k && ' en 4K'}
           </>
         }
@@ -244,7 +297,7 @@ function RequestForm({ media, is4k: opened4k, onClose }: { media: MediaSummary; 
         description={summaryMeta(media).join(' · ')}
       />
       {choice && <QualityChoice is4k={is4k} onChange={setIs4k} />}
-      {!details.data?.blocked && (
+      {!details.data?.blocked && !editing && (
         <ManagerOptions
           forUser={forUser}
           onForUser={setForUser}
@@ -383,6 +436,7 @@ function RequestBody({
   onClose,
   forUser,
   quotaExempt,
+  editing,
 }: {
   media: MediaSummary;
   details?: MediaDetails;
@@ -391,49 +445,72 @@ function RequestBody({
   /** Membre pour qui demander (`null` : soi-même) : son quota et son approbation automatique s'appliquent. */
   forUser: MemberOption | null;
   quotaExempt: boolean;
+  /** Demande en attente modifiée : ses saisons restent cochables, seules les saisons ajoutées comptent au quota. */
+  editing?: RequestView | undefined;
 }) {
   const day = isoDay();
+  const viewer = useViewer();
   // Demande 4K : les saisons déjà là, en cours ou demandées le sont en 4K, la version normale ne compte pas.
   const seasons = details ? regularSeasons(details.seasons).map((s) => (is4k ? seasonIn4k(s) : s)) : [];
-  const missing = requestableSeasons(seasons, day).map((s) => s.seasonNumber);
-  // « Toutes les saisons manquantes » présélectionné.
-  const [selected, setSelected] = useState<Set<number>>(() => new Set(missing));
-  const mutation = useCreateRequest();
+  const own = editing?.seasons ?? [];
+  const missing = [...new Set([...requestableSeasons(seasons, day).map((s) => s.seasonNumber), ...own])].sort(
+    (a, b) => a - b,
+  );
+  // « Toutes les saisons manquantes » présélectionné ; en modification, les saisons de la demande.
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(editing ? own : missing));
+  // Choix d'envoi (« Options avancées ») ; en modification, celui enregistré sur la demande.
+  const [choice, setChoice] = useState<SendChoice>(() => (editing ? sendChoiceOf(requestSendChoice(editing)) : {}));
+  const created = useCreateRequest();
+  const updated = useUpdateRequest();
+  const mutation = editing ? updated : created;
   const submitting = useRef(false);
-  const quota = useQuery(requestQuotaQuery(forUser?.id));
-  const viewer = useViewer();
+  // Quota du demandeur : le sien, celui du membre choisi, ou en modification celui du membre de la demande.
+  const quotaOf = editing ? (editing.requester.id === viewer?.id ? undefined : editing.requester.id) : forUser?.id;
+  const quota = useQuery(requestQuotaQuery(quotaOf));
   const capabilities = forUser ?? viewer?.capabilities;
-  // Pour un autre membre : ses droits à lui (le serveur refuse sinon, 403).
-  const refusal = capabilities ? requestRefusal(capabilities, { type: media.type, is4k }) : null;
+  // Pour un autre membre : ses droits à lui (le serveur refuse sinon, 403). Une modification ne change pas de type.
+  const refusal = capabilities && !editing ? requestRefusal(capabilities, { type: media.type, is4k }) : null;
+  const canChoose = !!viewer && canChooseSend(viewer.capabilities, !!editing);
 
   const isTv = media.type === 'tv';
-  const wanted = isTv ? selected.size : 1;
+  const wanted = isTv ? [...selected].filter((n) => !own.includes(n)).length : editing ? 0 : 1;
+  const exempt = quotaExempt || !!editing?.quotaExempt;
   const usage = quota.data && !quota.data.exempt ? quota.data[isTv ? 'seasons' : 'movies'] : undefined;
-  const overQuota = !quotaExempt && usage !== undefined && wanted > usage.remaining;
-  const disabled = wanted === 0 || overQuota || refusal !== null || mutation.isPending;
+  const overQuota = !exempt && usage !== undefined && wanted > usage.remaining;
+  const sorted = [...selected].sort((a, b) => a - b);
+  const chosen = canChoose ? sendChoiceOf(choice) : {};
+  const changes: UpdateRequestInput = { ...(isTv && { seasons: sorted }), ...chosen };
+  const empty = isTv ? selected.size === 0 : !!editing && Object.keys(changes).length === 0;
+  const disabled = empty || overQuota || refusal !== null || mutation.isPending;
 
   if (mutation.data) return <RequestSent request={mutation.data} media={media} onClose={onClose} />;
 
+  const settled = {
+    onSettled: () => {
+      submitting.current = false;
+    },
+  };
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     // Double clic ou Entrée répétée : une seule demande part.
     if (submitting.current || disabled) return;
     submitting.current = true;
+    if (editing) {
+      updated.mutate({ id: editing.id, input: changes }, settled);
+      return;
+    }
     // `is4k` seulement pour une demande 4K : absent, le serveur en fait une demande normale.
     const options = {
       ...(is4k && { is4k }),
       ...(forUser && { forUserId: forUser.id }),
       // Case cochée puis membre exempté de quota : elle est masquée, rien à envoyer.
       ...(quotaExempt && quota.data?.exempt === false && { quotaExempt }),
+      ...chosen,
     };
     const input: CreateRequestInput = isTv
-      ? { type: 'tv', tmdbId: media.tmdbId, seasons: [...selected].sort((a, b) => a - b), ...options }
+      ? { type: 'tv', tmdbId: media.tmdbId, seasons: sorted, ...options }
       : { type: 'movie', tmdbId: media.tmdbId, ...options };
-    mutation.mutate(input, {
-      onSettled: () => {
-        submitting.current = false;
-      },
-    });
+    created.mutate(input, settled);
   };
 
   const toggle = (n: number) =>
@@ -443,9 +520,11 @@ function RequestBody({
       return next;
     });
 
-  const submitLabel = `${
-    isTv ? `Demander ${wanted > 0 ? plural(wanted, 'saison', 'saisons') : 'des saisons'}` : 'Demander ce film'
-  }${is4k ? ' en 4K' : ''}`;
+  const submitLabel = editing
+    ? 'Enregistrer les modifications'
+    : `${
+        isTv ? `Demander ${wanted > 0 ? plural(wanted, 'saison', 'saisons') : 'des saisons'}` : 'Demander ce film'
+      }${is4k ? ' en 4K' : ''}`;
 
   return (
     <form onSubmit={onSubmit} className="grid gap-5">
@@ -459,14 +538,31 @@ function RequestBody({
           onToggleAll={(all) => setSelected(new Set(all ? missing : []))}
         />
       )}
-      <QuotaNotice
-        quota={quotaExempt ? undefined : quota.data}
-        isTv={isTv}
-        wanted={wanted}
-        arr={arrName(media.type, is4k)}
-        autoApprove={!!capabilities && autoApproves(capabilities, { type: media.type, is4k })}
-        member={forUser?.name ?? null}
-      />
+      {editing && isTv && selected.size === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Gardez au moins une saison : pour tout retirer, annulez la demande.
+        </p>
+      )}
+      {canChoose && (
+        <AdvancedOptions
+          media={media}
+          is4k={is4k}
+          choice={choice}
+          onChoice={(patch) => setChoice((prev) => ({ ...prev, ...patch }))}
+          disabled={mutation.isPending}
+        />
+      )}
+      {(!editing || isTv) && (
+        <QuotaNotice
+          // Modification sans saison ajoutée : rien ne compte, pas d'alerte de quota atteint.
+          quota={exempt || (editing && wanted === 0) ? undefined : quota.data}
+          isTv={isTv}
+          wanted={wanted}
+          arr={arrName(media.type, is4k)}
+          autoApprove={!editing && !!capabilities && autoApproves(capabilities, { type: media.type, is4k })}
+          member={editing ? (quotaOf ? editing.requester.name : null) : (forUser?.name ?? null)}
+        />
+      )}
       {refusal && (
         <Notice tone="error" role="alert">
           {forUser ? `${forUser.name} : ${refusal}.` : `${refusal}.`}
@@ -484,6 +580,76 @@ function RequestBody({
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * « Options avancées » (droit « Demande avancée ») : serveur, profil, dossier et type de série, repliées par défaut.
+ * Listes lues à l'ouverture seulement ; sans choix, l'approbation prendra les valeurs du serveur.
+ */
+function AdvancedOptions({
+  media,
+  is4k,
+  choice,
+  onChoice,
+  disabled,
+}: {
+  media: MediaSummary;
+  is4k: boolean;
+  choice: SendChoice;
+  onChoice: (patch: SendChoice) => void;
+  disabled: boolean;
+}) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const target = {
+    type: media.type,
+    is4k,
+    serverId: choice.serverId,
+    tmdbId: media.type === 'tv' ? media.tmdbId : undefined,
+  };
+  const options = useQuery({ ...sendOptionsQuery(target), enabled: open });
+  const arr = arrName(media.type, is4k);
+  let content: ReactNode;
+  if (options.data)
+    content = (
+      <SendChoiceFields
+        service={arr}
+        options={options.data}
+        value={shownSendChoice(options.data, [choice])}
+        onChoice={onChoice}
+        disabled={disabled || options.isPlaceholderData}
+      />
+    );
+  else if (options.data === null) content = <Notice tone="info">Aucun serveur {arr} n’est configuré.</Notice>;
+  else if (options.isError)
+    content = (
+      <Notice tone="error" role="alert">
+        {errorMessage(options.error, 'Les options d’envoi n’ont pas pu se charger.')}
+      </Notice>
+    );
+  else
+    content = (
+      <div role="status" className="space-y-2">
+        <span className="sr-only">Chargement des options d’envoi…</span>
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+      </div>
+    );
+  return (
+    <div className="grid gap-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex min-h-10 items-center justify-between gap-3 rounded-(--r-button) text-[13px] font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring"
+      >
+        Options avancées
+        <ChevronDown aria-hidden className={cn('size-[18px] transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && <div id={id}>{content}</div>}
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import { ChipGroup, FilterChip } from '@/components/media/title-parts';
 import { Notice } from '@/components/notice';
 import { QueryState } from '@/components/query-state';
 import { RequestStatusPill, RequestStepBar, RequestThumb } from '@/components/requests/request-progress';
+import { useEditRequestAction } from '@/components/requests/request-sheet';
 import { EmptyState, Loading } from '@/components/states';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -118,6 +119,7 @@ const rowGrid = 'min-w-0 grow lg:grid lg:grid-cols-[minmax(0,1fr)_300px_170px] l
 /** Hors de ses propres demandes : pas d'annulation, et la liste de tous les membres dit de qui est chaque demande. */
 function RequestRow({ request, scope, viewerId }: { request: RequestView; scope: Scope; viewerId?: string }) {
   const progress = requestProgress(request, useMediaServerName());
+  const edit = useEditRequestAction(request);
   const title = request.media?.title ?? 'Titre inconnu';
   return (
     <li className={rowBox}>
@@ -152,7 +154,12 @@ function RequestRow({ request, scope, viewerId }: { request: RequestView; scope:
           Demandée le {formatDay(request.createdAt)}
         </p>
       </div>
-      <div className="shrink-0 self-start text-right empty:max-lg:hidden lg:w-24 lg:self-center">
+      <div className="flex shrink-0 flex-col items-end gap-2 self-start empty:max-lg:hidden lg:w-[200px] lg:flex-row lg:justify-end lg:self-center">
+        {edit && (
+          <Button variant="secondary" size="sm" onClick={edit}>
+            Modifier<span className="sr-only"> la demande de {title}</span>
+          </Button>
+        )}
         {request.status === 'pending' && scope.own && <CancelRequest request={request} />}
       </div>
     </li>

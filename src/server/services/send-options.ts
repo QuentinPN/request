@@ -1,7 +1,7 @@
 import { arrLabel, hasAnimeRoute } from '../../shared/arr-servers.ts';
 import { isAnime, type MediaType } from '../../shared/media.ts';
-import type { ApproveRequestInput, SendOptions } from '../../shared/requests.ts';
-import type { SeriesType } from '../../shared/settings.ts';
+import type { SendChoiceInput, SendOptions } from '../../shared/requests.ts';
+import { DEFAULT_SERIES_TYPE, type SeriesType } from '../../shared/settings.ts';
 import type { Data } from '../db/index.ts';
 import { arrKindOf, findOrCreateMemberTag, listArrOptions, mergeTags } from '../integrations/arr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
@@ -114,18 +114,16 @@ export async function sendOptions(
     ...options,
     defaultProfileId: destination.qualityProfileId,
     defaultFolder: destination.rootFolderPath,
+    defaultSeriesType: type === 'tv' ? (destination.seriesType ?? DEFAULT_SERIES_TYPE) : null,
     anime: anime && hasAnimeRoute(server),
   };
 }
 
 /**
- * Profil et dossier choisis par l'approbateur : ils doivent exister sur le serveur d'envoi, sinon 400 et rien n'est
- * envoyé. Sans choix (valeurs du serveur, lots, approbation automatique), aucun appel.
+ * Profil et dossier choisis (approbateur, demande avancée) : ils doivent exister sur le serveur d'envoi, sinon 400 et
+ * rien n'est enregistré ni envoyé. Sans choix (valeurs du serveur, lots, approbation automatique), aucun appel.
  */
-export async function assertSendChoice(
-  server: ArrServerConfig,
-  { qualityProfileId, rootFolderPath }: ApproveRequestInput,
-) {
+export async function assertSendChoice(server: ArrServerConfig, { qualityProfileId, rootFolderPath }: SendChoiceInput) {
   if (qualityProfileId === undefined && rootFolderPath === undefined) return;
   const options = await listArrOptions(server.type, server);
   if (qualityProfileId !== undefined && !options.qualityProfiles.some((p) => p.id === qualityProfileId))

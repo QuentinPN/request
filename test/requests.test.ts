@@ -839,6 +839,7 @@ describe('approbation et envoi', () => {
       ],
       defaultProfileId: 2,
       defaultFolder: '/series',
+      defaultSeriesType: 'standard',
       anime: false,
     };
     for (const role of ['owner', 'manager'] as const) {

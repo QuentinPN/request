@@ -31,6 +31,7 @@ import {
   type RequestView,
   requestListParams,
   requestPath,
+  type UpdateRequestInput,
 } from '../../shared/requests.ts';
 import type { Setting } from '../../shared/settings.ts';
 import {
@@ -207,6 +208,16 @@ export function useCreateRequest() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateRequestInput) => apiSend<RequestDetail>('POST', REQUESTS_PATH, input),
+    onSuccess: () => invalidateAfterRequest(client),
+  });
+}
+
+/** Modification d'une demande en attente (saisons, choix d'envoi). */
+export function useUpdateRequest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: UpdateRequestInput }) =>
+      apiSend<RequestDetail>('PATCH', requestPath(id), input),
     onSuccess: () => invalidateAfterRequest(client),
   });
 }

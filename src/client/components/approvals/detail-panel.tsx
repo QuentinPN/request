@@ -1,12 +1,18 @@
 import type { RequestView } from '@shared/requests.ts';
 import { cn } from 'cn';
-import { type ReactNode, useId, useState } from 'react';
-import { ExternalServerLink } from '@/components/external-server-link';
+import { type ReactNode, useState } from 'react';
 import { Notice } from '@/components/notice';
-import { formatBytes } from '@/components/setup/config';
+import { SendChoiceFields } from '@/components/requests/send-choice-fields';
 import { Button } from '@/components/ui/button';
-import { CheckboxRow, FieldHint, Label, NativeSelect } from '@/components/ui/field';
-import { type ApprovalTab, profileName, type SendChoice, type SendOptions } from '@/lib/approvals';
+import { CheckboxRow } from '@/components/ui/field';
+import {
+  type ApprovalTab,
+  profileName,
+  requestSendChoice,
+  type SendChoice,
+  type SendOptions,
+  shownSendChoice,
+} from '@/lib/approvals';
 import { arrName, formatWhen, requestArrName, requestMeta, requestStatusLabel, requestTitle } from '@/lib/requests';
 import { approveClass, parseReason, ReasonField, Requester, RequestPoster } from './request-parts';
 
@@ -19,7 +25,10 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Profil et dossier d'envoi : listes du service, ou réglages par défaut tant qu'elles ne sont pas connues. */
+/**
+ * Serveur, profil, dossier et type de série d'envoi : listes du service, pré-remplies avec le choix enregistré sur la
+ * demande ; réglages par défaut tant qu'elles ne sont pas connues.
+ */
 function SendTo({
   request,
   options,
@@ -33,79 +42,20 @@ function SendTo({
   onChoice: (patch: SendChoice) => void;
   disabled: boolean;
 }) {
-  const id = useId();
-  const service = arrName(request.type, request.is4k);
   if (!options)
     return (
       <p className="text-sm text-muted-foreground">
         Envoi à {requestArrName(request)} avec le profil et le dossier par défaut des réglages.
       </p>
     );
-  const folder = choice.rootFolderPath ?? options.defaultFolder;
-  const free = options.rootFolders.find((f) => f.path === folder)?.freeSpace;
-  const server = options.servers.find((s) => s.id === options.serverId);
   return (
-    <fieldset className="space-y-4" disabled={disabled}>
-      <legend className="mb-3 text-[13px] font-semibold">Envoyer à {server?.name ?? service}</legend>
-      {options.servers.length > 1 && (
-        <div>
-          <Label htmlFor={`${id}-server`} className="font-medium text-muted-foreground">
-            Serveur {service}
-          </Label>
-          <NativeSelect
-            id={`${id}-server`}
-            value={options.serverId}
-            // Profils et dossiers sont propres à chaque serveur : ceux du nouveau serveur reprennent leurs défauts.
-            onChange={(event) =>
-              onChoice({ serverId: Number(event.target.value), qualityProfileId: undefined, rootFolderPath: undefined })
-            }
-          >
-            {options.servers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.isDefault ? `${s.name} (par défaut)` : s.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
-      )}
-      {server?.externalUrl && <ExternalServerLink service={service} href={server.externalUrl} />}
-      <div>
-        <Label htmlFor={`${id}-profile`} className="font-medium text-muted-foreground">
-          Profil de qualité
-        </Label>
-        <NativeSelect
-          id={`${id}-profile`}
-          value={choice.qualityProfileId ?? options.defaultProfileId}
-          onChange={(event) => onChoice({ qualityProfileId: Number(event.target.value) })}
-        >
-          {options.qualityProfiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {profile.name}
-            </option>
-          ))}
-        </NativeSelect>
-        {options.anime && (
-          <FieldHint>Série d’animation : valeurs par défaut des réglages anime de {server?.name}.</FieldHint>
-        )}
-      </div>
-      <div>
-        <Label htmlFor={`${id}-folder`} className="font-medium text-muted-foreground">
-          Dossier racine
-        </Label>
-        <NativeSelect
-          id={`${id}-folder`}
-          value={folder}
-          onChange={(event) => onChoice({ rootFolderPath: event.target.value })}
-        >
-          {options.rootFolders.map((f) => (
-            <option key={f.id} value={f.path}>
-              {f.path}
-            </option>
-          ))}
-        </NativeSelect>
-        {free !== undefined && <FieldHint>Espace libre : {formatBytes(free)}</FieldHint>}
-      </div>
-    </fieldset>
+    <SendChoiceFields
+      service={arrName(request.type, request.is4k)}
+      options={options}
+      value={shownSendChoice(options, [choice, requestSendChoice(request)])}
+      onChoice={onChoice}
+      disabled={disabled}
+    />
   );
 }
 
