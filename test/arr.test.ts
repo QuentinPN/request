@@ -114,6 +114,7 @@ describe('Radarr : films', () => {
       rootFolderPath: '/movies',
       minimumAvailability: 'released',
       search: true,
+      tags: [],
     });
     expect(result).toEqual({ radarrId: 42 });
     const body = requests.find((r) => r.method === 'POST')?.body as Record<string, unknown>;
@@ -133,7 +134,9 @@ describe('Radarr : films', () => {
     const { config, requests } = await serve({
       'GET /api/v3/movie/lookup/tmdb': { ...fixture('radarr-lookup'), id: 9 },
     });
-    expect(await addMovie(config, { tmdbId: 603, qualityProfileId: 1, rootFolderPath: '/m', search: true })).toEqual({
+    expect(
+      await addMovie(config, { tmdbId: 603, qualityProfileId: 1, rootFolderPath: '/m', search: true, tags: [] }),
+    ).toEqual({
       radarrId: 9,
     });
     expect(requests.some((r) => r.method === 'POST')).toBe(false);
@@ -145,7 +148,9 @@ describe('Radarr : films', () => {
       'POST /api/v3/movie': status(400, [{ errorMessage: 'This movie has already been added' }]),
       'GET /api/v3/movie': [{ id: 77, tmdbId: 603, hasFile: false, monitored: true }],
     });
-    expect(await addMovie(config, { tmdbId: 603, qualityProfileId: 1, rootFolderPath: '/m', search: true })).toEqual({
+    expect(
+      await addMovie(config, { tmdbId: 603, qualityProfileId: 1, rootFolderPath: '/m', search: true, tags: [] }),
+    ).toEqual({
       radarrId: 77,
     });
   });
@@ -157,7 +162,7 @@ describe('Radarr : films', () => {
       'GET /api/v3/movie': [],
     });
     const error = await failure(
-      addMovie(config, { tmdbId: 603, qualityProfileId: 1, rootFolderPath: '/m', search: true }),
+      addMovie(config, { tmdbId: 603, qualityProfileId: 1, rootFolderPath: '/m', search: true, tags: [] }),
     );
     expect(error.status).toBe(400);
   });
@@ -185,6 +190,7 @@ describe('Sonarr : séries', () => {
     seriesType: 'standard' as const,
     seasons: [1, 3],
     search: true,
+    tags: [],
   };
 
   it('lookupSeries interroge par tvdb: ; série inconnue → not_found', async () => {

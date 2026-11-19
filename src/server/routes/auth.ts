@@ -14,7 +14,7 @@ import { checkPlexPin, createPlexPin, type PlexPin, plexAuthUrl } from '../integ
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
 import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
 import { endSession, refreshSessionCookie, startSession, viewerOf } from '../plugins/auth.ts';
-import { toViewer, upsertFromEmby } from '../services/users.ts';
+import { memberDefaultsOf, toViewer, upsertFromEmby } from '../services/users.ts';
 
 export const LOGIN_LIMIT = { limit: 10, windowMs: 5 * 60_000 };
 /** Codes PIN Plex en attente gardés au plus (les plus anciens oubliés d'abord) : la mémoire reste bornée. */
@@ -68,12 +68,12 @@ export function authRoutes(app: FastifyInstance) {
         throw new HttpError(credentials.method === 'plex' && error.status === 403 ? 403 : 401, error.message);
       throw error;
     });
-    const user = upsertFromEmby(app.data.db, {
-      id: member.id,
-      name: member.name,
-      avatar: member.avatarUrl,
-      isEmbyAdmin: member.isAdmin,
-    });
+    const user = upsertFromEmby(
+      app.data.db,
+      { id: member.id, name: member.name, avatar: member.avatarUrl, isEmbyAdmin: member.isAdmin },
+      new Date(),
+      memberDefaultsOf(app.data),
+    );
     startSession(req, reply, user.id);
     return toViewer(user);
   }

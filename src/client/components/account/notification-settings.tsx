@@ -1,12 +1,22 @@
-import { type NotificationPreferencesView, notificationPreferencesSchema } from '@shared/notifications.ts';
+import {
+  type NotificationKind,
+  type NotificationPreferencesView,
+  notificationGroupLabels,
+  notificationGroups,
+  notificationKinds,
+  notificationPreferencesSchema,
+  notificationTypes,
+} from '@shared/notifications.ts';
 import { useQuery } from '@tanstack/react-query';
 import { BellRing } from 'lucide-react';
 import { type FormEvent, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
+import { eventLabels } from '@/components/setup/config';
 import { ErrorState, Loading } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { CheckboxField, FieldHint, Input, Label } from '@/components/ui/field';
+import { CheckboxField, CheckboxRow, FieldHint, Input, Label } from '@/components/ui/field';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMediaServerName } from '@/lib/media-server';
 import {
   type DevicePushState,
   devicePushQuery,
@@ -91,12 +101,52 @@ function DevicePush({ devices }: { devices: number }) {
   );
 }
 
+/** Types que le membre peut recevoir (ceux de `stored.types`), groupés : une case par type, valable pour les trois canaux. */
+function NotificationTypes({
+  value,
+  onChange,
+}: {
+  value: Partial<Record<NotificationKind, boolean>>;
+  onChange: (kind: NotificationKind, enabled: boolean) => void;
+}) {
+  const labels = eventLabels(useMediaServerName());
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h3 className="text-sm font-semibold">Types de notification</h3>
+        <FieldHint>Un type décoché n’arrive ni dans la cloche, ni par courriel, ni en push.</FieldHint>
+      </div>
+      {notificationGroups.map((group) => {
+        const kinds = notificationKinds.filter((kind) => kind in value && notificationTypes[kind].group === group);
+        if (kinds.length === 0) return null;
+        return (
+          <fieldset key={group} className="flex flex-col gap-2">
+            <legend className="mb-2 text-[13px] font-semibold text-muted-foreground">
+              {notificationGroupLabels[group]}
+            </legend>
+            {kinds.map((kind) => (
+              <CheckboxRow
+                key={kind}
+                checked={value[kind] === true}
+                onChange={(checked) => onChange(kind, checked)}
+                label={labels[kind]}
+                hint={notificationTypes[kind].hint}
+              />
+            ))}
+          </fieldset>
+        );
+      })}
+    </div>
+  );
+}
+
 function PreferencesForm({ stored }: { stored: NotificationPreferencesView }) {
   const id = useId();
   const save = useSaveNotificationPreferences();
   const [email, setEmail] = useState(stored.email ?? '');
   const [emailNotifications, setEmailNotifications] = useState(stored.emailNotifications);
   const [pushNotifications, setPushNotifications] = useState(stored.pushNotifications);
+  const [types, setTypes] = useState(stored.types);
 
   const typed = email.trim();
   const emailError = typed !== '' && !emailSchema.safeParse(typed).success ? 'Adresse invalide' : null;
@@ -106,7 +156,7 @@ function PreferencesForm({ stored }: { stored: NotificationPreferencesView }) {
   };
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (!emailError) save.mutate({ email: typed || null, emailNotifications, pushNotifications });
+    if (!emailError) save.mutate({ email: typed || null, emailNotifications, pushNotifications, types });
   };
 
   return (
@@ -143,8 +193,12 @@ function PreferencesForm({ stored }: { stored: NotificationPreferencesView }) {
         <CheckboxField checked={pushNotifications} onChange={(e) => edit(() => setPushNotifications(e.target.checked))}>
           Sur mes appareils (notifications push)
         </CheckboxField>
-        <FieldHint>Elles restent toujours dans la cloche de l’appli.</FieldHint>
+        <FieldHint>Ces deux canaux s’ajoutent à la cloche de l’appli.</FieldHint>
       </fieldset>
+      <NotificationTypes
+        value={types}
+        onChange={(kind, enabled) => edit(() => setTypes({ ...types, [kind]: enabled }))}
+      />
       <div role="status" className="empty:hidden">
         {save.isError ? (
           <Notice tone="error">{save.error.message}</Notice>
@@ -161,7 +215,7 @@ function PreferencesForm({ stored }: { stored: NotificationPreferencesView }) {
   );
 }
 
-/** Compte : adresse courriel, canaux de notification, et push sur cet appareil. */
+/** Compte : adresse courriel, canaux et types de notification, et push sur cet appareil. */
 export function NotificationSettings() {
   const query = useQuery(notificationPreferencesQuery);
   return (

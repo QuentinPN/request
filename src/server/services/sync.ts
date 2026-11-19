@@ -1,4 +1,5 @@
 import { and, eq, exists, isNotNull, isNull, lt, not, or, type SQL } from 'drizzle-orm';
+import { JOB, jobDefinitions } from '../../shared/jobs.ts';
 import type { MediaKey } from '../../shared/media.ts';
 import { plural } from '../../shared/text.ts';
 import type { WebhookResult, WebhookService } from '../../shared/webhooks.ts';
@@ -13,17 +14,20 @@ import { one } from '../lib/sql.ts';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '../lib/time.ts';
 import { listArrServers } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
-import { lastFailureAt, lastSuccessAt, runJob } from './jobs.ts';
+import { type JobLog, lastFailureAt, lastSuccessAt, launchJob, runJob } from './jobs.ts';
 import type { MediaServers } from './media-server.ts';
 import { purgeOldNotifications } from './notifications.ts';
 import { purgeExpired, revokeDepartedMembers } from './sessions.ts';
 
 /** Noms des balayages dans `job_runs` (verrou : une seule exécution `running` par nom). */
-export const SCAN_JOBS = { light: 'scan:light', full: 'scan:full' } as const;
+export const SCAN_JOBS = { light: JOB.scanLight, full: JOB.scanFull } as const;
+/** Fréquences par défaut des balayages (réglables par le propriétaire, `jobs.intervalMinutes`). */
+const defaultInterval = (job: typeof JOB.scanLight | typeof JOB.scanFull) =>
+  (jobDefinitions[job].interval?.default ?? 0) * MINUTE_MS;
 /** Balayage léger : derniers ajouts d'Emby, titres en téléchargement et demandes envoyées. */
-export const LIGHT_SCAN_INTERVAL_MS = 10 * MINUTE_MS;
+export const LIGHT_SCAN_INTERVAL_MS = defaultInterval(SCAN_JOBS.light);
 /** Balayage complet : tous les titres ayant un statut ou une demande, et purge des titres oubliés. */
-export const FULL_SCAN_INTERVAL_MS = DAY_MS;
+export const FULL_SCAN_INTERVAL_MS = defaultInterval(SCAN_JOBS.full);
 /** Après un balayage complet en échec, délai minimal avant le suivant. */
 export const FULL_SCAN_RETRY_MS = HOUR_MS;
 /** Premier tour peu après le démarrage, sans retarder celui du serveur. */
@@ -72,10 +76,10 @@ export function purgeMedia(db: Db, before: Date): number {
  */
 export function createSync(
   data: Data,
-  deps: { availability: AvailabilityService; mediaServers: MediaServers; now?: () => number },
+  deps: { availability: AvailabilityService; mediaServers: MediaServers; now?: () => number; log?: JobLog },
 ) {
   const { db } = data;
-  const { availability, mediaServers } = deps;
+  const { availability, mediaServers, log } = deps;
   const now = deps.now ?? Date.now;
 
   /** Titre concerné par un webhook, s'il est connu de l'appli (un titre inconnu n'a ni cache ni demande). */
@@ -146,61 +150,100 @@ export function createSync(
   }
 
   /** Balayage léger : derniers ajouts d'Emby, titres en téléchargement et titres des demandes envoyées. */
-  const lightScan = () =>
-    runJob(db, SCAN_JOBS.light, async () => {
-      const recent = await availability.latestOnServer(RECENT_LIMIT);
-      const watched = keysWhere(
-        or(
-          eq(media.status, 'downloading'),
-          eq(media.status4k, 'downloading'),
-          hasRequest(db, eq(requests.status, 'sent')),
-        ),
-      );
-      const keys = [...recent.map(({ type, tmdbId }) => ({ type, tmdbId })), ...watched];
-      await refreshAll(keys);
-      return `${keys.length} titres recalculés`;
-    });
+  const lightWork = async () => {
+    const recent = await availability.latestOnServer(RECENT_LIMIT);
+    const watched = keysWhere(
+      or(
+        eq(media.status, 'downloading'),
+        eq(media.status4k, 'downloading'),
+        hasRequest(db, eq(requests.status, 'sent')),
+      ),
+    );
+    const keys = [...recent.map(({ type, tmdbId }) => ({ type, tmdbId })), ...watched];
+    await refreshAll(keys);
+    return `${keys.length} titres recalculés`;
+  };
 
   /**
    * Balayage complet : purges d'abord (titres oubliés, qu'un recalcul rajeunirait, notifications lues de plus de
    * 90 jours ou non lues de plus d'un an et sessions expirées), puis tout titre suivi.
    */
-  const fullScan = () =>
-    runJob(db, SCAN_JOBS.full, async () => {
-      const purged = purgeMedia(db, new Date(now() - PURGE_AFTER_MS));
-      purgeOldNotifications(db, new Date(now()));
-      purgeExpired(db, new Date(now()));
-      // Avant le recalcul des titres : une panne du serveur multimédia ne doit pas le sauter (il est alors seulement noté).
-      const members = await revokeDeparted();
-      const keys = keysWhere(or(isNotNull(media.status), isNotNull(media.status4k), hasRequest(db)));
-      await refreshAll(keys);
-      return `${keys.length} titres recalculés, ${purged} supprimés${members}`;
-    });
+  const fullWork = async () => {
+    const purged = purgeMedia(db, new Date(now() - PURGE_AFTER_MS));
+    purgeOldNotifications(db, new Date(now()));
+    purgeExpired(db, new Date(now()));
+    // Avant le recalcul des titres : une panne du serveur multimédia ne doit pas le sauter (il est alors seulement noté).
+    const members = await revokeDeparted();
+    const keys = keysWhere(or(isNotNull(media.status), isNotNull(media.status4k), hasRequest(db)));
+    await refreshAll(keys);
+    return `${keys.length} titres recalculés, ${purged} supprimés${members}`;
+  };
 
-  return { handleWebhook, lightScan, fullScan };
+  const lightScan = () => runJob(db, SCAN_JOBS.light, lightWork, log);
+  const fullScan = () => runJob(db, SCAN_JOBS.full, fullWork, log);
+  /** Lancent le balayage sans l'attendre (« Lancer maintenant ») : `null` si une exécution est déjà en cours. */
+  const launch = {
+    [SCAN_JOBS.light]: () => launchJob(db, SCAN_JOBS.light, lightWork, log),
+    [SCAN_JOBS.full]: () => launchJob(db, SCAN_JOBS.full, fullWork, log),
+  };
+
+  return { handleWebhook, lightScan, fullScan, launch };
 }
 
 export type SyncService = ReturnType<typeof createSync>;
 
+/** Fréquences courantes des balayages, en millisecondes (réglage `jobs` du propriétaire, relu à chaque tour). */
+export interface ScanIntervals {
+  lightMs: number;
+  fullMs: number;
+}
+
+const DEFAULT_INTERVALS = (): ScanIntervals => ({ lightMs: LIGHT_SCAN_INTERVAL_MS, fullMs: FULL_SCAN_INTERVAL_MS });
+
 /**
  * Balayages planifiés dans le processus (sans dépendance) : un tour peu après le démarrage puis toutes les
- * `LIGHT_SCAN_INTERVAL_MS`. Un tour lance le balayage léger, suivi du complet si le dernier réussi date de plus d'un
- * jour et que le dernier échec date de plus d'une heure (lus dans `job_runs` : un redémarrage ne repousse ni n'accélère
- * rien). Un tour encore en cours fait sauter le suivant. `stop` arrête les minuteurs et attend le tour en cours (avant
- * de fermer la base).
+ * `lightMs` (5 à 60 minutes, 10 par défaut). Un tour lance le balayage léger, suivi du complet si le dernier réussi
+ * date de plus de `fullMs` (6 à 72 heures, un jour par défaut) et que le dernier échec date de plus d'une heure (lus
+ * dans `job_runs` : un redémarrage ne repousse ni n'accélère rien). Un tour encore en cours fait sauter le suivant.
+ * `reschedule` applique les fréquences courantes sans redémarrage ; `nextLightAt` et `nextFullAt` donnent le prochain
+ * tour de chaque balayage ; `stop` arrête les minuteurs et attend le tour en cours (avant de fermer la base).
  */
-export function startScheduler(sync: SyncService, db: Db, now: () => number = Date.now) {
+export function startScheduler(
+  sync: SyncService,
+  db: Db,
+  { now = Date.now, intervals = DEFAULT_INTERVALS }: { now?: () => number; intervals?: () => ScanIntervals } = {},
+) {
   const isOlderThan = (at: Date | null, ms: number) => !at || now() - at.getTime() >= ms;
   const tick = async () => {
     await sync.lightScan();
     if (
-      isOlderThan(lastSuccessAt(db, SCAN_JOBS.full), FULL_SCAN_INTERVAL_MS) &&
+      isOlderThan(lastSuccessAt(db, SCAN_JOBS.full), intervals().fullMs) &&
       isOlderThan(lastFailureAt(db, SCAN_JOBS.full), FULL_SCAN_RETRY_MS)
     )
       await sync.fullScan();
   };
-  return startPeriodic('Balayage planifié', tick, {
+  const periodic = startPeriodic('Balayage planifié', tick, {
     firstDelayMs: FIRST_TICK_DELAY_MS,
-    intervalMs: LIGHT_SCAN_INTERVAL_MS,
+    intervalMs: intervals().lightMs,
   });
+  return {
+    stop: periodic.stop,
+    reschedule: () => periodic.setIntervalMs(intervals().lightMs),
+    /** Prochain tour du balayage léger. */
+    nextLightAt: periodic.nextRunAt,
+    /** Prochain tour qui lancera le balayage complet : le premier tour passé l'échéance (dernier succès + fréquence). */
+    nextFullAt(): number {
+      const { lightMs, fullMs } = intervals();
+      const success = lastSuccessAt(db, SCAN_JOBS.full);
+      const failure = lastFailureAt(db, SCAN_JOBS.full);
+      const due = Math.max(
+        success ? success.getTime() + fullMs : 0,
+        failure ? failure.getTime() + FULL_SCAN_RETRY_MS : 0,
+      );
+      const next = periodic.nextRunAt();
+      return due <= next ? next : next + Math.ceil((due - next) / lightMs) * lightMs;
+    },
+  };
 }
+
+export type Scheduler = ReturnType<typeof startScheduler>;

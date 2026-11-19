@@ -3,10 +3,9 @@ import { cn } from 'cn';
 import { Film, Play, Plus } from 'lucide-react';
 import { titleLink } from '@/lib/catalogue';
 import { imageUrl, type MediaSummary, type MediaType } from '../../../shared/media.ts';
-import type { Availability } from '../../../shared/status.ts';
+import { type Availability, isRequestableStatus } from '../../../shared/status.ts';
 import { summaryMeta } from '../../lib/catalogue.ts';
 import { useMediaServerName, useWatchUrl } from '../../lib/media-server.ts';
-import { canRequest } from '../../lib/status.ts';
 import { useRequestAction } from '../requests/request-sheet.tsx';
 import { Button, buttonVariants } from '../ui/button.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
@@ -43,7 +42,7 @@ export function Poster({
   /** « Regarder dans … » : adresse du titre dans l'interface web du serveur multimédia (titre disponible ou partiel). */
   watchUrl?: string;
 }) {
-  const askable = onRequest !== undefined && canRequest(status);
+  const askable = onRequest !== undefined && isRequestableStatus(status);
   const serverName = useMediaServerName();
   return (
     <article className={cn('group/poster relative', width[layout])}>

@@ -37,6 +37,8 @@ export interface AddMovieInput {
   minimumAvailability?: MinimumAvailability;
   /** Lance la recherche dès l'ajout. */
   search: boolean;
+  /** Ids des étiquettes posées sur le film. */
+  tags: number[];
 }
 
 export const testRadarr = (config: ArrConfig): Promise<ArrTestResult> => testArr('radarr', config);
@@ -72,7 +74,7 @@ export async function getMovieStatus(config: ArrConfig, radarrId: number): Promi
   return toStatus(await arrClient('radarr', config).get(`/movie/${radarrId}`, movieSchema));
 }
 
-/** Ajoute le film (avec recherche) ; s'il y est déjà, renvoie son id sans erreur. */
+/** Ajoute le film (avec recherche si `search`) ; s'il y est déjà, renvoie son id sans erreur. */
 export async function addMovie(config: ArrConfig, input: AddMovieInput): Promise<{ radarrId: number }> {
   const lookup = await lookupMovie(config, input.tmdbId);
   if (lookup.id > 0) return { radarrId: lookup.id };
@@ -86,6 +88,7 @@ export async function addMovie(config: ArrConfig, input: AddMovieInput): Promise
         qualityProfileId: input.qualityProfileId,
         rootFolderPath: input.rootFolderPath,
         monitored: true,
+        tags: input.tags,
         ...(input.minimumAvailability && { minimumAvailability: input.minimumAvailability }),
         addOptions: { searchForMovie: input.search },
       });

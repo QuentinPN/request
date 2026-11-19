@@ -12,8 +12,10 @@ import {
 } from '@tanstack/react-router';
 import { AppShell } from '@/components/shell/app-shell';
 import { ErrorState, LoadingState } from '@/components/states';
-import { genreSearchSchema } from '@/lib/catalogue';
+import { useDocumentTitle } from '@/hooks/use-document-title';
+import { browseSearch } from '@/lib/catalogue';
 import { issueSearchSchema } from '@/lib/issues';
+import { requestsSearchSchema } from '@/lib/requests';
 import { guardRedirect, safeReturnPath, setupStateQuery, viewerQuery } from '@/lib/session';
 import { IntrouvablePage } from '@/pages/introuvable';
 
@@ -40,9 +42,14 @@ function RouteError({ error, reset }: ErrorComponentProps) {
 
 export type RouterContext = { queryClient: QueryClient };
 
+function RootLayout() {
+  useDocumentTitle();
+  return <Outlet />;
+}
+
 // Garde global : état de l'installation et session lus avant d'afficher quoi que ce soit (aucune page protégée ne clignote).
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  component: Outlet,
+  component: RootLayout,
   beforeLoad: async ({ context: { queryClient }, location }) => {
     const [setup, viewer] = await Promise.all([
       queryClient.fetchQuery(setupStateQuery),
@@ -92,15 +99,18 @@ const routeTree = rootRoute.addChildren([
   assistantRoute,
   appRoute.addChildren([
     createRoute(page('/', () => import('@/pages/decouvrir'), 'DecouvrirPage')),
-    // Films et Séries gardent le genre choisi dans l'adresse (`?genre=`), pour le retour depuis une fiche.
-    createRoute({ ...page('/films', () => import('@/pages/films'), 'FilmsPage'), validateSearch: genreSearchSchema }),
-    createRoute({
-      ...page('/series', () => import('@/pages/series'), 'SeriesPage'),
-      validateSearch: genreSearchSchema,
-    }),
+    // Films et Séries gardent leurs filtres dans l'adresse (`?genres=`, `?rating=`…), partageable et rétablie au retour d'une fiche.
+    createRoute({ ...page('/films', () => import('@/pages/films'), 'FilmsPage'), validateSearch: browseSearch }),
+    createRoute({ ...page('/series', () => import('@/pages/series'), 'SeriesPage'), validateSearch: browseSearch }),
     createRoute(page('/titre/$type/$id', () => import('@/pages/fiche'), 'FichePage')),
     createRoute(page('/plateforme/$type/$id', () => import('@/pages/plateforme'), 'PlateformePage')),
-    createRoute(page('/demandes', () => import('@/pages/demandes'), 'DemandesPage')),
+    createRoute(page('/personne/$id', () => import('@/pages/personne'), 'PersonnePage')),
+    createRoute(page('/collection/$id', () => import('@/pages/collection'), 'CollectionPage')),
+    // `?membre=` : un gestionnaire lit les demandes d'un membre (lien de Réglages › Membres).
+    createRoute({
+      ...page('/demandes', () => import('@/pages/demandes'), 'DemandesPage'),
+      validateSearch: requestsSearchSchema,
+    }),
     createRoute(page('/ma-liste', () => import('@/pages/ma-liste'), 'MaListePage')),
     createRoute(page('/approbations', () => import('@/pages/approbations'), 'ApprobationsPage')),
     createRoute({

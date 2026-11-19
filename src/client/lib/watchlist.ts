@@ -1,12 +1,15 @@
 import { infiniteQueryOptions, queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { MediaKey } from '../../shared/media.ts';
 import {
+  type AddedToWatchlist,
+  type AutoRequestSetting,
+  autoRequestSettingSchema,
   type ImportSource,
-  type InWatchlist,
   importPath,
   inWatchlistSchema,
   type LetterboxdImportInput,
   type TraktImportInput,
+  WATCHLIST_AUTO_REQUEST_PATH,
   WATCHLIST_PATH,
   type WatchlistImportResult,
   watchlistItemPath,
@@ -21,6 +24,7 @@ export const watchlistKeys = {
   all: ['watchlist'] as const,
   list: ['watchlist', 'list'] as const,
   has: ({ type, tmdbId }: MediaKey) => ['watchlist', 'has', type, tmdbId] as const,
+  autoRequest: ['watchlist', 'auto-request'] as const,
 };
 
 /** « Ma liste », page après page (« Charger plus »). */
@@ -39,16 +43,33 @@ export const inWatchlistQuery = (item: MediaKey) =>
     queryFn: ({ signal }) => apiGet(watchlistItemPath(item.type, item.tmdbId), inWatchlistSchema, signal),
   });
 
-/** Ajoute le titre à la liste (`true`) ou l'en retire (`false`), puis met le bouton et « Ma liste » à jour. */
+/** Option « demander automatiquement ce que j'ajoute » (réservée aux membres qui en ont le droit : à ne lire que pour eux). */
+export const autoRequestQuery = queryOptions({
+  queryKey: watchlistKeys.autoRequest,
+  queryFn: ({ signal }) => apiGet(WATCHLIST_AUTO_REQUEST_PATH, autoRequestSettingSchema, signal),
+});
+
+export function useSetAutoRequest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => apiSend<AutoRequestSetting>('PUT', WATCHLIST_AUTO_REQUEST_PATH, { enabled }),
+    onSuccess: (setting) => client.setQueryData(watchlistKeys.autoRequest, setting),
+  });
+}
+
+/**
+ * Ajoute le titre à la liste (`true`) ou l'en retire (`false`), puis met le bouton et « Ma liste » à jour. L'ajout
+ * renvoie le sort de la demande automatique (`autoRequest`) quand l'option du membre est active.
+ */
 export function useSetInWatchlist(item: MediaKey) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (inList: boolean) =>
       inList
-        ? apiSend<InWatchlist>('POST', WATCHLIST_PATH, { type: item.type, tmdbId: item.tmdbId })
-        : apiSend<InWatchlist>('DELETE', watchlistItemPath(item.type, item.tmdbId)),
-    onSuccess: (result) => {
-      client.setQueryData(watchlistKeys.has(item), result);
+        ? apiSend<AddedToWatchlist>('POST', WATCHLIST_PATH, { type: item.type, tmdbId: item.tmdbId })
+        : apiSend<AddedToWatchlist>('DELETE', watchlistItemPath(item.type, item.tmdbId)),
+    onSuccess: ({ inList }) => {
+      client.setQueryData(watchlistKeys.has(item), { inList });
       void client.invalidateQueries({ queryKey: watchlistKeys.list });
     },
   });

@@ -36,6 +36,9 @@ COPY src/server ./src/server
 COPY src/shared ./src/shared
 COPY scripts ./scripts
 COPY --from=build /app/dist/client ./dist/client
+# Commit de l'image, montré dans Réglages › À propos (placé ici : un commit neuf ne relance pas les étapes d'avant).
+ARG GIT_SHA=""
+ENV GIT_SHA=${GIT_SHA}
 USER node
 VOLUME /data
 EXPOSE 3000

@@ -1,25 +1,33 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
-import Fastify from 'fastify';
+import Fastify, { LogController } from 'fastify';
 import { HEALTH_PATH, type Health } from '../shared/health.ts';
 import { SERVICE_WORKER_PATH } from '../shared/notifications.ts';
 import { normalizeUrl } from '../shared/settings.ts';
 import type { Data } from './db/index.ts';
 import type { TmdbClient } from './integrations/tmdb.ts';
 import { apiErrorHandler, HttpError } from './lib/api-errors.ts';
+import { version } from './lib/build-info.ts';
+import { createLogBuffer, type LogBuffer, redactRequestUrl, serializeRequest } from './lib/log-buffer.ts';
+import { setAppLog } from './lib/logger.ts';
 import { parseSetupToken, registerAuth } from './plugins/auth.ts';
+import { aboutRoutes } from './routes/about.ts';
+import { agentRoutes } from './routes/agents.ts';
 import { apiKeysRoutes } from './routes/api-keys.ts';
 import { arrServersRoutes } from './routes/arr-servers.ts';
 import { authRoutes } from './routes/auth.ts';
 import { blocklistRoutes } from './routes/blocklist.ts';
 import { catalogueRoutes } from './routes/catalogue.ts';
-import { discordRoutes } from './routes/discord.ts';
+import { discoverSettingsRoutes } from './routes/discover-settings.ts';
+import { generalRoutes } from './routes/general.ts';
 import { imageRoutes } from './routes/images.ts';
 import { importRoutes } from './routes/import.ts';
 import { issuesRoutes } from './routes/issues.ts';
+import { maintenanceRoutes } from './routes/maintenance.ts';
 import { mediaServerRoutes } from './routes/media-server.ts';
 import { notificationsRoutes } from './routes/notifications.ts';
+import { overrideRulesRoutes } from './routes/override-rules.ts';
 import { pushRoutes } from './routes/push.ts';
 import { requestsRoutes } from './routes/requests.ts';
 import { setupRoutes } from './routes/setup.ts';
@@ -29,13 +37,14 @@ import { usersRoutes } from './routes/users.ts';
 import { watchlistRoutes } from './routes/watchlist.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
 import { type AfterCommit, createAfterCommit } from './services/after-commit.ts';
+import { type AgentsService, createAgents } from './services/agents.ts';
 import { adoptLegacyArrSettings } from './services/arr-servers.ts';
 import { type AvailabilityService, createAvailability } from './services/availability.ts';
-import { parseBackupKeep, startBackups } from './services/backup.ts';
+import { createBackups, parseBackupKeep } from './services/backup.ts';
 import { createDelivery } from './services/delivery.ts';
-import { createDiscord, type DiscordService } from './services/discord.ts';
 import { createEmail, type MailTransport, smtpTransport } from './services/email.ts';
 import { createImageCache, parseImageCacheMaxBytes } from './services/images.ts';
+import { createJobCenter, scanIntervalsOf } from './services/job-center.ts';
 import { failOrphanJobs } from './services/jobs.ts';
 import { createMediaServers, type MediaServers } from './services/media-server.ts';
 import { createNotifications, onNotificationsCreated, onRequestEvent } from './services/notifications.ts';
@@ -53,10 +62,12 @@ declare module 'fastify' {
     mediaServers: MediaServers;
     /** Statut de disponibilité des titres (serveur multimédia, Radarr, Sonarr), en cache dans `media`. */
     availability: AvailabilityService;
-    /** Notifications Discord (facultatives). */
-    discord: DiscordService;
-    /** Envois des notifications après validation (Discord, courriel, push) ; les tests les attendent avec `idle()`. */
+    /** Agents de notification (Discord, ntfy, Telegram, webhook sortant), facultatifs. */
+    agents: AgentsService;
+    /** Envois des notifications après validation (agents, courriel, push) ; les tests les attendent avec `idle()`. */
     afterCommit: AfterCommit;
+    /** Journal en mémoire (dernières lignes de `app.log`, expurgées des secrets), lu par Réglages › Journaux. */
+    logs: LogBuffer;
   }
 }
 
@@ -66,6 +77,8 @@ export interface Upstreams {
   imagesUrl?: string;
   /** Remplace l'hôte des webhooks Discord ; l'adresse enregistrée reste, elle, celle de discord.com. */
   discordUrl?: string;
+  /** Remplace l'hôte de l'API Telegram (api.telegram.org) ; le jeton du bot reste dans le chemin. */
+  telegramUrl?: string;
   /** Remplace l'API publique de Trakt (import des listes de souhaits). */
   traktUrl?: string;
   /** Remplace plex.tv (code PIN de connexion, comptes et amis du propriétaire d'un serveur Plex). */
@@ -83,7 +96,6 @@ export function parsePublicUrl(env: string | undefined): string | null {
 }
 
 const root = resolve(import.meta.dirname, '../..');
-const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { version: string };
 
 /** `/api`, `/api/...` et `/api?...` appartiennent à l'API, jamais à la SPA. */
 export const isApiPath = (url: string) => /^\/api(?:[/?]|$)/.test(url);
@@ -121,7 +133,16 @@ export async function buildApp({
   /** Balayages planifiés (services/sync.ts) : le serveur seulement, jamais les tests. */
   schedule?: boolean;
 }) {
-  const app = Fastify({ logger: false, trustProxy });
+  // Journal en mémoire : pino écrit dans le tampon, la sortie standard n'en reçoit une copie expurgée que sur le serveur (`schedule`), pour les journaux Docker. Pas de ligne par requête (les affiches
+  // et l'actualisation des journaux eux-mêmes noieraient le tampon) : seulement le hook `onResponse`, les tâches et les erreurs.
+  const logs = createLogBuffer(undefined, schedule ? (line) => process.stdout.write(line) : undefined);
+  const app = Fastify({
+    logger: { level: 'info', stream: logs, serializers: { req: serializeRequest } },
+    logController: new LogController({ disableRequestLogging: true }),
+    trustProxy,
+  });
+  app.decorate('logs', logs);
+  setAppLog(app.log);
   app.decorate('data', data);
   app.decorate('tmdb', createTmdbProvider(data, upstreams.tmdbUrl));
   app.decorate(
@@ -133,32 +154,47 @@ export async function buildApp({
   failOrphanJobs(data.db);
   failInterruptedSends(data.db);
   adoptLegacyArrSettings(data.db);
-  const sync = createSync(data, { availability: app.availability, mediaServers: app.mediaServers });
-  const scheduler = schedule ? startScheduler(sync, data.db) : null;
-  const backups = schedule ? startBackups(data.db.$client, data.dir, parseBackupKeep(process.env.BACKUP_KEEP)) : null;
+  const sync = createSync(data, { availability: app.availability, mediaServers: app.mediaServers, log: app.log });
+  const scheduler = schedule ? startScheduler(sync, data.db, { intervals: () => scanIntervalsOf(data) }) : null;
+  const backups = createBackups(data.db, data.dir, parseBackupKeep(process.env.BACKUP_KEEP), { log: app.log });
+  const backupTimer = schedule && backups.enabled ? backups.start() : null;
+  const jobs = createJobCenter(data, { sync, backups, scheduler, backupTimer });
   // Canaux de notification : l'appli (`notify`), puis Discord, courriel et push après la validation de la transaction.
   const afterCommit = createAfterCommit();
   app.decorate('afterCommit', afterCommit);
-  const discord = createDiscord(data, {
+  const agents = createAgents(data, {
     tmdb: app.tmdb,
     afterCommit,
-    ...(upstreams.discordUrl && { baseUrl: upstreams.discordUrl }),
+    ...(upstreams.discordUrl && { discordUrl: upstreams.discordUrl }),
+    ...(upstreams.telegramUrl && { telegramUrl: upstreams.telegramUrl }),
   });
-  app.decorate('discord', discord);
+  app.decorate('agents', agents);
   const notificationService = createNotifications(data, { tmdb: app.tmdb });
   const email = createEmail(data, { transport: upstreams.mailTransport ?? smtpTransport, publicUrl });
   const push = createPush(data, { send: upstreams.pushSender ?? webPushSender, subject: vapidSubject(publicUrl) });
   const delivery = createDelivery(data, { afterCommit, notifications: notificationService, email, push });
-  const unsubscribe = [onRequestEvent(discord.enqueue), onNotificationsCreated(delivery.enqueue)];
+  const unsubscribe = [onRequestEvent(agents.enqueue), onNotificationsCreated(delivery.enqueue)];
   // Le balayage, la sauvegarde et les envois de notifications en cours finissent avant la fermeture de la base.
   app.addHook('onClose', async () => {
     for (const stop of unsubscribe) stop();
     await scheduler?.stop();
-    await backups?.stop();
+    await backupTimer?.stop();
+    await jobs.idle();
     await afterCommit.idle();
     data.db.$client.close();
   });
   app.setErrorHandler(apiErrorHandler);
+  // Journal : une ligne par réponse refusée ou en échec (le 404 d'une adresse inconnue et le 401 d'une lecture sans session, bruit
+  // habituel, exceptés), adresse expurgée des secrets (`?token=`).
+  app.addHook('onResponse', async (req, reply) => {
+    const { statusCode } = reply;
+    if (statusCode < 400 || statusCode === 404 || (statusCode === 401 && req.method === 'GET')) return;
+    const path = redactRequestUrl(req.url).split('?')[0];
+    req.log[statusCode >= 500 ? 'error' : 'warn'](
+      { req, statusCode, responseTimeMs: Math.round(reply.elapsedTime) },
+      `${req.method} ${path} : ${statusCode}`,
+    );
+  });
   // Avant toute route : le garde de /api couvre aussi les plugins enregistrés ensuite (catalogue, images).
   await registerAuth(app, { setupToken });
 
@@ -179,7 +215,7 @@ export async function buildApp({
   issuesRoutes(app);
   notificationsRoutes(app, { service: notificationService, email, push });
   pushRoutes(app, push);
-  discordRoutes(app, discord);
+  agentRoutes(app, agents);
   smtpRoutes(app, email);
   webhookRoutes(app, sync);
   apiKeysRoutes(app);
@@ -187,17 +223,19 @@ export async function buildApp({
   watchlistRoutes(app, upstreams);
   statsRoutes(app);
   blocklistRoutes(app);
+  discoverSettingsRoutes(app);
+  generalRoutes(app);
+  aboutRoutes(app);
+  overrideRulesRoutes(app);
   await app.register(catalogueRoutes);
   await app.register(mediaServerRoutes);
-  await app.register(
-    imageRoutes(
-      createImageCache({
-        dir: data.dir,
-        maxBytes: parseImageCacheMaxBytes(process.env.IMAGE_CACHE_MAX_MB),
-        ...(upstreams.imagesUrl && { upstreamUrl: upstreams.imagesUrl }),
-      }),
-    ),
-  );
+  const images = createImageCache({
+    dir: data.dir,
+    maxBytes: parseImageCacheMaxBytes(process.env.IMAGE_CACHE_MAX_MB),
+    ...(upstreams.imagesUrl && { upstreamUrl: upstreams.imagesUrl }),
+  });
+  maintenanceRoutes(app, { jobs, images, logs });
+  await app.register(imageRoutes(images));
 
   const hasClient = clientDir !== undefined && existsSync(clientDir);
   if (hasClient)

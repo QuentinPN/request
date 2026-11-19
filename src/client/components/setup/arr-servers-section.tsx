@@ -1,5 +1,6 @@
-import { type ArrKind, type ArrServer, arrKindLabels } from '@shared/arr-servers.ts';
+import { type ArrKind, type ArrServer, arrKindLabels, arrLabel } from '@shared/arr-servers.ts';
 import { useState } from 'react';
+import { ExternalServerLink } from '@/components/external-server-link';
 import { Notice } from '@/components/notice';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,7 +45,7 @@ function WizardServer({ kind, servers, saved, onSaved, ...frame }: Omit<Props, '
       open={frame.open}
       defaults={stored ? undefined : { name: arrKindLabels[kind], isDefault: true }}
       save={save}
-      toPayload={(v) => arrPayloadOf(kind, v, stored)}
+      toPayload={(v) => arrPayloadOf(kind, v)}
       render={(state, form) => (
         <SectionFrame {...frame} status={sectionStatus({ saved, open: frame.open, ...state })}>
           {form}
@@ -87,6 +88,9 @@ function ServerList({ kind, servers, saved, ...frame }: Omit<Props, 'wizard' | '
                       {server.isDefault && <Tag>Par défaut</Tag>}
                     </p>
                     <p className="truncate font-mono text-xs text-muted-foreground">{server.url}</p>
+                    {server.externalUrl && (
+                      <ExternalServerLink service={arrLabel(server.type, server.is4k)} href={server.externalUrl} />
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -190,7 +194,7 @@ function ServerForm({
       serverFields
       defaults={defaults}
       save={save}
-      toPayload={(v) => arrPayloadOf(kind, v, server)}
+      toPayload={(v) => arrPayloadOf(kind, v)}
       extraAction={
         <Button type="button" variant="ghost" size="lg" className={actionClass} onClick={onClose}>
           {server ? 'Fermer' : 'Annuler'}

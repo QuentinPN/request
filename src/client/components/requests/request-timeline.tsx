@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import type { MediaKey } from '../../../shared/media.ts';
-import type { RequestDetail, RequestEventView } from '../../../shared/requests.ts';
+import { REQUEST_EDITED_DETAIL, type RequestDetail, type RequestEventView } from '../../../shared/requests.ts';
 import type { RequestEventType } from '../../../shared/status.ts';
 import { useViewer } from '../../hooks/use-viewer.ts';
 import { useMediaServerName } from '../../lib/media-server.ts';
@@ -17,6 +17,8 @@ import {
   type StepState,
 } from '../../lib/requests.ts';
 import { SectionHeading } from '../media/rail.tsx';
+import { Button } from '../ui/button.tsx';
+import { useEditRequestAction } from './request-sheet.tsx';
 
 type Node = { key: string; title: string; detail?: string; state: StepState };
 
@@ -39,10 +41,13 @@ const eventTitle = (type: RequestEventType, actor: string | undefined, arr: stri
 const eventNode = (event: RequestEventView, arr: string, onServer: string, onBehalf: string | null): Node => ({
   key: `event-${event.id}`,
   // La demande elle-même (sans détail : pas un ajout de saisons) faite à la place du membre : « Demandée par X pour Y ».
+  // Une modification (évènement `requested` au détail « Demande modifiée : … ») : « Modifiée par X ».
   title:
     event.type === 'requested' && !event.detail && onBehalf
       ? onBehalf
-      : eventTitle(event.type, event.actor?.name, arr, onServer),
+      : event.type === 'requested' && event.detail?.startsWith(REQUEST_EDITED_DETAIL)
+        ? `Modifiée${event.actor ? ` par ${event.actor.name}` : ''}`
+        : eventTitle(event.type, event.actor?.name, arr, onServer),
   detail: [formatDateTime(event.createdAt), event.detail].filter(Boolean).join(' · '),
   state: event.type === 'failed' || event.type === 'declined' ? 'failed' : 'done',
 });
@@ -111,12 +116,18 @@ export function RequestTracking({ media }: { media: MediaKey }) {
   const mine = useQuery({ ...myRequestsForQuery(media), enabled: allowed });
   const latest = mine.data?.results[0];
   const detail = useQuery({ ...requestDetailQuery(latest?.id ?? 0), enabled: !!latest });
+  const edit = useEditRequestAction(detail.data);
   if (!latest || !detail.data) return null;
   return (
     <section aria-labelledby="suivi-demande" className="max-w-[560px]">
       <SectionHeading id="suivi-demande">Suivi de la demande</SectionHeading>
       <div className="glass rounded-[16px] p-5 lg:p-6">
         <RequestTimeline request={detail.data} />
+        {edit && (
+          <Button variant="secondary" size="sm" className="mt-5" onClick={edit}>
+            Modifier la demande
+          </Button>
+        )}
       </div>
     </section>
   );

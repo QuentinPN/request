@@ -4,6 +4,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { useEffect, useState } from 'react';
 import { Pager } from '@/components/approvals/queue-table';
+import { accountBack } from '@/components/back-button';
 import { IssueDetailPanel, IssueStatusPill, issueKind } from '@/components/issues/issue-detail';
 import { ChipGroup, FilterChip } from '@/components/media/title-parts';
 import { Page } from '@/components/page';
@@ -89,7 +90,7 @@ export function SignalementsPage() {
       : { title: 'Aucun signalement résolu', description: 'Les signalements résolus s’afficheront ici.' };
 
   return (
-    <Page title="Signalements">
+    <Page title="Signalements" back={accountBack}>
       <div className="space-y-5">
         <ChipGroup label="Filtrer les signalements">
           {issueStatusTabs.map((status) => (

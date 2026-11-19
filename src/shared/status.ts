@@ -27,6 +27,9 @@ export const mediaStatusShortLabel: Record<MediaStatus, string> = { ...mediaStat
 export const requestStatuses = ['pending', 'approved', 'declined', 'cancelled', 'sent', 'failed', 'available'] as const;
 export type RequestStatus = (typeof requestStatuses)[number];
 export const requestStatusSchema = z.enum(requestStatuses);
+/** Compteurs de demandes par statut, tous à 0 : point de départ des totaux (liste, statistiques, À propos). */
+export const emptyRequestCounts = () =>
+  Object.fromEntries(requestStatuses.map((s) => [s, 0])) as Record<RequestStatus, number>;
 
 /**
  * Demandes « en cours » : une seule par membre et par titre (index `requests_active`), elles couvrent leurs saisons,
@@ -49,6 +52,9 @@ export const preSendRequestStatuses = [
   'approved',
   'failed',
 ] as const satisfies readonly ActiveRequestStatus[];
+
+/** Demandes d'avant l'envoi qu'on ne complète plus : la propre demande du membre en bloque une nouvelle (409). */
+export const lockedRequestStatuses: readonly RequestStatus[] = ['approved', 'failed'];
 
 /**
  * Faits de la frise d'une demande (`request_events`, ajout seulement) : `retried` marque la relance d'un envoi en
@@ -82,3 +88,6 @@ export type Availability = z.infer<typeof availabilitySchema>;
  */
 export const titleAvailabilitySchema = availabilitySchema.extend({ embyItemId: z.string().optional() });
 export type TitleAvailability = z.infer<typeof titleAvailabilitySchema>;
+
+/** Un titre ou une saison se demande tant qu'il n'est ni complet, ni en cours d'arrivée, ni déjà demandé. */
+export const isRequestableStatus = (status?: MediaStatus) => !status || status === 'partial' || status === 'declined';

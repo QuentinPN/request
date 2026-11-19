@@ -1,4 +1,6 @@
 import { eq } from 'drizzle-orm';
+import { type AgentKey, agentKeys } from '../../shared/agents.ts';
+import { withAutoApproved } from '../../shared/notifications.ts';
 import {
   type MaskedSetting,
   normalizeUrl,
@@ -49,8 +51,18 @@ export function setSetting<K extends SettingKey>(
 export function getSetting<K extends SettingKey>(db: Db, cryptoKey: Buffer, key: K): Setting<K> | null {
   const row = db.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
   if (!row) return null;
-  return settingSchemas[key].parse(mapSecrets(key, JSON.parse(row.value), (s) => decrypt(cryptoKey, s))) as Setting<K>;
+  const value = settingSchemas[key].parse(mapSecrets(key, JSON.parse(row.value), (s) => decrypt(cryptoKey, s)));
+  return (
+    ([...agentKeys, 'smtp'] as string[]).includes(key) ? withAutoApproved(value as Setting<AgentKey | 'smtp'>) : value
+  ) as Setting<K>;
 }
+
+/** Réglages Général, ceux par défaut tant qu'ils n'ont pas été enregistrés. */
+export const getGeneral = (db: Db, cryptoKey: Buffer): Setting<'general'> =>
+  getSetting(db, cryptoKey, 'general') ?? settingSchemas.general.parse({});
+
+/** Titre de l'appli (Réglages › Général), celui par défaut tant qu'il n'a pas été choisi. Lu à chaque envoi. */
+export const getAppTitle = (db: Db, cryptoKey: Buffer) => getGeneral(db, cryptoKey).appTitle;
 
 /** Clés des réglages déjà enregistrés. */
 export function savedKeys(db: Db): Set<string> {
@@ -71,7 +83,15 @@ export function maskSetting<K extends SettingKey>(key: K, value: Setting<K>): Ma
 /** Champs qui désignent où et comment part le secret d'un réglage : l'adresse du service, ou le serveur SMTP (hôte, port, chiffrement) et le compte. */
 const SECRET_DESTINATIONS: Partial<Record<SettingKey, readonly string[]>> = {
   smtp: ['host', 'port', 'security', 'username'],
+  ntfy: ['url', 'topic', 'username'],
 };
+
+/** Réglage enregistré sans ses secrets : de quoi compléter un formulaire partiel (essai d'un agent). */
+export function withoutSecrets(key: SettingKey, stored: object): Fields {
+  const rest: Fields = { ...stored };
+  for (const field of secretFields[key]) delete rest[field];
+  return rest;
+}
 
 /** Valeur comparable d'un champ de destination : sans espaces ni `/` final, vide comme absent. */
 const destinationValue = (v: unknown) => (typeof v === 'string' ? normalizeUrl(v.trim()) || null : (v ?? null));

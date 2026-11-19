@@ -30,6 +30,7 @@ import { ownerOnly } from '../plugins/auth.ts';
 import { hasArrServer } from '../services/arr-servers.ts';
 import { hasMembers } from '../services/media-server.ts';
 import {
+  getAppTitle,
   getMediaServer,
   getSetting,
   maskSetting,
@@ -109,6 +110,7 @@ export function setupRoutes(app: FastifyInstance) {
       hasOwner: owner,
       hasMembers: hasMembers(app.data),
       complete: owner && setupSections.every((s) => services[s]),
+      appTitle: getAppTitle(db, cryptoKey),
     };
   });
 

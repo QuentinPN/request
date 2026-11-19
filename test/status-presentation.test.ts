@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, apiGet, errorMessage } from '../src/client/lib/http.ts';
-import { canRequest, downloadPercent } from '../src/client/lib/status.ts';
-import { isAiredSeason, isoDay } from '../src/shared/requests.ts';
-import { mediaStatuses } from '../src/shared/status.ts';
+import { downloadPercent } from '../src/client/lib/status.ts';
+import type { MediaDetails, Season } from '../src/shared/media.ts';
+import { isAiredSeason, isoDay, isRequestable, requestableSeasons, uncoveredSeasons } from '../src/shared/requests.ts';
+import { isRequestableStatus, mediaStatuses } from '../src/shared/status.ts';
 
 describe('downloadPercent', () => {
   it('arrondit la progression en pourcentage entier', () => {
@@ -22,16 +23,99 @@ describe('downloadPercent', () => {
   });
 });
 
-describe('canRequest', () => {
+describe('isRequestableStatus', () => {
   it('autorise une demande sans statut, partielle ou refusée', () => {
-    expect(canRequest()).toBe(true);
-    expect(canRequest('partial')).toBe(true);
-    expect(canRequest('declined')).toBe(true);
+    expect(isRequestableStatus()).toBe(true);
+    expect(isRequestableStatus('partial')).toBe(true);
+    expect(isRequestableStatus('declined')).toBe(true);
   });
 
   it('refuse une demande pour tous les autres statuts', () => {
-    const blocked = mediaStatuses.filter((status) => !canRequest(status));
+    const blocked = mediaStatuses.filter((status) => !isRequestableStatus(status));
     expect(blocked).toEqual(['available', 'downloading', 'requested', 'pending']);
+  });
+});
+
+const DAY = '2026-11-17';
+const season = (seasonNumber: number, extra: Partial<Season> = {}): Season => ({
+  seasonNumber,
+  episodeCount: 10,
+  airDate: '2024-01-01',
+  ...extra,
+});
+const tv = (status: MediaDetails['status'], seasons: Season[], fourK?: MediaDetails['fourK']) => ({
+  type: 'tv' as const,
+  status,
+  seasons,
+  fourK,
+});
+const numbers = (seasons: Season[]) => seasons.map((s) => s.seasonNumber);
+
+describe('saisons demandables', () => {
+  it('saison 1 demandée (en attente, envoyée) et saison 2 intacte : la saison 2 se demande', () => {
+    const seasons = [season(1, { status: 'requested' }), season(2)];
+    expect(numbers(requestableSeasons(seasons, DAY))).toEqual([2]);
+    expect(isRequestable(tv('requested', seasons), DAY)).toBe(true);
+    const pending = [season(1, { status: 'pending' }), season(2)];
+    expect(isRequestable(tv('pending', pending), DAY)).toBe(true);
+  });
+
+  it('toutes les saisons disponibles ou déjà demandées : rien à demander', () => {
+    const covered = [season(1, { status: 'available' }), season(2, { status: 'requested' })];
+    expect(isRequestable(tv('requested', covered), DAY)).toBe(false);
+    expect(isRequestable(tv('available', [season(1, { status: 'available' })]), DAY)).toBe(false);
+  });
+
+  it('ignore les spéciaux, les saisons pas encore diffusées et celles en téléchargement', () => {
+    const seasons = [
+      season(0),
+      season(1, { status: 'requested' }),
+      season(2, { airDate: '2099-01-01', episodeCount: 0 }),
+      season(3, { status: 'downloading', progress: 0.5 }),
+    ];
+    expect(isRequestable(tv('requested', seasons), DAY)).toBe(false);
+  });
+
+  it('un titre partiel ou refusé reste demandable d’après son statut, même sans saison demandable', () => {
+    const seasons = [season(1, { status: 'available' }), season(2, { status: 'downloading', progress: 0.4 })];
+    expect(isRequestable(tv('partial', seasons), DAY)).toBe(true);
+    expect(isRequestable(tv('declined', seasons), DAY)).toBe(true);
+    expect(isRequestable(tv('downloading', seasons), DAY)).toBe(false);
+  });
+
+  it('une saison partielle ou refusée se redemande', () => {
+    const seasons = [season(1, { status: 'partial' }), season(2, { status: 'declined' })];
+    expect(numbers(requestableSeasons(seasons, DAY))).toEqual([1, 2]);
+  });
+
+  it('un titre disponible ne se demande jamais, même si ses saisons sont inconnues', () => {
+    expect(isRequestable(tv('available', [season(1)]), DAY)).toBe(false);
+  });
+
+  it('en 4K, seul le statut 4K compte', () => {
+    const seasons = [
+      season(1, { status: 'available', fourK: { status: 'requested' } }),
+      season(2, { status: 'available' }),
+    ];
+    const media = tv('available', seasons, { status: 'requested' });
+    expect(isRequestable(media, DAY, true)).toBe(true);
+    expect(numbers(requestableSeasons(seasons, DAY, true))).toEqual([2]);
+    expect(isRequestable(media, DAY)).toBe(false);
+    const all4k = [season(1, { fourK: { status: 'requested' } }), season(2, { fourK: { status: 'available' } })];
+    expect(isRequestable(tv('available', all4k, { status: 'requested' }), DAY, true)).toBe(false);
+  });
+
+  it('un film, ou un titre sans saisons connues (affiche), suit son statut', () => {
+    expect(isRequestable({ type: 'movie' }, DAY)).toBe(true);
+    expect(isRequestable({ type: 'movie', status: 'requested' }, DAY)).toBe(false);
+    expect(isRequestable({ type: 'tv', status: 'requested' }, DAY)).toBe(false);
+    expect(isRequestable({ type: 'tv', status: 'partial' }, DAY)).toBe(true);
+    expect(isRequestable({ type: 'movie', status: 'available', fourK: { status: 'declined' } }, DAY, true)).toBe(true);
+  });
+
+  it('côté serveur : les saisons déjà couvertes par une demande en cours sont retirées', () => {
+    expect(uncoveredSeasons([1, 2, 3], new Set([1, 3]))).toEqual([2]);
+    expect(uncoveredSeasons([1], new Set([1]))).toEqual([]);
   });
 });
 

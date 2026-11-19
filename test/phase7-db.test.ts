@@ -409,6 +409,7 @@ describe('réglages de la phase 7', () => {
       username: null,
       password: null,
       from: 'appli@exemple.fr',
+      events: notificationKinds,
     });
     expect(() => settingSchemas.mediaServer.parse({ kind: 'kodi', url: 'http://x', apiKey: 'k' })).toThrow();
     expect(() => settingSchemas.smtp.parse({ host: 'h', from: 'f', port: 70000 })).toThrow();
@@ -441,6 +442,14 @@ describe('schémas partagés des nouvelles entités', () => {
       seriesType: null,
       languageProfileId: null,
       tags: [],
+      tagRequester: false,
+      searchOnAdd: true,
+      externalUrl: null,
+      animeQualityProfileId: null,
+      animeRootFolderPath: null,
+      animeSeriesType: null,
+      animeLanguageProfileId: null,
+      animeTags: [],
     });
     expect(arrServerInputSchema.safeParse({ ...input, type: 'lidarr', rootFolderPath: '/x' }).success).toBe(false);
   });

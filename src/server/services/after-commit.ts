@@ -1,4 +1,5 @@
 import { IntegrationError } from '../integrations/http.ts';
+import { logError } from '../lib/logger.ts';
 
 /**
  * Cause d'un échec, journalisable sans fuite : ni adresse (le jeton d'un webhook Discord est dans son chemin,
@@ -29,7 +30,7 @@ export function createAfterCommit() {
       .then(async () => {
         await work();
       })
-      .catch((error: unknown) => console.error(`Notification ${channel} non envoyée`, describeFailure(error)))
+      .catch((error: unknown) => logError(`Notification ${channel} non envoyée`, describeFailure(error)))
       .finally(() => pending.delete(task));
     pending.add(task);
   }

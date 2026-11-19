@@ -69,8 +69,10 @@ export interface HttpRequest<T> extends RequestOptions {
   schema: z.ZodType<T>;
 }
 
-const SECRET_PARAM =
-  /^(api[_-]?key|x-api-key|key|token|access[_-]?token|x-emby-token|x-plex-token|secret|client[_-]?secret|password|passwd|pwd|pw|auth|authorization)$/i;
+/** Noms (paramètres d'adresse, en-têtes, champs) dont la valeur est secrète : expression de l'alternative, sans ancres. */
+export const SECRET_NAMES =
+  'api[_-]?key|x-api-key|key|token|access[_-]?token|x-emby-token|x-plex-token|x-webhook-token|x-setup-token|secret|client[_-]?secret|password|passwd|pwd|pw|auth|authorization|cookie|set-cookie|request_session';
+const SECRET_PARAM = new RegExp(`^(${SECRET_NAMES})$`, 'i');
 const MAX_RETRY_AFTER_MS = 2000;
 
 /** Adresse sans identifiants ni valeur de paramètre sensible (`api_key`, `token`, `password`…), sûre pour un message ou un log. */
@@ -206,4 +208,19 @@ export function createClient(config: ClientConfig) {
     put: <T>(path: string, schema: z.ZodType<T>, options?: RequestOptions) => send('PUT', path, schema, options),
     delete: <T>(path: string, schema: z.ZodType<T>, options?: RequestOptions) => send('DELETE', path, schema, options),
   };
+}
+
+/**
+ * Exécute `call` et relance toute `IntegrationError` sans son `url` : pour un service dont l'adresse porte un secret
+ * (jeton d'un webhook Discord, d'un bot Telegram dans le chemin), que `redactUrl` ne masque pas.
+ */
+export async function withoutUrl<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    if (!(error instanceof IntegrationError)) throw error;
+    throw new IntegrationError(error.kind, error.service, error.message, {
+      ...(error.status !== undefined && { status: error.status }),
+    });
+  }
 }

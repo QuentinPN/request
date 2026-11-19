@@ -28,9 +28,12 @@ export function openDb(file: string) {
 
 export type Db = ReturnType<typeof openDb>;
 
+/** Fichier de la base SQLite dans le dossier de données. */
+export const DB_FILE_NAME = 'request.db';
+
 /** Dossier de données (volume /data en production) : base SQLite, clé de chiffrement des secrets et caches. */
 export function openDataDir(dir: string) {
-  return { dir, db: openDb(join(dir, 'request.db')), cryptoKey: loadOrCreateKey(join(dir, 'secret.key')) };
+  return { dir, db: openDb(join(dir, DB_FILE_NAME)), cryptoKey: loadOrCreateKey(join(dir, 'secret.key')) };
 }
 
 export type Data = ReturnType<typeof openDataDir>;

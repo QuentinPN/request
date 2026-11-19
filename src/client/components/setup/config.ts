@@ -1,5 +1,5 @@
 import type { ArrKind } from '@shared/arr-servers.ts';
-import type { RequestNotificationKind } from '@shared/notifications.ts';
+import type { AgentEventKind, NotificationKind } from '@shared/notifications.ts';
 import {
   type IntegrationKey,
   type MediaServerKind,
@@ -36,29 +36,58 @@ export type SectionId =
   | 'webhooks'
   | 'seerr'
   | 'discord'
+  | 'ntfy'
+  | 'telegram'
+  | 'outgoingWebhook'
   | 'smtp'
   | 'trakt'
   | 'api'
-  | 'blocklist';
+  | 'blocklist'
+  | 'jobs'
+  | 'cache'
+  | 'logs'
+  | 'general'
+  | 'about'
+  | 'discover'
+  | 'overrideRules';
 export const settingsSectionOrder = [
   ...sectionOrder,
   'members',
   'webhooks',
   'seerr',
   'discord',
+  'ntfy',
+  'telegram',
+  'outgoingWebhook',
   'smtp',
   'trakt',
   'api',
   'blocklist',
+  'jobs',
+  'cache',
+  'logs',
+  'general',
+  'about',
+  'discover',
+  'overrideRules',
 ] as const satisfies readonly SectionId[];
 
-/** Évènements que Discord peut recevoir, dans l'ordre de la frise d'une demande (au nom du serveur multimédia choisi). */
-export const discordEventLabels = (serverName: string): Record<RequestNotificationKind, string> => ({
+/**
+ * Libellé de chaque type de notification, seule liste : évènements des agents (dans l'ordre de la frise d'une demande)
+ * et types du courriel (au nom du serveur multimédia choisi).
+ */
+export const eventLabels = (serverName: string): Record<NotificationKind | AgentEventKind, string> => ({
   requested: 'Nouvelle demande à approuver',
   approved: 'Demande approuvée',
+  auto_approved: 'Demande approuvée automatiquement',
   declined: 'Demande refusée',
   available: `Titre disponible dans ${serverName}`,
   failed: 'Échec de l’envoi à Radarr ou Sonarr',
+  requested_on_behalf: 'Demande faite à la place du membre',
+  issue_created: 'Nouveau signalement',
+  issue_commented: 'Signalement commenté',
+  issue_resolved: 'Signalement résolu',
+  issue_reopened: 'Signalement rouvert',
 });
 
 export const sectionText: Record<SectionId, { title: string; description: string }> = {
@@ -70,14 +99,30 @@ export const sectionText: Record<SectionId, { title: string; description: string
   radarr: { title: 'Radarr', description: 'Films : serveurs, profil de qualité et dossier racine' },
   sonarr: { title: 'Sonarr', description: 'Séries : serveurs, profil de qualité, dossier racine et type' },
   rules: { title: 'Règles et quotas', description: 'Quotas de demandes par défaut des membres' },
-  members: { title: 'Membres', description: 'Déconnecter un membre de tous ses appareils' },
+  members: { title: 'Membres', description: 'Rôles, droits et quotas des membres' },
   webhooks: { title: 'Webhooks', description: 'Radarr et Sonarr préviennent l’appli dès qu’un titre arrive' },
   seerr: { title: 'Importer depuis Seerr', description: 'Reprendre une fois les demandes de Jellyseerr ou Overseerr' },
   discord: { title: 'Notifications Discord', description: 'Facultatif : les évènements des demandes dans un salon' },
+  ntfy: { title: 'Notifications ntfy', description: 'Facultatif : les évènements des demandes sur un sujet ntfy' },
+  telegram: { title: 'Notifications Telegram', description: 'Facultatif : les évènements des demandes par un bot' },
+  outgoingWebhook: {
+    title: 'Webhook sortant',
+    description: 'Facultatif : un POST JSON à chaque évènement, pour vos propres outils',
+  },
   smtp: { title: 'Notifications par courriel', description: 'Facultatif : serveur SMTP pour écrire aux membres' },
   trakt: { title: 'Listes externes', description: 'Facultatif : import des listes de souhaits Trakt des membres' },
   api: { title: 'API', description: 'Clés pour les scripts et outils externes (en-tête X-Api-Key)' },
   blocklist: { title: 'Blocages', description: 'Titres et mots-clés TMDB qui ne peuvent pas être demandés' },
+  discover: { title: 'Découvrir', description: 'Rangées de la page, langue et région de TMDB' },
+  jobs: { title: 'Tâches', description: 'Balayages et sauvegarde : dernière exécution, fréquence, lancement immédiat' },
+  cache: { title: 'Cache d’images', description: 'Poids des affiches enregistrées sur le disque, et vidage' },
+  logs: { title: 'Journaux', description: 'Dernières entrées du serveur, filtrables, sans secret' },
+  general: { title: 'Général', description: 'Titre de l’application, affiché dans l’onglet et les messages' },
+  about: { title: 'À propos', description: 'Version, environnement et compteurs, en lecture seule' },
+  overrideRules: {
+    title: 'Règles de surcharge',
+    description: 'Serveur, profil, dossier et étiquettes selon le genre, la langue ou les mots-clés d’un titre',
+  },
 };
 
 /** Service qui se teste à la connexion : une intégration (réglage) ou un serveur Radarr/Sonarr. */

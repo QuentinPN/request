@@ -232,13 +232,13 @@ describe('listes', () => {
     });
   });
 
-  it('byGenre et genres', async () => {
+  it('genres', async () => {
     const server = await serve({
       'GET /discover/movie': fixture('trending-movie'),
       'GET /genre/movie/list': { genres: [{ id: 28, name: 'Action' }] },
     });
     const tmdb = tmdbFor(server);
-    await tmdb.byGenre('movie', 28);
+    await tmdb.browse('movie', { genres: [28] });
     expect(server.requests[0]?.query).toMatchObject({ with_genres: '28', page: '1' });
     expect(await tmdb.genres('movie')).toEqual([{ id: 28, name: 'Action' }]);
   });
@@ -249,9 +249,9 @@ describe('listes', () => {
       'GET /discover/tv': fixture('trending-movie'),
     });
     const tmdb = tmdbFor(server);
-    await tmdb.byGenre('movie', 28, 1, [818, 9715]);
+    await tmdb.browse('movie', { genres: [28] }, 1, [818, 9715]);
     await tmdb.discoverByProvider('tv', 8, 1, [818]);
-    await tmdb.byGenre('movie', 35, 1, []);
+    await tmdb.browse('movie', { genres: [35] }, 1, []);
     expect(server.requests.map((r) => r.query.without_keywords)).toEqual(['818|9715', '818', undefined]);
   });
 
@@ -359,9 +359,9 @@ describe('cache', () => {
   it('des requêtes différentes (page, type) ne se confondent pas', async () => {
     const server = await serve({ 'GET /discover/movie': fixture('trending-movie') });
     const tmdb = tmdbFor(server);
-    await tmdb.byGenre('movie', 28, 1);
-    await tmdb.byGenre('movie', 28, 2);
-    await tmdb.byGenre('movie', 35, 1);
+    await tmdb.browse('movie', { genres: [28] }, 1);
+    await tmdb.browse('movie', { genres: [28] }, 2);
+    await tmdb.browse('movie', { genres: [35] }, 1);
     expect(server.requests).toHaveLength(3);
   });
 

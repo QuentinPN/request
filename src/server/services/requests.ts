@@ -18,14 +18,18 @@ import {
 } from 'drizzle-orm';
 import type { z } from 'zod';
 import { arrLabel } from '../../shared/arr-servers.ts';
-import { keyOf, type MediaDetails, type MediaType, type Season } from '../../shared/media.ts';
+import { keyOf, type MediaDetails, type MediaType } from '../../shared/media.ts';
+import { ruleLayer } from '../../shared/override-rules.ts';
 import {
   type ApproveRequestInput,
   type BatchResult,
   type batchRequestSchema,
+  canChooseSend,
   type createRequestSchema,
+  hasSendChoice,
   isAiredSeason,
   isoDay,
+  REQUEST_EDITED_DETAIL,
   REQUESTS_PAGE_SIZE,
   type RequestCounts,
   type RequestDetail,
@@ -34,11 +38,19 @@ import {
   type RequestQuota,
   type RequestView,
   type requestListQuerySchema,
+  resolveSendChoice,
+  type SendChoiceInput,
+  statusIn,
+  storedSendChoice,
+  uncoveredSeasons,
+  type updateRequestSchema,
 } from '../../shared/requests.ts';
-import { capabilitiesOf, type QuotaRule } from '../../shared/roles.ts';
+import { autoApproves, capabilitiesOf, isQuotaExempt, type QuotaRule, requestRefusal } from '../../shared/roles.ts';
 import { DEFAULT_SERIES_TYPE, settingSchemas } from '../../shared/settings.ts';
 import {
   activeRequestStatuses,
+  emptyRequestCounts,
+  lockedRequestStatuses,
   preSendRequestStatuses,
   type RequestEventType,
   type RequestStatus,
@@ -55,15 +67,24 @@ import { addMovie } from '../integrations/radarr.ts';
 import { addSeries } from '../integrations/sonarr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { HttpError, NotConfiguredError, UpstreamContractError } from '../lib/api-errors.ts';
+import { logError } from '../lib/logger.ts';
 import { one } from '../lib/sql.ts';
 import { DAY_MS } from '../lib/time.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
-import { hasArrServer } from './arr-servers.ts';
+import { forgetArrOptions, hasArrServer } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
 import { assertNotBlocked, assertTitleNotBlocked } from './blocklist.ts';
 import { mediaServerName } from './media-server.ts';
 import { notifyRequestEvent, notifyRequestedOnBehalf } from './notifications.ts';
-import { assertSendChoice, sendServer } from './send-options.ts';
+import { matchingRules } from './override-rules.ts';
+import {
+  assertSendChoice,
+  destinationOf,
+  isAnimeTitle,
+  isAnimeTitleOrDefault,
+  sendServer,
+  tagsToSend,
+} from './send-options.ts';
 import { getSetting } from './settings.ts';
 import { loadDetails, loadSummaries } from './tmdb.ts';
 import { avatarUrlOf, getUser, type User } from './users.ts';
@@ -71,6 +92,7 @@ import { avatarUrlOf, getUser, type User } from './users.ts';
 type CreateInput = z.output<typeof createRequestSchema>;
 type ListQuery = z.output<typeof requestListQuerySchema>;
 type BatchInput = z.output<typeof batchRequestSchema>;
+type UpdateInput = z.output<typeof updateRequestSchema>;
 type Writer = Pick<Db, 'select' | 'insert' | 'update'>;
 /** Membre à qui une demande appartient, avec ses droits (quota, approbation automatique). */
 type Owner = Pick<SessionViewer, 'user' | 'capabilities'>;
@@ -79,6 +101,8 @@ type Owner = Pick<SessionViewer, 'user' | 'capabilities'>;
 const alreadyAvailable = (is4k: boolean, data: Pick<Data, 'db' | 'cryptoKey'>) =>
   is4k ? 'Ce titre est déjà disponible en 4K' : `Ce titre est déjà disponible dans ${mediaServerName(data)}`;
 const NOT_FOUND = 'Demande introuvable';
+const NOT_PENDING = 'Cette demande n’est plus en attente';
+const SEASONS_TAKEN = 'Ces saisons sont déjà demandées';
 
 // --- Quotas ---
 
@@ -216,9 +240,10 @@ function addEvent(
   actorId: string | null,
   at: Date,
   detail: string | null = null,
+  auto?: true,
 ) {
   tx.insert(requestEvents).values({ requestId, type, actorId, detail, createdAt: at }).run();
-  notifyRequestEvent(tx, { requestId, type, actorId, detail, at });
+  notifyRequestEvent(tx, { requestId, type, actorId, detail, at, auto });
 }
 
 /**
@@ -262,9 +287,38 @@ const ownActive = (
     )
     .get();
 
-/** Statut d'un titre ou d'une saison dans la qualité demandée (4K : serveurs 4K seuls). */
-const statusIn = (item: Pick<MediaDetails | Season, 'status' | 'fourK'>, is4k: boolean) =>
-  is4k ? item.fourK?.status : item.status;
+/** Saisons des demandes en cours d'un titre dans une qualité, avec la demande qui les porte. */
+const activeSeasons = (tx: Pick<Db, 'select'>, mediaId: number, is4k: boolean) =>
+  tx
+    .select({ requestId: requestSeasons.requestId, n: requestSeasons.seasonNumber })
+    .from(requestSeasons)
+    .innerJoin(requests, eq(requests.id, requestSeasons.requestId))
+    .where(activeOn(mediaId, is4k))
+    .all();
+
+/** Colonnes du choix d'envoi d'une demande. */
+type StoredChoice = Pick<typeof requests.$inferSelect, 'serverId' | 'qualityProfileId' | 'rootFolder' | 'seriesType'>;
+const sameChoice = (a: StoredChoice, b: StoredChoice) =>
+  a.serverId === b.serverId &&
+  a.qualityProfileId === b.qualityProfileId &&
+  a.rootFolder === b.rootFolder &&
+  a.seriesType === b.seriesType;
+
+/** Détail (frise) de saisons ajoutées à une demande en attente : modification ou nouvelle demande fusionnée. */
+const SEASONS_ADDED = 'Saisons ajoutées';
+
+/** Changée pendant les appels réseau d'une approbation ou d'une modification → 409. */
+const editedMeanwhile = (action: string) => `Cette demande vient d’être modifiée : relisez-la avant de ${action}`;
+
+/** Détail de l'évènement d'une modification (frise) ; `null` : rien n'a changé. */
+function editDetail(added: number[], removed: number[], choice: boolean): string | null {
+  const parts = [
+    added.length > 0 && `${SEASONS_ADDED.toLowerCase()} ${added.join(', ')}`,
+    removed.length > 0 && `saisons retirées ${removed.join(', ')}`,
+    choice && 'options d’envoi',
+  ].filter((part) => part !== false);
+  return parts.length === 0 ? null : `${REQUEST_EDITED_DETAIL} : ${parts.join(' ; ')}`;
+}
 
 /**
  * Saisons à demander : celles choisies (`'all'` : toutes les saisons régulières déjà diffusées), moins celles déjà
@@ -423,9 +477,9 @@ export function createRequests(
     return { ...rule, used, remaining: Math.max(0, rule.limit - used) };
   }
 
-  /** Propriétaire et gestionnaires sont hors quotas. */
+  /** Propriétaire et gestionnaires sont hors quotas, comme un membre « Sans quota » (`quotaOverride.unlimited`). */
   function assertQuota(tx: Pick<Db, 'select'>, { user, capabilities }: Owner, kind: QuotaKind, wanted: number) {
-    if (capabilities.quotaExempt) return;
+    if (isQuotaExempt(capabilities, user.quotaOverride)) return;
     const rule = quotaRules(user)[kind];
     const { remaining } = usage(tx, user, kind, rule);
     if (wanted > remaining) {
@@ -436,7 +490,7 @@ export function createRequests(
 
   /**
    * Membre `forUserId` vu par `viewer` : lui-même, ou un autre membre (droit « Demander pour un autre », sinon 403 ;
-   * inconnu → 404), avec les droits de son rôle.
+   * inconnu → 404), avec ses droits (rôle et remplacements).
    */
   function ownerFor(viewer: SessionViewer, forUserId: string | undefined): Owner {
     if (forUserId === undefined || forUserId === viewer.user.id) return viewer;
@@ -444,7 +498,47 @@ export function createRequests(
       throw new HttpError(403, 'Vous ne pouvez pas demander à la place d’un autre membre');
     const user = getUser(db, forUserId);
     if (!user) throw new HttpError(404, 'Membre introuvable');
-    return { user, capabilities: capabilitiesOf(user.role) };
+    return { user, capabilities: capabilitiesOf(user) };
+  }
+
+  /**
+   * Choix d'envoi (« Options avancées ») réservés au droit « Demande avancée » (en modification : aussi aux
+   * gestionnaires, `canChooseSend`), sinon 403, comme « Hors quota ».
+   */
+  function assertCanChooseSend(viewer: SessionViewer, input: SendChoiceInput, editing = false) {
+    if (hasSendChoice(input) && !canChooseSend(viewer.capabilities, editing))
+      throw new HttpError(403, 'Vous ne pouvez pas choisir le serveur, le profil ou le dossier d’une demande');
+  }
+
+  /**
+   * Choix d'envoi prêt à enregistrer sur la demande : serveur du type et de la qualité (sinon 400 ; à défaut celui de la
+   * première règle de surcharge, sinon le serveur par défaut, gardé avec le choix : les listes montrées étaient les
+   * siennes), profil et dossier existant sur ce serveur (sinon 400). `null` : aucun choix.
+   * Égal à `stored` (choix déjà enregistré) : pas revalidé, le serveur peut être en panne ou le dossier disparu.
+   */
+  async function storableChoice(
+    title: { type: MediaType; tmdbId: number },
+    is4k: boolean,
+    input: SendChoiceInput,
+    stored?: StoredChoice,
+  ) {
+    if (!hasSendChoice(input)) return null;
+    const { type } = title;
+    const rules = input.serverId === undefined ? await matchingRules(data, deps.tmdb, type, is4k, title.tmdbId) : [];
+    const server = sendServer(
+      data,
+      type,
+      is4k,
+      resolveSendChoice({ approver: input, rules: rules.map(ruleLayer) }).serverId,
+    );
+    const choice = {
+      serverId: server.id,
+      qualityProfileId: input.qualityProfileId ?? null,
+      rootFolder: input.rootFolderPath ?? null,
+      seriesType: type === 'tv' ? (input.seriesType ?? null) : null,
+    };
+    if (!stored || !sameChoice(choice, stored)) await assertSendChoice(data, server, input);
+    return choice;
   }
 
   /** Quota du membre connecté, ou d'un autre membre (`forUserId`, voir `ownerFor`). */
@@ -454,7 +548,7 @@ export function createRequests(
     return {
       movies: usage(db, user, 'movies', rules.movies),
       seasons: usage(db, user, 'seasons', rules.seasons),
-      exempt: capabilities.quotaExempt,
+      exempt: isQuotaExempt(capabilities, user.quotaOverride),
     };
   }
 
@@ -469,10 +563,10 @@ export function createRequests(
     return row;
   }
 
-  /** Numéros de saisons demandées, par demande, en ordre croissant. */
-  function seasonsByRequest(ids: number[]): Map<number, number[]> {
+  /** Numéros de saisons demandées, par demande, en ordre croissant (`reader` : dans une transaction). */
+  function seasonsByRequest(ids: number[], reader: Pick<Db, 'select'> = db): Map<number, number[]> {
     const seasonsOf = new Map<number, number[]>();
-    for (const s of db
+    for (const s of reader
       .select()
       .from(requestSeasons)
       .where(inArray(requestSeasons.requestId, ids))
@@ -590,16 +684,22 @@ export function createRequests(
   }
 
   /**
-   * Ajoute le titre au serveur de la demande (à défaut, celui par défaut du type et de la qualité), avec recherche ;
-   * un échec est rendu lisible, jamais levé.
+   * Ajoute le titre au serveur de la demande (à défaut, celui par défaut du type et de la qualité), avec ses étiquettes
+   * et la recherche si le serveur la veut ; profil, dossier, type de série et étiquettes anime d'une série d'animation
+   * (`destinationOf`). Un échec est rendu lisible, jamais levé.
    */
   async function deliver(row: RequestRow, seasons: number[]): Promise<SendOutcome> {
     try {
       const server = sendServer(data, row.type, row.is4k, row.serverId);
+      const destination = destinationOf(server, await isAnimeTitle(deps.tmdb, server, row.type, row.tmdbId));
+      // Profil, dossier et type de série des règles sont déjà sur la demande (approbation) ; leurs étiquettes, comme
+      // celles du serveur, sont relues à chaque envoi.
+      const rules = await matchingRules(data, deps.tmdb, row.type, row.is4k, row.tmdbId);
       const target = {
-        qualityProfileId: row.qualityProfileId ?? server.qualityProfileId,
-        rootFolderPath: row.rootFolder ?? server.rootFolderPath,
-        search: true,
+        qualityProfileId: row.qualityProfileId ?? destination.qualityProfileId,
+        rootFolderPath: row.rootFolder ?? destination.rootFolderPath,
+        search: server.searchOnAdd,
+        tags: await tagsToSend(server, destination, getUser(db, row.userId), rules),
       };
       if (row.type === 'movie') {
         const { radarrId } = await addMovie(server, {
@@ -615,14 +715,14 @@ export function createRequests(
       const { sonarrId } = await addSeries(server, {
         ...target,
         tvdbId,
-        seriesType: row.seriesType ?? server.seriesType ?? DEFAULT_SERIES_TYPE,
+        seriesType: row.seriesType ?? destination.seriesType ?? DEFAULT_SERIES_TYPE,
         seasons,
-        ...(server.languageProfileId !== null && { languageProfileId: server.languageProfileId }),
+        ...(destination.languageProfileId !== null && { languageProfileId: destination.languageProfileId }),
       });
       return { ok: true, is4k: server.is4k, arrId: sonarrId, tvdbId, detail: `${server.name} #${sonarrId}` };
     } catch (error) {
       if (readable(error)) return { ok: false, detail: (error as Error).message };
-      console.error('Envoi de la demande', row.id, error);
+      logError(`Envoi de la demande ${row.id}`, error);
       return { ok: false, detail: "Erreur inattendue pendant l'envoi" };
     }
   }
@@ -634,6 +734,8 @@ export function createRequests(
   async function send(id: number, actor: User) {
     const row = requireRow(id);
     const outcome = await deliver(row, seasonsByRequest([id]).get(id) ?? []);
+    // Échec (profil ou dossier disparu, entre autres) : les listes du serveur sont relues au prochain choix.
+    if (!outcome.ok && row.serverId !== null) forgetArrOptions(db, row.serverId);
     db.transaction((tx) => {
       const at = new Date(now());
       const updated = tx
@@ -661,25 +763,48 @@ export function createRequests(
     });
   }
 
-  async function approve(id: number, actor: User, choice: ApproveRequestInput = {}): Promise<RequestDetail> {
+  /**
+   * Choix d'envoi et saisons d'une demande en attente identiques à ceux lus avant les appels réseau (`row`, `seasons`) ?
+   * `updated_at` ne suffit pas : à la seconde près, deux écritures rapprochées ont la même valeur.
+   */
+  function unchangedSince(tx: Pick<Db, 'select'>, row: RequestRow, seasons: number[]) {
+    const current = tx.select().from(requests).where(eq(requests.id, row.id)).get();
+    if (current?.status !== 'pending') return true; // déjà traitée : `transition` répond 409
+    return sameChoice(current, row) && (seasonsByRequest([row.id], tx).get(row.id) ?? []).join() === seasons.join();
+  }
+
+  async function approve(
+    id: number,
+    actor: User,
+    choice: ApproveRequestInput = {},
+    auto?: true,
+  ): Promise<RequestDetail> {
     const row = requireRow(id);
-    // Serveur choisi par l'approbateur (du bon type et de la bonne qualité, sinon 400), sinon celui de la demande
-    // (import Seerr), sinon le serveur par défaut. Aucun serveur : l'envoi échouera avec un message clair.
-    const server = serverFor(row, choice.serverId ?? row.serverId);
-    if (server) await assertSendChoice(server, choice);
-    // Valeurs envoyées gardées sur la demande (une relance les reprend) ; à défaut, celles du serveur.
+    const seasons = seasonsByRequest([id]).get(id) ?? [];
+    // Ordre de priorité : `resolveSendChoice` (approbateur, demande, règles de surcharge, valeurs du serveur). Serveur
+    // choisi du mauvais type ou de la mauvaise qualité : 400. Aucun serveur : l'envoi échouera avec un message clair.
+    const rules = await matchingRules(data, deps.tmdb, row.type, row.is4k, row.tmdbId);
+    const levels = { approver: choice, stored: storedSendChoice(row), rules: rules.map(ruleLayer) };
+    const server = serverFor(row, resolveSendChoice(levels).serverId);
+    if (server) await assertSendChoice(data, server, choice);
+    const destination =
+      server && destinationOf(server, await isAnimeTitleOrDefault(deps.tmdb, server, row.type, row.tmdbId));
+    const sent = resolveSendChoice({ ...levels, defaults: destination }, server?.id);
+    // Valeurs envoyées gardées sur la demande (une relance les reprend).
     db.transaction((tx) => {
+      // Choix d'envoi ou saisons modifiés pendant les appels ci-dessus : le gestionnaire ne les a pas vus.
+      if (!unchangedSince(tx, row, seasons)) throw new HttpError(409, editedMeanwhile('l’approuver'));
       transition(tx, id, ['pending'], {
         status: 'approved',
         decidedBy: actor.id,
         serverId: server?.id ?? null,
-        qualityProfileId: choice.qualityProfileId ?? server?.qualityProfileId ?? null,
-        rootFolder: choice.rootFolderPath ?? server?.rootFolderPath ?? null,
-        seriesType: row.type === 'tv' ? (choice.seriesType ?? server?.seriesType ?? null) : null,
+        qualityProfileId: sent.qualityProfileId ?? null,
+        rootFolder: sent.rootFolderPath ?? null,
+        seriesType: row.type === 'tv' ? (sent.seriesType ?? null) : null,
         // « Hors quota » coché ou décoché à l'approbation ; absent, la demande garde le sien.
         ...(choice.quotaExempt !== undefined && { quotaExempt: choice.quotaExempt }),
       });
-      addEvent(tx, id, 'approved', actor.id, new Date(now()));
+      addEvent(tx, id, 'approved', actor.id, new Date(now()), null, auto);
     });
     await send(id, actor);
     return detailOf(id);
@@ -712,18 +837,81 @@ export function createRequests(
     return detailOf(id);
   }
 
+  /**
+   * Modifie une demande en attente : ses saisons (série) et son choix d'envoi (`storableChoice`, qui le remplace en
+   * entier). Le demandeur modifie la sienne (choix d'envoi : droit « Demande avancée ») ; un gestionnaire, toute demande
+   * en attente. Contrôle du statut et écriture dans une même transaction (`transition`) : approuvée entre-temps → 409.
+   * Les saisons ajoutées passent le quota du demandeur à leur date (sauf demande hors quota), les retirées le libèrent ;
+   * une saison qu'une autre demande en cours porte déjà → 409. L'évènement `requested` avec un détail (comme un ajout de
+   * saisons) garde la trace de la modification sans prévenir personne.
+   */
+  async function update(viewer: SessionViewer, id: number, input: UpdateInput): Promise<RequestDetail> {
+    const row = requireRow(id, viewer);
+    assertCanChooseSend(viewer, input, true);
+    if (input.seasons && row.type === 'movie') throw new HttpError(400, 'Un film n’a pas de saisons');
+    if (input.seriesType && row.type === 'movie') throw new HttpError(400, 'Un film n’a pas de type de série');
+    if (row.status !== 'pending') throw new HttpError(409, NOT_PENDING);
+    const current = seasonsByRequest([id]).get(id) ?? [];
+    const asked = (input.seasons ?? []).filter((n) => !current.includes(n));
+    let validated: number[] = [];
+    if (asked.length > 0) {
+      const details = await deps.availability.withDetailsStatus(await loadDetails(deps.tmdb(), 'tv', row.tmdbId));
+      validated = wantedSeasons(details, asked, isoDay(now()), row.is4k, data);
+    }
+    const choice = await storableChoice(row, row.is4k, input, row);
+    db.transaction(
+      (tx) => {
+        const at = new Date(now());
+        const fresh = transition(tx, id, ['pending'], { status: 'pending', ...choice }, NOT_PENDING);
+        // Saisons relues ici : une autre modification a pu les changer pendant les appels ci-dessus.
+        const seasons = seasonsByRequest([id], tx).get(id) ?? [];
+        const next = new Set(input.seasons ?? seasons);
+        const removed = seasons.filter((n) => !next.has(n));
+        const added = validated.filter((n) => !seasons.includes(n));
+        // Saison gardée mais retirée entre-temps (pas revalidée ici), ou demande vidée : 409.
+        const dropped = [...next].some((n) => current.includes(n) && !seasons.includes(n));
+        if (input.seasons && (dropped || seasons.length - removed.length + added.length === 0))
+          throw new HttpError(409, editedMeanwhile('la modifier'));
+        if (removed.length > 0)
+          tx.delete(requestSeasons)
+            .where(and(eq(requestSeasons.requestId, id), inArray(requestSeasons.seasonNumber, removed)))
+            .run();
+        if (added.length > 0) {
+          const taken = new Set(
+            activeSeasons(tx, row.mediaId, row.is4k)
+              .filter((s) => s.requestId !== id)
+              .map((s) => s.n),
+          );
+          if (added.some((n) => taken.has(n))) throw new HttpError(409, SEASONS_TAKEN);
+          const user = getUser(db, row.userId);
+          if (!fresh.quotaExempt && user)
+            assertQuota(tx, { user, capabilities: capabilitiesOf(user) }, 'seasons', added.length);
+          tx.insert(requestSeasons)
+            .values(added.map((seasonNumber) => ({ requestId: id, seasonNumber, createdAt: at })))
+            .run();
+        }
+        // Choix renvoyé tel qu'enregistré (la feuille renvoie toujours le sien) : rien de changé à noter.
+        const detail = editDetail(added, removed, choice !== null && !sameChoice(choice, row));
+        if (detail) addEvent(tx, id, 'requested', viewer.user.id, at, detail);
+      },
+      { behavior: 'immediate' },
+    );
+    return detailOf(id);
+  }
+
   // --- Création ---
 
   /**
-   * Crée la demande (`created: true`), ou renvoie celle déjà en cours du membre (double clic, `created: false`).
-   * Vérification du quota et insertion dans la même transaction. Rôle à approbation automatique (4K : approbation
-   * automatique 4K) → approuvée et envoyée aussitôt. Une demande 4K suppose le droit et un serveur 4K du type ; elle
+   * Crée la demande (`created: true`), ou renvoie celle déjà en cours du membre (double clic, `created: false`). `changed` : créée, ou des saisons ajoutées à la demande en cours.
+   * Droit de demander ce type (et la 4K) du membre à qui elle sera, sinon 403 (`requestRefusal`). Vérification du quota
+   * et insertion dans la même transaction. Approbation automatique de son type (4K : approbation automatique 4K,
+   * `autoApproves`) → approuvée et envoyée aussitôt. Une demande 4K suppose le droit et un serveur 4K du type ; elle
    * compte dans le quota comme une autre. Un titre bloqué (liste ou mot-clé) est refusé (403), pour tous.
    *
    * Pour un autre membre (`forUserId`, droit « Demander pour un autre ») : la demande est à lui. Son quota, ses droits
    * (4K, approbation automatique, en son nom) et sa demande en cours s'appliquent ; il est prévenu
    * (`requested_on_behalf`) et `created_by` garde l'auteur, acteur de l'évènement `requested`. « Hors quota »
-   * (`quotaExempt`, gestionnaires) saute le quota et marque la demande. Des saisons ajoutées à une demande en attente
+   * (`quotaExempt`, droit « Demander hors quota ») saute le quota et marque la demande. Des saisons ajoutées à une demande en attente
    * lui donnent l'exemption de l'ajout : hors quota, toute la demande l'est ; sinon elle ne l'est plus et le quota compte
    * toutes ses saisons. Un ajout pour autrui fusionné prévient le membre et renseigne `created_by` s'il est vide ; une
    * demande qui ne change rien (film déjà demandé, saisons déjà dedans) ne prévient personne.
@@ -731,21 +919,24 @@ export function createRequests(
   async function create(
     viewer: SessionViewer,
     input: CreateInput,
-  ): Promise<{ request: RequestDetail; created: boolean }> {
-    if (input.quotaExempt && !viewer.capabilities.canManageRequests)
-      throw new HttpError(403, 'Seul un gestionnaire peut mettre une demande hors quota');
+  ): Promise<{ request: RequestDetail; created: boolean; changed: boolean }> {
+    if (input.quotaExempt && !viewer.capabilities.canRequestQuotaExempt)
+      throw new HttpError(403, 'Vous ne pouvez pas mettre une demande hors quota');
+    assertCanChooseSend(viewer, input);
     const owner = ownerFor(viewer, input.forUserId);
     const { user, capabilities } = owner;
     const author = viewer.user;
     const onBehalf = user.id !== author.id;
     const exempt = input.quotaExempt === true;
     const { is4k } = input;
+    const refusal = requestRefusal(capabilities, input);
+    if (refusal) throw new HttpError(403, onBehalf ? `${refusal} (${user.name})` : refusal);
     assertTitleNotBlocked(db, input);
     if (is4k) {
-      if (!capabilities.canRequest4k) throw new HttpError(403, 'Vous ne pouvez pas demander en 4K');
       if (!hasArrServer(db, arrKindOf(input.type), true))
         throw new HttpError(409, `Aucun serveur ${arrLabel(arrKindOf(input.type), true)} n’est configuré`);
     }
+    const choice = await storableChoice(input, is4k, input);
     const details = await deps.availability.withDetailsStatus(await loadDetails(deps.tmdb(), input.type, input.tmdbId));
     assertNotBlocked(data, details);
     let wanted: number[] = [];
@@ -778,6 +969,7 @@ export function createRequests(
               is4k,
               quotaExempt: exempt,
               createdBy: onBehalf ? author.id : null,
+              ...choice,
               createdAt: at,
               updatedAt: at,
             })
@@ -808,22 +1000,18 @@ export function createRequests(
         }
 
         // Série : seules les saisons que personne n'a déjà demandées.
-        const active = tx
-          .select({ requestId: requestSeasons.requestId, n: requestSeasons.seasonNumber })
-          .from(requestSeasons)
-          .innerJoin(requests, eq(requests.id, requestSeasons.requestId))
-          .where(activeOn(mediaId, is4k))
-          .all();
+        const active = activeSeasons(tx, mediaId, is4k);
         const covered = new Set(active.map((s) => s.n));
-        const missing = wanted.filter((n) => !covered.has(n));
+        const missing = uncoveredSeasons(wanted, covered);
         if (missing.length === 0) {
           // Double clic : sa propre demande contient déjà toutes ces saisons.
           const mine = new Set(active.filter((s) => s.requestId === own?.id).map((s) => s.n));
           if (own && wanted.every((n) => mine.has(n))) return { id: own.id, created: false };
-          throw new HttpError(409, 'Ces saisons sont déjà demandées');
+          throw new HttpError(409, SEASONS_TAKEN);
         }
         // Une seule demande en cours par membre et par titre : tant qu'elle attend, les nouvelles saisons s'y ajoutent.
-        if (own && own.status !== 'pending') throw new HttpError(409, 'Une demande est déjà en cours pour ce titre');
+        if (own && lockedRequestStatuses.includes(own.status))
+          throw new HttpError(409, 'Une demande est déjà en cours pour ce titre');
         if (!own) {
           checkQuota('seasons', missing.length);
           return insert(missing);
@@ -835,27 +1023,41 @@ export function createRequests(
           .values(missing.map((seasonNumber) => ({ requestId: own.id, seasonNumber })))
           .run();
         tx.update(requests)
-          .set({ updatedAt: at, quotaExempt: exempt, ...(onBehalf && { createdBy: own.createdBy ?? author.id }) })
+          .set({
+            updatedAt: at,
+            quotaExempt: exempt,
+            ...choice,
+            ...(onBehalf && { createdBy: own.createdBy ?? author.id }),
+          })
           .where(eq(requests.id, own.id))
           .run();
-        addEvent(tx, own.id, 'requested', author.id, at, `Saisons ajoutées : ${missing.join(', ')}`);
+        addEvent(tx, own.id, 'requested', author.id, at, `${SEASONS_ADDED} : ${missing.join(', ')}`);
         if (onBehalf) notifyRequestedOnBehalf(tx, { requestId: own.id, userId: user.id, actorId: author.id, at });
-        return { id: own.id, created: false };
+        return { id: own.id, created: false, merged: true };
       },
       { behavior: 'immediate' },
     );
 
+    const changed = outcome.created || !!outcome.merged;
+
     // Approbation automatique d'après les droits du membre, en son nom : il n'est pas prévenu de « sa » approbation.
-    const autoApprove = is4k ? capabilities.autoApprove4k : capabilities.autoApprove;
-    if (autoApprove && rowOf(outcome.id)?.status === 'pending') {
+    if (autoApproves(capabilities, input) && rowOf(outcome.id)?.status === 'pending') {
       try {
-        return { request: await approve(outcome.id, user), created: outcome.created };
+        return {
+          request: await approve(outcome.id, user, {}, true),
+          created: outcome.created,
+          changed,
+        };
       } catch (error) {
         // Double clic : un appel concurrent l'a déjà approuvée ou envoyée, on renvoie son état actuel.
         if (!(error instanceof HttpError && error.statusCode === 409)) throw error;
       }
     }
-    return { request: await detailOf(outcome.id), created: outcome.created };
+    return {
+      request: await detailOf(outcome.id),
+      created: outcome.created,
+      changed,
+    };
   }
 
   // --- Listes et compteurs ---
@@ -863,11 +1065,12 @@ export function createRequests(
   /** Une page, et le nombre de demandes par statut du périmètre (le total de la page s'en déduit). */
   async function list(viewer: SessionViewer, query: ListQuery): Promise<RequestPage> {
     const onlyMine = query.mine || !viewer.capabilities.canManageRequests;
+    const userId = onlyMine ? viewer.user.id : query.userId;
     const scope: ListScope = {
-      ...(onlyMine && { userId: viewer.user.id }),
+      ...(userId !== undefined && { userId }),
       ...(query.type && { title: { type: query.type, tmdbId: query.tmdbId } }),
     };
-    const totals = Object.fromEntries(requestStatuses.map((s) => [s, 0])) as RequestPage['totals'];
+    const totals: RequestPage['totals'] = emptyRequestCounts();
     for (const { status, n } of requestTotalsQuery(db, scope).all()) totals[status] = n;
     const counted: readonly RequestStatus[] = query.status ?? requestStatuses;
     const total = counted.reduce((sum, s) => sum + totals[s], 0);
@@ -908,5 +1111,5 @@ export function createRequests(
     return { results };
   }
 
-  return { create, list, get, approve, decline, cancel, retry, batch, quota, counts };
+  return { create, update, list, get, approve, decline, cancel, retry, batch, quota, counts };
 }

@@ -9,12 +9,13 @@ const setupOf = (hasOwner: boolean, emby: boolean, complete: boolean): SetupStat
   hasOwner,
   hasMembers: hasOwner,
   complete,
+  appTitle: 'Request',
 });
 const viewerAs = (role: Role) => ({
   id: role,
   name: role,
   role,
-  capabilities: capabilitiesOf(role),
+  capabilities: capabilitiesOf({ role, permissions: null }),
   avatarUrl: null,
 });
 const guard = (path: string, setup: SetupState, role: Role | null) =>

@@ -7,10 +7,12 @@ import { DAY_MS } from '../src/server/lib/time.ts';
 import {
   backupDatabase,
   backupsDir,
+  createBackups,
   DEFAULT_BACKUP_KEEP,
   parseBackupKeep,
-  startBackups,
 } from '../src/server/services/backup.ts';
+import { lastRun } from '../src/server/services/jobs.ts';
+import { JOB } from '../src/shared/jobs.ts';
 import { trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
@@ -72,12 +74,26 @@ describe('parseBackupKeep', () => {
   });
 });
 
-describe('startBackups', () => {
-  it('ne planifie rien quand BACKUP_KEEP vaut 0 (arrêt immédiat, aucun dossier créé)', async () => {
+describe('createBackups', () => {
+  it('désactivée quand BACKUP_KEEP vaut 0 : rien ne se lance, aucun dossier créé', async () => {
     const { data, sqlite } = openWithRow();
-    await startBackups(sqlite, data.dir, 0).stop();
+    const backups = createBackups(data.db, data.dir, 0);
 
+    expect(backups.enabled).toBe(false);
+    expect(backups.launch()).toBeNull();
     expect(existsSync(backupsDir(data.dir))).toBe(false);
+    sqlite.close();
+  });
+
+  it('lancement manuel : une copie, une ligne dans job_runs, et pas de seconde copie pendant la première', async () => {
+    const { data, sqlite, dir } = openWithRow();
+    const backups = createBackups(data.db, data.dir, 3);
+    const first = backups.launch();
+
+    expect(backups.launch()).toBeNull();
+    await first;
+    expect(readdirSync(dir)).toHaveLength(1);
+    expect(lastRun(data.db, JOB.backup)).toMatchObject({ status: 'success', detail: expect.stringContaining('Copie') });
     sqlite.close();
   });
 
@@ -86,19 +102,19 @@ describe('startBackups', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
     try {
       let now = Date.now(); // la date des fichiers vient du disque : pas d'horloge simulée
-      const backups = startBackups(sqlite, data.dir, 3, () => now);
+      const backups = createBackups(data.db, data.dir, 3, { now: () => now }).start();
       await vi.advanceTimersByTimeAsync(61_000);
       await backups.stop();
       expect(readdirSync(dir)).toHaveLength(1);
 
       now += 3_600_000; // une heure plus tard : trop tôt
-      const again = startBackups(sqlite, data.dir, 3, () => now);
+      const again = createBackups(data.db, data.dir, 3, { now: () => now }).start();
       await vi.advanceTimersByTimeAsync(61_000);
       await again.stop();
       expect(readdirSync(dir)).toHaveLength(1);
 
       now += DAY_MS;
-      const later = startBackups(sqlite, data.dir, 3, () => now);
+      const later = createBackups(data.db, data.dir, 3, { now: () => now }).start();
       await vi.advanceTimersByTimeAsync(61_000);
       await later.stop();
       expect(readdirSync(dir)).toHaveLength(2);

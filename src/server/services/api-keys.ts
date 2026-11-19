@@ -76,7 +76,7 @@ export function authenticateApiKey(db: Db, secret: string, now = new Date()): Us
     .innerJoin(users, eq(users.id, apiKeys.createdBy))
     .where(and(eq(apiKeys.keyHash, sha256Hex(secret)), isNull(apiKeys.revokedAt)))
     .get();
-  if (!row || !capabilitiesOf(row.user.role).isOwner) return null;
+  if (!row || !capabilitiesOf(row.user).isOwner) return null;
   if (!row.lastUsedAt || row.lastUsedAt.getTime() <= now.getTime() - LAST_USED_REFRESH_MS)
     db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, row.id)).run();
   return row.user;

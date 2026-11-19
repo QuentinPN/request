@@ -2,8 +2,9 @@
 
 Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le travail.
 
-## Où on en est (2026-11-18)
+## Où on en est (2026-11-19)
 
+- **Phase 8 (parité Seerr) terminée sur `dev`** (PR #60 à #74 : droits fins, suppression de membre, demande avancée, modification d’une demande en attente, règles de surcharge, demande automatique depuis Ma liste, notifications par membre ; vote écarté). Fusion `dev` → `main` des phases 7 et 8 accordée le 2026-11-19.
 - **MVP et phase 7 fonctionnellement complets sur `dev`** : phases 0 à 5 et 7 faites ; la phase 6 attend le propriétaire et les vraies instances (voir « Prochaines actions »). La phase 7 (PR #38 à #47) a livré les 15 fonctions de « Plus tard », voir ROADMAP.md.
 - **Dépôt** : `github.com/QuentinPN/Request` (privé). `main` = production (le MVP y a été fusionné, #31 puis #36 ; la phase 7 reste sur `dev` jusqu'à l'accord du propriétaire), `dev` = intégration ; une PR par lot, CI `npm run verify` + construction de l'image Docker.
 - **Méthode** : lots indépendants en parallèle (un worktree par agent), `checker` sur chaque PR, correctifs avant fusion.
@@ -17,13 +18,13 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 - **Statuts** calculés côté serveur (disponible, partiel, en téléchargement, 4K à part), épisodes présents/attendus par saison, lien « Regarder dans » le serveur choisi.
 - **Demandes** : feuille de demande (film, saisons, 4K, pour un autre membre, hors quota), Mes demandes, bande « Vos demandes en cours », frise ; Approbations (tableau + panneau, cartes sur mobile) avec choix du serveur, du profil et du dossier, refus motivé, relance des échecs ; envoi à Radarr/Sonarr ; blocage de titres et de mots-clés.
 - **Autour des demandes** : signalements avec commentaires, liste de souhaits « Ma liste » avec import Trakt et Letterboxd, statistiques, clés d'API (`X-Api-Key`, docs/API.md).
-- **Membres** : Réglages › Membres (propriétaire) liste les membres et offre « Déconnecter partout » (révoque toutes leurs sessions, confirmation, captures `docs/captures/7.11`).
+- **Membres** : Réglages › Membres (propriétaire) liste les membres : « Modifier » (rôle Membre, Approbation auto ou Gestionnaire ; quotas par défaut, propres au membre ou « Sans quota »), « Voir ses demandes » (`/demandes?membre=`, gestionnaires) et « Déconnecter partout » (captures `docs/captures/7.11` et `docs/captures/membres`).
 - **Synchronisation** : webhooks Radarr/Sonarr (par serveur), balayage léger (10 min) et complet (24 h, purges), passage automatique des demandes à « disponible ».
 - **Notifications** : cloche, Discord, courriel et push web (distribution unique après validation) ; application installable (PWA).
-- **Navigation** : pilule avec menu « Plus » (ordinateur), cinq onglets au plus (mobile).
+- **Navigation** : pilule avec menu « Plus » (ordinateur), cinq onglets au plus (mobile), bouton « Retour » partagé sur les pages ouvertes depuis Compte, la fiche et les plateformes (repli sûr sans historique).
 - **Production** : Dockerfile, `compose.yml` durci + Caddy, sauvegarde quotidienne de la base, guide [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).
 - **Base** : SQLite (WAL), migrations 0000 à 0010, modèle dans `docs/DATA_MODEL.md`.
-- **Tests** : 691 unitaires et de routes (faux serveurs Emby, Jellyfin, Plex, Radarr, Sonarr, TMDB, Trakt, Discord, SMTP, push, Seerr), 392 e2e Playwright (1440 et 390 px) avec axe.
+- **Tests** : 761 unitaires et de routes (faux serveurs Emby, Jellyfin, Plex, Radarr, Sonarr, TMDB, Trakt, Discord, SMTP, push, Seerr).
 
 ## Risques et points de vigilance
 
@@ -40,11 +41,15 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 | Clé de chiffrement `/data/secret.key`                                                                                                                                                                                 | Sauvegarde inutilisable sans elle                                   | Documenté dans DEPLOIEMENT.md ; la sauvegarder à part                                                         |
 | Restauration de sauvegarde jamais exercée                                                                                                                                                                             | Perte de données en cas d'incident                                  | À tester lors du déploiement (6.3)                                                                            |
 
+## Prochain plan
+
+Phase 8 faite. Suite : déploiement (6.3) avec le propriétaire.
+
 ## Prochaines actions (côté propriétaire)
 
 1. ~~**Logo (3.4)**~~ : fait (R-loupe intégré).
 2. **Points restants (0.5)** : confirmer sur l'instance réelle les 4 points de `docs/integrations.md`.
 3. ~~**Fusion `dev` → `main`**~~ : faite (#31).
-4. **Fusion de la phase 7 (`dev` → `main`)** : relire les captures `docs/captures/7.x`, puis donner l'accord de fusion.
+4. ~~**Fusion des phases 7 et 8 (`dev` → `main`)**~~ : accordée le 2026-11-19.
 5. **Déploiement (6.3)** : sur le mini-PC à côté de Seerr, avec votre accord ; parcourir l'assistant, tester la restauration, essai avec de vrais membres, puis arrêt de Seerr.
 6. **Réglages à faire une fois déployé** : serveur 4K éventuel, SMTP, Client ID Trakt (facultatifs) ; `PUBLIC_URL` hors Compose ; garder Emby, ou vérifier Jellyfin ou Plex sur une instance avant de changer.

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { SMTP_SETTINGS_PATH, SMTP_TEST_PATH } from '../../shared/notifications.ts';
+import { AGENT_EVENTS_VERSION, SMTP_SETTINGS_PATH, SMTP_TEST_PATH } from '../../shared/notifications.ts';
 import { type MaskedSetting, settingSchemas } from '../../shared/settings.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
 import { ownerOnly, viewerOf } from '../plugins/auth.ts';
@@ -13,8 +13,12 @@ import { getSetting, maskSetting, setSetting, withStoredSecrets } from '../servi
 export function smtpRoutes(app: FastifyInstance, email: EmailService) {
   const { db, cryptoKey } = app.data;
   const stored = () => getSetting(db, cryptoKey, 'smtp');
-  /** Réglage du formulaire, secret vide = l'enregistré. */
-  const fromForm = (body: unknown) => parseRequest(settingSchemas.smtp, withStoredSecrets('smtp', body, stored()));
+  /** Réglage du formulaire, secret vide = l'enregistré ; `events` est alors un choix du propriétaire. */
+  const fromForm = (body: unknown) =>
+    parseRequest(settingSchemas.smtp, {
+      ...(withStoredSecrets('smtp', body, stored()) as object),
+      eventsVersion: AGENT_EVENTS_VERSION,
+    });
 
   app.get(SMTP_SETTINGS_PATH, ownerOnly, async (): Promise<MaskedSetting<'smtp'>> => {
     const value = stored();

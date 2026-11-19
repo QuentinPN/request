@@ -7,8 +7,12 @@ import {
   type RequestDetail,
   type RequestView,
   requestPath,
+  resolveSendChoice,
+  type SendChoiceLayer,
+  type SendChoiceLevels,
   type SendOptions,
   sendOptionsPath,
+  storedSendChoice,
 } from '@shared/requests.ts';
 import type { RequestStatus } from '@shared/status.ts';
 import { keepPreviousData, queryOptions, useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
@@ -43,20 +47,26 @@ export const approvalListQuery = (tab: ApprovalTab, page = 1) =>
 export type SendChoice = ApproveRequestInput;
 export type { SendOptions };
 
-/** Ce dont dépendent les listes d'envoi : type, qualité (4K ou non) et serveur choisi (absent : celui par défaut). */
+/**
+ * Ce dont dépendent les listes d'envoi : type, qualité (4K ou non), serveur choisi (absent : celui de la première règle
+ * de surcharge, sinon celui par défaut) et le titre : règles de surcharge, et réglages anime d'une série d'animation.
+ */
 export interface SendTarget {
   type: MediaType;
   is4k: boolean;
   serverId?: number | undefined;
+  tmdbId?: number | undefined;
 }
 
-const targetKey = ({ type, is4k, serverId }: SendTarget) => [type, is4k, serverId ?? null] as const;
+const targetKey = ({ type, is4k, serverId, tmdbId }: SendTarget) =>
+  [type, is4k, serverId ?? null, tmdbId ?? null] as const;
 
 /** Serveur d'envoi d'une demande : choix de l'approbateur, sinon serveur déjà retenu, sinon celui par défaut. */
 export const sendTargetOf = (request: RequestView, choice?: SendChoice): SendTarget => ({
   type: request.type,
   is4k: request.is4k,
   serverId: choice?.serverId ?? request.server?.id,
+  tmdbId: request.tmdbId,
 });
 
 /** Serveurs, profils et dossiers (route des approbateurs) ; `null` : aucun serveur du type et de la qualité. */
@@ -69,6 +79,7 @@ export const sendOptionsQuery = (target: SendTarget) =>
     queryFn: async ({ signal }): Promise<SendOptions | null> => {
       const query = new URLSearchParams({ is4k: String(target.is4k) });
       if (target.serverId !== undefined) query.set('serverId', String(target.serverId));
+      if (target.tmdbId !== undefined) query.set('tmdbId', String(target.tmdbId));
       try {
         return await apiGet<SendOptions>(`${sendOptionsPath(target.type)}?${query}`, undefined, signal);
       } catch (error) {
@@ -79,7 +90,8 @@ export const sendOptionsQuery = (target: SendTarget) =>
   });
 
 /**
- * Listes d'envoi de plusieurs demandes, lues une fois par couple serveur-qualité. `data` vaut `undefined` tant que les
+ * Listes d'envoi de plusieurs demandes, lues une fois par cible (serveur, qualité et titre : les règles de surcharge et
+ * les réglages anime dépendent du titre). `data` vaut `undefined` tant que les
  * listes chargent (ou si le service ne répond pas) : les réglages par défaut s'appliquent.
  */
 export function useSendOptions(targets: readonly SendTarget[]) {
@@ -88,6 +100,34 @@ export function useSendOptions(targets: readonly SendTarget[]) {
   return (target: SendTarget) =>
     results[unique.findIndex((t) => targetKey(t).join(':') === targetKey(target).join(':'))];
 }
+
+/** Choix d'envoi enregistré sur une demande (demande avancée, import Seerr), pour pré-remplir l'approbation. */
+export const requestSendChoice = (request: RequestView): SendChoiceLayer =>
+  storedSendChoice({ ...request, serverId: request.server?.id ?? null });
+
+export type ShownSendChoice = ReturnType<typeof resolveSendChoice>;
+
+/**
+ * Valeurs d'envoi affichées : choix en cours et choix enregistré (`resolveSendChoice`), puis les valeurs par défaut des
+ * listes du serveur retenu, s'il y en a (règles de surcharge et réglages anime déjà fondus par le serveur).
+ */
+export const shownSendChoice = (
+  options: SendOptions | null | undefined,
+  levels: Pick<SendChoiceLevels, 'approver' | 'stored'>,
+): ShownSendChoice =>
+  options
+    ? resolveSendChoice(
+        {
+          ...levels,
+          defaults: {
+            qualityProfileId: options.defaultProfileId,
+            rootFolderPath: options.defaultFolder,
+            seriesType: options.defaultSeriesType,
+          },
+        },
+        options.serverId,
+      )
+    : resolveSendChoice(levels);
 
 /** Nom du profil de qualité ; « Par défaut » tant que la liste n'est pas connue (en chargement, service muet). */
 export const profileName = (options: SendOptions | null | undefined, id: number | null | undefined) =>

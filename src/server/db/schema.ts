@@ -1,35 +1,58 @@
-import { sql } from 'drizzle-orm';
+import { type AnyColumn, sql } from 'drizzle-orm';
 import { check, customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import type { z } from 'zod';
 import { arrKinds } from '../../shared/arr-servers.ts';
+import type { BlockedKeyword } from '../../shared/blocklist.ts';
 import { issueStatuses, issueTypes } from '../../shared/issues.ts';
 import { jobRunStatuses } from '../../shared/jobs.ts';
 import { mediaTypes } from '../../shared/media.ts';
-import { notificationKinds } from '../../shared/notifications.ts';
-import { type QuotaOverride, quotaOverrideSchema, roles } from '../../shared/roles.ts';
+import { type NotificationChoices, notificationChoicesSchema, notificationKinds } from '../../shared/notifications.ts';
+import {
+  type PermissionOverrides,
+  permissionOverridesSchema,
+  type QuotaOverride,
+  quotaOverrideSchema,
+  roles,
+} from '../../shared/roles.ts';
 import { minimumAvailabilities, seriesTypes } from '../../shared/settings.ts';
 import { mediaStatuses, preSendRequestStatuses, requestEventTypes, requestStatuses } from '../../shared/status.ts';
 import { watchlistSources } from '../../shared/watchlist.ts';
 import { enumCheck, inLiterals } from './checks.ts';
 
 /**
- * JSON validé à la lecture par `quotaOverrideSchema` : une valeur illisible ou hors schéma (base éditée à la main,
- * ancien format) vaut `null` (quotas par défaut) et est journalisée, au lieu de faire échouer la connexion
+ * Colonne JSON validée à la lecture par `schema` : une valeur illisible ou hors schéma (base éditée à la main,
+ * ancien format) vaut `null` (valeur par défaut) et est journalisée, au lieu de faire échouer la connexion
  * ou la liste des membres.
  */
-const quotaOverrideJson = customType<{ data: QuotaOverride | null; driverData: string }>({
-  dataType: () => 'text',
-  toDriver: (value) => JSON.stringify(value),
-  fromDriver: (stored) => {
-    try {
-      const parsed = quotaOverrideSchema.safeParse(JSON.parse(stored));
-      if (parsed.success) return parsed.data;
-    } catch {
-      // JSON invalide : traité comme un format inconnu, ci-dessous.
-    }
-    console.error('quota_override illisible en base : quotas par défaut appliqués');
-    return null;
-  },
-});
+const tolerantJson = <T>(schema: z.ZodType<T>, unreadable: string) =>
+  customType<{ data: T | null; driverData: string }>({
+    dataType: () => 'text',
+    toDriver: (value) => JSON.stringify(value),
+    fromDriver: (stored) => {
+      try {
+        const parsed = schema.safeParse(JSON.parse(stored));
+        if (parsed.success) return parsed.data;
+      } catch {
+        // JSON invalide : traité comme un format inconnu, ci-dessous.
+      }
+      console.error(unreadable);
+      return null;
+    },
+  });
+
+const quotaOverrideJson = tolerantJson<QuotaOverride>(
+  quotaOverrideSchema,
+  'quota_override illisible en base : quotas par défaut appliqués',
+);
+const permissionsJson = tolerantJson<PermissionOverrides>(
+  permissionOverridesSchema,
+  'permissions illisibles en base : droits du rôle appliqués',
+);
+
+const notificationTypesJson = tolerantJson<NotificationChoices>(
+  notificationChoicesSchema,
+  'notification_types illisibles en base : types par défaut appliqués',
+);
 
 /** Réglages clé/valeur : `value` est du JSON validé par Zod, les champs secrets y sont chiffrés. */
 export const settings = sqliteTable('settings', {
@@ -59,10 +82,23 @@ export const users = sqliteTable(
     email: text(),
     emailNotifications: integer({ mode: 'boolean' }).notNull().default(true),
     pushNotifications: integer({ mode: 'boolean' }).notNull().default(true),
+    permissions: permissionsJson(),
+    /** JSON `NotificationChoices` : types de notification reçus, écart aux valeurs par défaut (`null` = défauts). */
+    notificationTypes: notificationTypesJson(),
+    /** Option du membre pour la demande automatique depuis Ma liste (lot suivant) : pas encore exposée. */
+    watchlistAutoRequest: integer({ mode: 'boolean' }).notNull().default(false),
   },
   (table) => [
     enumCheck('users_role_check', table.role, roles),
     check('users_quota_override_json_check', sql`${table.quotaOverride} IS NULL OR json_valid(${table.quotaOverride})`),
+    check(
+      'users_permissions_json_check',
+      sql`${table.permissions} IS NULL OR (json_valid(${table.permissions}) AND json_type(${table.permissions}) = 'object')`,
+    ),
+    check(
+      'users_notification_types_json_check',
+      sql`${table.notificationTypes} IS NULL OR (json_valid(${table.notificationTypes}) AND json_type(${table.notificationTypes}) = 'object')`,
+    ),
   ],
 );
 
@@ -194,7 +230,7 @@ export const jobRuns = sqliteTable(
  * Serveurs Radarr et Sonarr (plusieurs par type, 4K ou non). `apiKey` : chiffrée comme les secrets des réglages
  * (`crypto.ts`). Au plus un serveur par défaut par couple (type, 4K). Profil, dossier, disponibilité minimale
  * (Radarr), type de série et profil de langue (Sonarr) : valeurs par défaut de l'approbation. `tags` : JSON, ids
- * d'étiquettes.
+ * d'étiquettes. Lot 8.3 : étiquette du membre, recherche à l'ajout, adresse externe et réglages anime (Sonarr).
  */
 export const arrServers = sqliteTable(
   'arr_servers',
@@ -212,6 +248,14 @@ export const arrServers = sqliteTable(
     seriesType: text({ enum: seriesTypes }),
     languageProfileId: integer(),
     tags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
+    tagRequester: integer({ mode: 'boolean' }).notNull().default(false),
+    searchOnAdd: integer({ mode: 'boolean' }).notNull().default(true),
+    externalUrl: text(),
+    animeQualityProfileId: integer(),
+    animeRootFolderPath: text(),
+    animeSeriesType: text({ enum: seriesTypes }),
+    animeLanguageProfileId: integer(),
+    animeTags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
     createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
     updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   },
@@ -219,7 +263,12 @@ export const arrServers = sqliteTable(
     enumCheck('arr_servers_type_check', table.type, arrKinds),
     enumCheck('arr_servers_minimum_availability_check', table.minimumAvailability, minimumAvailabilities),
     enumCheck('arr_servers_series_type_check', table.seriesType, seriesTypes),
+    enumCheck('arr_servers_anime_series_type_check', table.animeSeriesType, seriesTypes),
     check('arr_servers_tags_json_check', sql`json_valid(${table.tags}) AND json_type(${table.tags}) = 'array'`),
+    check(
+      'arr_servers_anime_tags_json_check',
+      sql`json_valid(${table.animeTags}) AND json_type(${table.animeTags}) = 'array'`,
+    ),
     // Serveur par défaut de chaque couple (type, 4K) : en changer = retirer l'ancien et poser le nouveau, même transaction.
     uniqueIndex('arr_servers_default_unique').on(table.type, table.is4k).where(sql`${table.isDefault} = 1`),
   ],
@@ -496,5 +545,49 @@ export const apiKeys = sqliteTable(
     // Authentification d'une requête `X-Api-Key` : recherche par hash.
     uniqueIndex('api_keys_key_hash_unique').on(table.keyHash),
     index('api_keys_created_by_idx').on(table.createdBy),
+  ],
+);
+
+/** `CHECK (json_valid(colonne) AND json_type(colonne) = 'array')` : liste JSON (conditions et étiquettes des règles). */
+const jsonArrayCheck = (name: string, column: AnyColumn) =>
+  check(name, sql`json_valid(${column}) AND json_type(${column}) = 'array'`);
+
+/**
+ * Règles de surcharge (lot 8.8, Seerr `OverrideRule`). Conditions en listes JSON (genres et mots-clés TMDB, langues
+ * originales) : toujours lues en entier avec la règle, jamais filtrées en SQL. Effets `NULL` = inchangés ; `tags` : ids
+ * d'étiquettes ajoutées. `position` : la première règle qui correspond l'emporte (sans `UNIQUE`, le réordonnancement
+ * réécrit toutes les positions). Supprimer le serveur supprime ses règles.
+ */
+export const overrideRules = sqliteTable(
+  'override_rules',
+  {
+    id: integer().primaryKey(),
+    name: text().notNull(),
+    type: text({ enum: mediaTypes }).notNull(),
+    serverId: integer()
+      .notNull()
+      .references(() => arrServers.id, { onDelete: 'cascade' }),
+    genres: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
+    languages: text({ mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+    keywords: text({ mode: 'json' }).$type<BlockedKeyword[]>().notNull().default(sql`'[]'`),
+    qualityProfileId: integer(),
+    rootFolderPath: text(),
+    seriesType: text({ enum: seriesTypes }),
+    tags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
+    position: integer().notNull(),
+    enabled: integer({ mode: 'boolean' }).notNull().default(true),
+    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  },
+  (table) => [
+    enumCheck('override_rules_type_check', table.type, mediaTypes),
+    enumCheck('override_rules_series_type_check', table.seriesType, seriesTypes),
+    check('override_rules_movie_series_type_check', sql`${table.type} = 'tv' OR ${table.seriesType} IS NULL`),
+    jsonArrayCheck('override_rules_genres_json_check', table.genres),
+    jsonArrayCheck('override_rules_languages_json_check', table.languages),
+    jsonArrayCheck('override_rules_keywords_json_check', table.keywords),
+    jsonArrayCheck('override_rules_tags_json_check', table.tags),
+    // Suppression d'un serveur : la cascade cherche ses règles par cet index.
+    index('override_rules_server_id_idx').on(table.serverId),
   ],
 );

@@ -42,6 +42,10 @@ This file, the project's own `.claude/skills/` and the agents above take precede
 - `systematic-debugging`, `test-driven-development` and `receiving-code-review` apply as is.
 - Database work: `database-architect` (`.claude/skills/`) before any new table, relation or migration (the `coder`/`checker` brief says to read it); `database-optimizer` when reviewing queries, indexes or a slow path. Both are generic: apply them to SQLite (WAL, `EXPLAIN QUERY PLAN`, partial and composite indexes, no server-side tuning). The data model lives in `docs/DATA_MODEL.md`.
 
+## Documentation lookup (context7)
+
+Always use the context7 MCP server (`resolve-library-id`, then `query-docs`) whenever you need library, framework, SDK or API documentation, code examples, setup or configuration steps, without being asked. Prefer it over memory and web search; fall back to web search only when context7 has no match. Delegated lookups go to `explorer`, which has the context7 tools.
+
 ## DRY (mandatory)
 
 Code MUST be DRY. Do not duplicate definitions or logic. When the same constant, type, validation, or block of logic appears in more than one place, abstract it into a shared helper/utility and reuse it. Flag copy-pasted logic and repeated literals/definitions that should be centralized.
@@ -141,6 +145,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - L'utilisateur écrit en **français** : réponses, docs, textes d'interface en français.
 - Stack : Node 26, Vite + React 19 + TS strict, TanStack Router/Query, shadcn/ui (Base UI) + Tailwind v4, Fastify 5, Zod partagé (`src/shared`), SQLite + Drizzle. Pas de SSR, pas de GraphQL, pas de Watt.
 - Thème : tokens d'Hub, correspondance shadcn dans DESIGN.md (`--accent` shadcn ≠ accent de marque `--brand`).
-- Interface : trois maquettes avant toute nouvelle page, captures 1440 et 390 px avant commit, raccourcis Windows uniquement.
+- Interface : trois maquettes avant toute nouvelle page, contrôle visuel à 1440 et 390 px avant commit (captures dans `docs/captures/` seulement pour une nouvelle page, une refonte ou sur demande), raccourcis Windows uniquement.
 - Le serveur fait autorité sur droits, quotas et statuts ; secrets chiffrés en base, jamais envoyés au client.
 - Commandes (à créer en phase 1) : `npm run dev`, `npm run lint`, `npm run check`, `npm test`, `npm run verify`.

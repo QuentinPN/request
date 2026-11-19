@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { homeBack } from '@/components/back-button';
 import { PosterGrid } from '@/components/media/poster-grid';
 import { ChipGroup, FilterChip } from '@/components/media/title-parts';
 import { Page } from '@/components/page';
@@ -11,10 +12,10 @@ import { IntrouvablePage } from './introuvable.tsx';
 function ProviderListing({ type, id }: { type: MediaType; id: number }) {
   const navigate = useNavigate();
   const provider = useQuery(providersQuery(type)).data?.providers.find((p) => p.id === id);
-  const listing = useInfiniteQuery(discoverListQuery('provider', type, id));
+  const listing = useInfiniteQuery(discoverListQuery(type, id));
 
   return (
-    <Page title={provider?.name ?? 'Plateforme'}>
+    <Page title={provider?.name ?? 'Plateforme'} back={homeBack}>
       <div className="space-y-8">
         <ChipGroup label="Type">
           {mediaTypeSchema.options.map((t) => (

@@ -23,15 +23,28 @@ const put = (app: FastifyInstance, id: string, payload: object, headers: Record<
   app.inject({ method: 'PUT', url: `/api/users/${id}`, headers, payload });
 
 describe('GET /api/users', () => {
-  it('ouvert aux gestionnaires, fermé aux membres', async () => {
+  it('complète pour qui gère les membres, réduite pour un gestionnaire, fermée aux membres', async () => {
     const app = await newApp();
+    const owner = await loginAs(app, 'owner');
     const manager = await loginAs(app, 'manager');
     const member = await loginAs(app, 'member');
-    const res = await app.inject({ method: 'GET', url: '/api/users', headers: manager.headers });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toContainEqual(
+    const full = await app.inject({ method: 'GET', url: '/api/users', headers: owner.headers });
+    expect(full.json()).toContainEqual(
       expect.objectContaining({ id: member.user.id, role: 'member', quotaOverride: null, avatarUrl: null }),
     );
+    const res = await app.inject({ method: 'GET', url: '/api/users', headers: manager.headers });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toContainEqual({
+      id: member.user.id,
+      name: `Nom ${member.user.id}`,
+      avatarUrl: null,
+      canRequestMovies: true,
+      canRequestTv: true,
+      canRequest4k: true,
+      autoApproveMovies: false,
+      autoApproveTv: false,
+      autoApprove4k: false,
+    });
     expect((await app.inject({ method: 'GET', url: '/api/users', headers: member.headers })).statusCode).toBe(403);
   });
 });
@@ -73,20 +86,68 @@ describe('PUT /api/users/:id', () => {
     expect((await put(app, user.id, { quotaOverride: null }, owner.headers)).json().quotaOverride).toBeNull();
   });
 
-  it('409 pour le dernier propriétaire, 404 pour un inconnu, 403 sans le droit', async () => {
+  it('« Sans quota » : `unlimited` s’enregistre et se relit', async () => {
     const app = await newApp();
     const owner = await loginAsOwner(app);
-    const lastOwner = await put(app, owner.user.id, { role: 'member' }, owner.headers);
-    expect(lastOwner.statusCode).toBe(409);
-    expect(lastOwner.json()).toEqual({ error: 'Il doit rester au moins un propriétaire' });
+    const { user } = await loginAs(app, 'member');
+    const quotaOverride = { movies: null, seasons: null, unlimited: true };
+    expect((await put(app, user.id, { quotaOverride }, owner.headers)).json()).toMatchObject({ quotaOverride });
+    const listed = await app.inject({ method: 'GET', url: '/api/users', headers: owner.headers });
+    expect(listed.json()).toContainEqual(expect.objectContaining({ id: user.id, quotaOverride }));
+    expect((await put(app, user.id, { quotaOverride: { unlimited: false } }, owner.headers)).statusCode).toBe(400);
+  });
+
+  it('le rôle prend effet dès la requête suivante de la session du membre', async () => {
+    const app = await newApp();
+    const owner = await loginAsOwner(app);
+    const member = await loginAs(app, 'member');
+    const queue = { method: 'GET', url: '/api/users', headers: member.headers } as const;
+    expect((await app.inject(queue)).statusCode).toBe(403);
+    await put(app, member.user.id, { role: 'manager' }, owner.headers);
+    expect((await app.inject(queue)).statusCode).toBe(200);
+    await put(app, member.user.id, { role: 'auto_approve' }, owner.headers);
+    expect((await app.inject(queue)).statusCode).toBe(403);
+  });
+
+  it('le propriétaire n’est pas modifiable : ni son rôle ni ses quotas, même par lui', async () => {
+    const app = await newApp();
+    const owner = await loginAsOwner(app);
+    const refused = await put(app, owner.user.id, { role: 'member' }, owner.headers);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: 'Le propriétaire ne se modifie pas depuis l’appli' });
+    const quotaOverride = { movies: { limit: 1, days: 7 }, seasons: null };
+    expect((await put(app, owner.user.id, { quotaOverride }, owner.headers)).statusCode).toBe(403);
+    const listed = await app.inject({ method: 'GET', url: '/api/users', headers: owner.headers });
+    expect(listed.json()).toContainEqual(
+      expect.objectContaining({ id: owner.user.id, role: 'owner', quotaOverride: null }),
+    );
+  });
+
+  it('refuse d’attribuer « propriétaire » (400) et laisse le membre inchangé', async () => {
+    const app = await newApp();
+    const owner = await loginAsOwner(app);
+    const { user } = await loginAs(app, 'member');
+    const res = await put(app, user.id, { role: 'owner', quotaOverride: { unlimited: true } }, owner.headers);
+    expect(res.statusCode).toBe(400);
+    const listed = await app.inject({ method: 'GET', url: '/api/users', headers: owner.headers });
+    expect(listed.json()).toContainEqual(expect.objectContaining({ id: user.id, role: 'member', quotaOverride: null }));
+  });
+
+  it('404 pour un inconnu, 400 hors schéma, 403 sans le droit (gestionnaire ou membre)', async () => {
+    const app = await newApp();
+    const owner = await loginAsOwner(app);
+    const { user } = await loginAs(app, 'member');
     expect((await put(app, 'inconnu', { role: 'member' }, owner.headers)).statusCode).toBe(404);
-    const invalid = await put(app, owner.user.id, { role: 'roi' }, owner.headers);
+    const invalid = await put(app, user.id, { role: 'roi' }, owner.headers);
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toEqual({ error: 'Requête invalide' });
     const badQuota = { quotaOverride: { movies: { limit: -1, days: 7 } } };
-    expect((await put(app, owner.user.id, badQuota, owner.headers)).statusCode).toBe(400);
+    expect((await put(app, user.id, badQuota, owner.headers)).statusCode).toBe(400);
     const manager = await loginAs(app, 'manager');
-    expect((await put(app, owner.user.id, { role: 'member' }, manager.headers)).statusCode).toBe(403);
+    const other = await loginAs(app, 'member');
+    for (const { headers } of [manager, other]) {
+      expect((await put(app, user.id, { role: 'manager' }, headers)).statusCode).toBe(403);
+    }
   });
 });
 

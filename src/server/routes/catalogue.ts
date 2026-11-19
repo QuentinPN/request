@@ -1,13 +1,19 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import {
+  type BrowseFilters,
+  browsePath,
+  browseQuerySchema,
+  collectionPath,
   DISCOVER_PATH,
   discoverListPath,
   discoverRowSchema,
   genresPath,
   genresResponseSchema,
+  idParamsSchema,
   mediaPath,
   pagedMediaSchema,
   pageQuerySchema,
+  personPath,
   providersPath,
   providersResponseSchema,
   SEARCH_PATH,
@@ -15,18 +21,28 @@ import {
   typeIdParamsSchema,
   typeParamsSchema,
 } from '../../shared/catalogue.ts';
-import { keyOf, type MediaSummary, mediaSearchResultsSchema } from '../../shared/media.ts';
+import { type BuiltInRowId, builtInRowTitles, isLogoRow, type LogoRowId } from '../../shared/discover-layout.ts';
+import {
+  collectionDetailsSchema,
+  keyOf,
+  type MediaSummary,
+  type MediaType,
+  mediaSearchResultsSchema,
+  personDetailsSchema,
+} from '../../shared/media.ts';
 import { labelOf } from '../integrations/media-server.ts';
 import { parseRequest, parseUpstream } from '../lib/api-errors.ts';
 import { viewerOf } from '../plugins/auth.ts';
 import { withStatus } from '../services/availability.ts';
 import { blockOf, excludedKeywordIds, forViewer } from '../services/blocklist.ts';
-import { hiddenInDiscover } from '../services/discover.ts';
-import { loadDetails } from '../services/tmdb.ts';
+import { discoverLayoutOf, hiddenInDiscover, recentRequestKeys } from '../services/discover.ts';
+import { loadDetails, loadSummaries, orTitleNotFound } from '../services/tmdb.ts';
 
 const SERVICE = 'TMDB';
 /** Rangée de titres déjà dans la bibliothèque : « Masquer les disponibles » la viderait, elle n'y est pas soumise. */
 const LIBRARY_ROW = 'emby-recent';
+/** Rangées de l'appli chargées par le serveur (les rangées à logos sont construites par le navigateur). */
+type DataRowId = Exclude<BuiltInRowId, LogoRowId>;
 
 /** API du catalogue TMDB : rangées Découvrir, genres, plateformes, recherche et fiches, avec le statut de chaque titre. */
 export const catalogueRoutes: FastifyPluginAsync = async (app) => {
@@ -37,21 +53,51 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     // Ordre de PRODUCT.md ; « Ajoutés récemment dans … » (nom du serveur multimédia) est omise tant qu'aucun n'est
     // configuré (`null`). Son id `emby-recent` reste celui du contrat, quel que soit le serveur.
     const server = app.mediaServers.current();
-    const rows: Array<{ id: string; title: string; load: () => Promise<MediaSummary[] | null> }> = [
-      { id: 'trending', title: 'Tendances', load: () => tmdb.trendingAll('week') },
-      { id: 'popular-movies', title: 'Films populaires', load: () => tmdb.popular('movie') },
-      { id: 'popular-tv', title: 'Séries populaires', load: () => tmdb.popular('tv') },
-      { id: 'upcoming', title: 'Prochainement', load: () => tmdb.upcoming() },
-      {
-        id: 'emby-recent',
-        title: `Ajoutés récemment dans ${server ? labelOf(server) : 'la bibliothèque'}`,
+    // Résumés TMDB des titres demandés, dans l'ordre des demandes ; aucune demande (ou aucun résumé) : rangée omise.
+    const recentRequests = async () => {
+      const keys = recentRequestKeys(app.data.db);
+      const found = await loadSummaries(app.tmdb, keys);
+      const items = keys.flatMap((key) => found.get(keyOf(key)) ?? []);
+      return items.length > 0 ? items : null;
+    };
+    type Row = {
+      id: string;
+      title: string;
+      load: () => Promise<MediaSummary[] | null>;
+      seeAll?: { type: MediaType; filters: BrowseFilters };
+    };
+    const builtIn: Record<DataRowId, Omit<Row, 'id'>> = {
+      trending: { title: builtInRowTitles.trending, load: () => tmdb.trendingAll('week') },
+      'recent-requests': { title: builtInRowTitles['recent-requests'], load: recentRequests },
+      'popular-movies': { title: builtInRowTitles['popular-movies'], load: () => tmdb.popular('movie') },
+      'popular-tv': { title: builtInRowTitles['popular-tv'], load: () => tmdb.popular('tv') },
+      upcoming: { title: builtInRowTitles.upcoming, load: () => tmdb.upcoming() },
+      'emby-recent': {
+        title: `${builtInRowTitles['emby-recent']} dans ${server ? labelOf(server) : 'la bibliothèque'}`,
         load: () => app.availability.recentlyAdded(userId),
       },
-    ];
+    };
+    // Ordre et rangées actives choisis par le propriétaire : une rangée désactivée n'appelle pas TMDB. Les rangées à
+    // logos n'ont rien à charger ici (le navigateur les construit) : elles ne figurent que dans `layout`.
+    const active = discoverLayoutOf(app.data).rows.filter((row) => row.enabled);
+    const rows = active.flatMap((row): Row[] => {
+      if (row.kind === 'custom') {
+        const { type, filters } = row;
+        return [
+          {
+            id: row.id,
+            title: row.title,
+            load: async () => (await tmdb.browse(type, filters, 1, excludedKeywordIds(app.data, viewer))).results,
+            seeAll: { type, filters },
+          },
+        ];
+      }
+      return isLogoRow(row.id) ? [] : [{ id: row.id, ...builtIn[row.id] }];
+    });
     const settled = await Promise.allSettled(
-      rows.map(async ({ id, title, load }) => {
+      rows.map(async ({ id, title, load, seeAll }) => {
         const items = await load();
-        return items && parseUpstream(SERVICE, discoverRowSchema, { id, title, items });
+        return items && parseUpstream(SERVICE, discoverRowSchema, { id, title, items, seeAll });
       }),
     );
     // Une rangée en échec (ou hors contrat) est omise ; si aucune ne reste, l'erreur remonte (une page vide cacherait la panne).
@@ -74,24 +120,30 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
           ? []
           : [{ ...row, items: items.map((item) => withStatus(statuses, item)) }];
       }),
+      layout: active.map((row) => row.id),
     };
   });
 
-  for (const [segment, method] of [
-    ['genre', 'byGenre'],
-    ['provider', 'discoverByProvider'],
-  ] as const) {
-    app.get(discoverListPath(':type', segment, ':id'), async (req) => {
-      const { type, id } = parseRequest(typeIdParamsSchema, req.params);
-      const { page } = parseRequest(pageQuerySchema, req.query);
-      const viewer = viewerOf(req);
-      // Flux `/discover` : les mots-clés bloqués sont écartés par TMDB (membres seulement).
-      const raw = await app.tmdb()[method](type, id, page, excludedKeywordIds(app.data, viewer));
-      const paged = parseUpstream(SERVICE, pagedMediaSchema, raw);
-      const results = forViewer(app.data.db, viewer, paged.results);
-      return { ...paged, results: await app.availability.withStatuses(results) };
-    });
-  }
+  /** Liste « Charger plus » : flux TMDB `/discover` (mots-clés bloqués écartés par TMDB pour les membres), blocages et statuts. */
+  const discoverList = async (req: FastifyRequest, load: (exclude: number[]) => Promise<unknown>) => {
+    const viewer = viewerOf(req);
+    const paged = parseUpstream(SERVICE, pagedMediaSchema, await load(excludedKeywordIds(app.data, viewer)));
+    const results = forViewer(app.data.db, viewer, paged.results);
+    return { ...paged, results: await app.availability.withStatuses(results) };
+  };
+
+  app.get(discoverListPath(':type', ':id'), async (req) => {
+    const { type, id } = parseRequest(typeIdParamsSchema, req.params);
+    const { page } = parseRequest(pageQuerySchema, req.query);
+    return discoverList(req, (exclude) => app.tmdb().discoverByProvider(type, id, page, exclude));
+  });
+
+  // Films et Séries : filtres validés (400 si invalides) puis traduits en paramètres TMDB.
+  app.get(browsePath(':type'), async (req) => {
+    const { type } = parseRequest(typeParamsSchema, req.params);
+    const { page, ...filters } = parseRequest(browseQuerySchema, req.query);
+    return discoverList(req, (exclude) => app.tmdb().browse(type, filters, page, exclude));
+  });
 
   app.get(genresPath(':type'), async (req) => {
     const { type } = parseRequest(typeParamsSchema, req.params);
@@ -108,6 +160,35 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const found = parseUpstream(SERVICE, mediaSearchResultsSchema, await app.tmdb().searchMulti(q, page));
     const results = forViewer(app.data.db, viewerOf(req), found.results);
     return { ...found, results: await app.availability.withStatuses(results) };
+  });
+
+  app.get(personPath(':id'), async (req) => {
+    const { id } = parseRequest(idParamsSchema, req.params);
+    const person = parseUpstream(
+      SERVICE,
+      personDetailsSchema,
+      await orTitleNotFound(() => app.tmdb().person(id), 'Personne introuvable'),
+    );
+    // Titres bloqués retirés (membres) ou marqués (gestionnaires), puis statuts des deux listes en un seul lot.
+    const credits = await app.availability.withStatuses(
+      forViewer(app.data.db, viewerOf(req), [...person.movies, ...person.shows]),
+    );
+    return {
+      ...person,
+      movies: credits.filter((credit) => credit.type === 'movie'),
+      shows: credits.filter((credit) => credit.type === 'tv'),
+    };
+  });
+
+  app.get(collectionPath(':id'), async (req) => {
+    const { id } = parseRequest(idParamsSchema, req.params);
+    const collection = parseUpstream(
+      SERVICE,
+      collectionDetailsSchema,
+      await orTitleNotFound(() => app.tmdb().collection(id), 'Saga introuvable'),
+    );
+    const parts = forViewer(app.data.db, viewerOf(req), collection.parts);
+    return { ...collection, parts: await app.availability.withStatuses(parts) };
   });
 
   app.get(mediaPath(':type', ':id'), async (req) => {

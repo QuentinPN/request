@@ -567,7 +567,7 @@ describe('statuts dans les réponses du catalogue', () => {
       },
     });
     expect((await get('/api/search?q=x')).json().results[0]).toMatchObject({ tmdbId: 101, status: 'available' });
-    expect((await get('/api/discover/movie/genre/28')).json().results[0]).toMatchObject({ status: 'available' });
+    expect((await get('/api/discover/movie?genres=28')).json().results[0]).toMatchObject({ status: 'available' });
     expect((await get('/api/discover/movie/provider/8')).json().results[0]).toMatchObject({ status: 'available' });
   });
 

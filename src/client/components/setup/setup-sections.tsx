@@ -7,18 +7,28 @@ import { Loading } from '@/components/states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useViewer } from '@/hooks/use-viewer';
 import { setupStateQuery } from '@/lib/session';
+import { AboutSection } from './about-section';
 import { ApiKeysSection } from './api-keys-section';
 import { ArrServersSection } from './arr-servers-section';
 import { BlocklistSection } from './blocklist-section';
+import { CacheSection } from './cache-section';
 import { type SectionId, sectionOrder } from './config';
 import { DiscordSection } from './discord-section';
+import { DiscoverSection } from './discover-section';
+import { GeneralSection } from './general-section';
 import { IntegrationSection } from './integration-section';
+import { JobsSection } from './jobs-section';
+import { LogsSection } from './logs-section';
 import { MembersSection } from './members-section';
+import { NtfySection } from './ntfy-section';
+import { OutgoingWebhookSection } from './outgoing-webhook-section';
+import { OverrideRulesSection } from './override-rules-section';
 import { arrServersQuery, settingQuery } from './queries';
 import { RulesSection } from './rules-section';
 import { SectionFrame, type SectionFrameProps, SectionLoadError } from './section-frame';
 import { SeerrImportSection } from './seerr-import-section';
 import { SmtpSection } from './smtp-section';
+import { TelegramSection } from './telegram-section';
 import { TraktSection } from './trakt-section';
 import { WebhooksSection } from './webhooks-section';
 
@@ -69,10 +79,28 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <WebhooksSection section="webhooks" open={open === 'webhooks'} onToggle={() => toggle('webhooks')} />
           <SeerrImportSection section="seerr" open={open === 'seerr'} onToggle={() => toggle('seerr')} />
           <DiscordSection section="discord" open={open === 'discord'} onToggle={() => toggle('discord')} />
+          <NtfySection section="ntfy" open={open === 'ntfy'} onToggle={() => toggle('ntfy')} />
+          <TelegramSection section="telegram" open={open === 'telegram'} onToggle={() => toggle('telegram')} />
+          <OutgoingWebhookSection
+            section="outgoingWebhook"
+            open={open === 'outgoingWebhook'}
+            onToggle={() => toggle('outgoingWebhook')}
+          />
           <SmtpSection section="smtp" open={open === 'smtp'} onToggle={() => toggle('smtp')} />
           <TraktSection section="trakt" open={open === 'trakt'} onToggle={() => toggle('trakt')} />
           <ApiKeysSection section="api" open={open === 'api'} onToggle={() => toggle('api')} />
           <BlocklistSection section="blocklist" open={open === 'blocklist'} onToggle={() => toggle('blocklist')} />
+          <DiscoverSection section="discover" open={open === 'discover'} onToggle={() => toggle('discover')} />
+          <JobsSection section="jobs" open={open === 'jobs'} onToggle={() => toggle('jobs')} />
+          <CacheSection section="cache" open={open === 'cache'} onToggle={() => toggle('cache')} />
+          <LogsSection section="logs" open={open === 'logs'} onToggle={() => toggle('logs')} />
+          <GeneralSection section="general" open={open === 'general'} onToggle={() => toggle('general')} />
+          <AboutSection section="about" open={open === 'about'} onToggle={() => toggle('about')} />
+          <OverrideRulesSection
+            section="overrideRules"
+            open={open === 'overrideRules'}
+            onToggle={() => toggle('overrideRules')}
+          />
         </>
       )}
     </div>

@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCanGoBack, useNavigate, useParams, useRouter } from '@tanstack/react-router';
+import { Link, useParams } from '@tanstack/react-router';
 import { cn } from 'cn';
-import { ChevronLeft, Film, Play, User, X } from 'lucide-react';
+import { ChevronRight, Film, Play, User, X } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
+import { BackButton } from '@/components/back-button';
 import { ReportIssueButton } from '@/components/issues/report-sheet';
 import { BlockedPill, BlockTitleButton } from '@/components/media/block-button';
 import { MediaRail, Rail, SectionHeading } from '@/components/media/rail';
@@ -24,32 +25,27 @@ import { Loading } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { detailsMeta, episodesLabel, mediaQuery, regularSeasons, seasonMeta, seasonTitle } from '@/lib/catalogue';
+import {
+  collectionLink,
+  crewJobLabel,
+  detailsMeta,
+  episodesLabel,
+  mediaQuery,
+  personLink,
+  regularSeasons,
+  seasonMeta,
+  seasonTitle,
+} from '@/lib/catalogue';
 import { typeIdParamsSchema } from '../../shared/catalogue.ts';
 import {
   type CastMember,
+  type CollectionRef,
   imageUrl,
   type MediaDetails,
   type MediaType,
   type WatchProvider,
 } from '../../shared/media.ts';
 import { IntrouvablePage } from './introuvable.tsx';
-
-function BackButton() {
-  const router = useRouter();
-  const canGoBack = useCanGoBack();
-  const navigate = useNavigate();
-  return (
-    <button
-      type="button"
-      aria-label="Retour"
-      className={roundButton}
-      onClick={() => (canGoBack ? router.history.back() : void navigate({ to: '/' }))}
-    >
-      <ChevronLeft aria-hidden className="size-5" />
-    </button>
-  );
-}
 
 const posterBox = 'hidden w-[200px] shrink-0 md:block lg:w-[260px]';
 
@@ -120,24 +116,55 @@ function TrailerButton({ title, trailerKey }: { title: string; trailerKey: strin
   );
 }
 
-function CastCard({ person }: { person: CastMember }) {
+/** Carte d'une personne (distribution, équipe) : mène à sa page ; `detail` = personnage ou métier. */
+function PersonCard({ person, detail }: { person: Pick<CastMember, 'id' | 'name' | 'profilePath'>; detail: string }) {
   const src = imageUrl(person.profilePath, 'profile');
   return (
-    <figure className="w-24 shrink-0 text-center lg:w-32">
-      <div className="mx-auto grid size-20 place-items-center overflow-hidden rounded-full bg-muted ring-1 ring-border lg:size-28">
-        {src ? (
-          <img src={src} alt="" width={185} height={278} loading="lazy" className="size-full object-cover" />
+    <Link
+      {...personLink(person)}
+      className="block w-24 shrink-0 rounded-card text-center outline-none focus-visible:ring-3 focus-visible:ring-ring lg:w-32"
+    >
+      <figure>
+        <div className="mx-auto grid size-20 place-items-center overflow-hidden rounded-full bg-muted ring-1 ring-border lg:size-28">
+          {src ? (
+            <img src={src} alt="" width={185} height={278} loading="lazy" className="size-full object-cover" />
+          ) : (
+            <User aria-hidden className="size-8 text-muted-foreground" strokeWidth={1.5} />
+          )}
+        </div>
+        <figcaption className="mt-2">
+          <span className="line-clamp-2 block text-[13px] font-semibold">{person.name}</span>
+          {detail && <span className="line-clamp-2 block text-xs text-muted-foreground">{detail}</span>}
+        </figcaption>
+      </figure>
+    </Link>
+  );
+}
+
+/** « Fait partie de la saga X » : mène à la page de la saga. */
+function CollectionCard({ collection }: { collection: CollectionRef }) {
+  const poster = imageUrl(collection.posterPath, 'profile');
+  return (
+    <Link
+      {...collectionLink(collection)}
+      className="flex items-center gap-4 rounded-card border border-border bg-card p-4 outline-none transition-colors duration-(--dur) hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring"
+    >
+      <span
+        aria-hidden
+        className="grid h-[72px] w-12 shrink-0 place-items-center overflow-hidden rounded-md bg-(--media-base)"
+      >
+        {poster ? (
+          <img src={poster} alt="" width={185} height={278} loading="lazy" className="size-full object-cover" />
         ) : (
-          <User aria-hidden className="size-8 text-muted-foreground" strokeWidth={1.5} />
+          <Film className="size-5 text-(--on-media-2)/40" strokeWidth={1.5} />
         )}
-      </div>
-      <figcaption className="mt-2">
-        <span className="line-clamp-2 block text-[13px] font-semibold">{person.name}</span>
-        {person.character && (
-          <span className="line-clamp-2 block text-xs text-muted-foreground">{person.character}</span>
-        )}
-      </figcaption>
-    </figure>
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] text-muted-foreground">Fait partie de la saga</span>
+        <span className="block font-semibold">{collection.name}</span>
+      </span>
+      <ChevronRight aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+    </Link>
   );
 }
 
@@ -232,6 +259,7 @@ function Seasons({ media }: { media: MediaDetails }) {
 
 function Fiche({ media }: { media: MediaDetails }) {
   const poster = imageUrl(media.posterPath, 'poster');
+  const crew = media.crew ?? [];
   return (
     <article>
       <FicheFrame
@@ -292,10 +320,22 @@ function Fiche({ media }: { media: MediaDetails }) {
             <WhereToWatch providers={media.watchProviders} />
           </div>
         </div>
+        {media.collection && <CollectionCard collection={media.collection} />}
         {media.cast.length > 0 && (
-          <Rail title="Distribution" focusable>
+          <Rail title="Distribution">
             {media.cast.map((person) => (
-              <CastCard key={`${person.id}:${person.character}`} person={person} />
+              <PersonCard key={`${person.id}:${person.character}`} person={person} detail={person.character} />
+            ))}
+          </Rail>
+        )}
+        {crew.length > 0 && (
+          <Rail title="Équipe">
+            {crew.map((person) => (
+              <PersonCard
+                key={person.id}
+                person={person}
+                detail={person.jobs.map((job) => crewJobLabel[job]).join(', ')}
+              />
             ))}
           </Rail>
         )}

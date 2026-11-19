@@ -12,7 +12,9 @@ import { activeRequestStatuses } from '../../shared/status.ts';
 import { decrypt, encrypt } from '../crypto.ts';
 import type { Data, Db } from '../db/index.ts';
 import { arrServers, requests, settings } from '../db/schema.ts';
+import { type ArrOptions, listArrOptions } from '../integrations/arr.ts';
 import { HttpError } from '../lib/api-errors.ts';
+import { TtlLru } from '../lib/lru.ts';
 
 export type ArrServerValues = z.output<typeof arrServerInputSchema>;
 type Row = typeof arrServers.$inferSelect;
@@ -74,6 +76,26 @@ export const hasArrServer = (db: Db, kind: ArrKind, is4k?: boolean) =>
     .where(and(eq(arrServers.type, kind), is4k === undefined ? undefined : eq(arrServers.is4k, is4k)))
     .get() !== undefined;
 
+const ARR_OPTIONS_TTL_MS = 60_000;
+const ARR_OPTIONS_MAX_SERVERS = 32;
+/** Par base (un serveur d'une autre base, en test, a le même id) : profils et dossiers par id de serveur. */
+const arrOptionsCaches = new WeakMap<Db, TtlLru<ArrOptions>>();
+
+function arrOptionsCache(db: Db) {
+  const cache = arrOptionsCaches.get(db) ?? new TtlLru<ArrOptions>({ maxEntries: ARR_OPTIONS_MAX_SERVERS });
+  arrOptionsCaches.set(db, cache);
+  return cache;
+}
+
+/**
+ * Profils et dossiers d'un serveur, gardés une minute ; des demandes simultanées partagent un seul appel (file
+ * d'approbation : une fenêtre d'options par demande). Oubliés quand le serveur change ou qu'un envoi y échoue.
+ */
+export const arrOptionsOf = (db: Db, server: ArrServerConfig) =>
+  arrOptionsCache(db).getOrLoad(String(server.id), ARR_OPTIONS_TTL_MS, () => listArrOptions(server.type, server));
+
+export const forgetArrOptions = (db: Db, id: number) => arrOptionsCache(db).delete(String(id));
+
 /** Champs propres au type : disponibilité minimale pour Radarr, type de série et profil de langue pour Sonarr. */
 function typeColumnsOf(
   kind: ArrKind,
@@ -91,6 +113,18 @@ function typeColumnsOf(
   };
 }
 
+/** Réglages anime (Sonarr seulement, comme chez Seerr) : vides pour Radarr. */
+function animeColumnsOf(kind: ArrKind, v: ArrServerValues) {
+  const sonarr = kind === 'sonarr';
+  return {
+    animeQualityProfileId: sonarr ? v.animeQualityProfileId : null,
+    animeRootFolderPath: sonarr ? v.animeRootFolderPath : null,
+    animeSeriesType: sonarr ? v.animeSeriesType : null,
+    animeLanguageProfileId: sonarr ? v.animeLanguageProfileId : null,
+    animeTags: sonarr ? v.animeTags : [],
+  };
+}
+
 function columnsOf(cryptoKey: Buffer, v: ArrServerValues) {
   return {
     type: v.type,
@@ -102,7 +136,11 @@ function columnsOf(cryptoKey: Buffer, v: ArrServerValues) {
     qualityProfileId: v.qualityProfileId,
     rootFolderPath: v.rootFolderPath,
     ...typeColumnsOf(v.type, v),
+    ...animeColumnsOf(v.type, v),
     tags: v.tags,
+    tagRequester: v.tagRequester,
+    searchOnAdd: v.searchOnAdd,
+    externalUrl: v.externalUrl,
   };
 }
 
@@ -169,6 +207,7 @@ export function saveArrServer(data: Pick<Data, 'db' | 'cryptoKey'>, values: ArrS
     ensureDefaults(tx);
     return row.id;
   });
+  forgetArrOptions(db, savedId);
   return getArrServer(data, savedId) as ArrServerConfig;
 }
 
@@ -203,6 +242,7 @@ export function deleteArrServer(db: Db, id: number) {
     if (!gone) throw new HttpError(404, NOT_FOUND);
     ensureDefaults(tx);
   });
+  forgetArrOptions(db, id);
 }
 
 /**

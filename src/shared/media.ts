@@ -73,6 +73,28 @@ export const castMemberSchema = z.object({
 });
 export type CastMember = z.infer<typeof castMemberSchema>;
 
+/** Métiers de l'équipe mis en avant sur la fiche (libellés français côté client). */
+export const crewJobs = ['director', 'writer', 'creator'] as const;
+export const crewJobSchema = z.enum(crewJobs);
+export type CrewJob = z.infer<typeof crewJobSchema>;
+
+export const crewMemberSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  jobs: z.array(crewJobSchema),
+  profilePath: z.string().nullable(),
+});
+export type CrewMember = z.infer<typeof crewMemberSchema>;
+
+/** Saga (collection TMDB) à laquelle appartient un film. */
+export const collectionRefSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  posterPath: z.string().nullable(),
+  backdropPath: z.string().nullable(),
+});
+export type CollectionRef = z.infer<typeof collectionRefSchema>;
+
 export const watchProviderSchema = z.object({
   id: z.number().int(),
   name: z.string(),
@@ -88,6 +110,10 @@ export const mediaDetailsSchema = mediaSummarySchema.extend({
   seasons: z.array(seasonSchema),
   /** 15 premiers rôles. */
   cast: z.array(castMemberSchema),
+  /** Équipe clé (réalisation, scénario, création), 8 personnes au plus. */
+  crew: z.array(crewMemberSchema).optional(),
+  /** Film : saga à laquelle il appartient. */
+  collection: collectionRefSchema.nullish(),
   /** Clé YouTube de la bande-annonce. */
   trailerKey: z.string().nullable(),
   /** Où regarder, en France. */
@@ -102,10 +128,17 @@ export const mediaDetailsSchema = mediaSummarySchema.extend({
   fourK: fourKSchema,
   /** Mots-clés TMDB (blocage par mot-clé) ; usage serveur. */
   keywords: z.array(genreSchema).optional(),
+  /** Langue originale TMDB (ISO 639-1) : règles de surcharge ; usage serveur. */
+  originalLanguage: z.string().nullish(),
   /** Série : dernier épisode diffusé (TMDB), pour compter les épisodes attendus d'une saison en cours ; usage serveur. */
   lastAired: z.object({ seasonNumber: z.number().int(), episodeNumber: z.number().int() }).nullish(),
 });
 export type MediaDetails = z.infer<typeof mediaDetailsSchema>;
+
+/** Mot-clé TMDB « anime » : celui que Seerr utilise pour router une série vers les réglages anime de Sonarr. */
+export const ANIME_KEYWORD_ID = 210024;
+export const isAnime = ({ keywords }: Pick<MediaDetails, 'keywords'>) =>
+  keywords?.some((keyword) => keyword.id === ANIME_KEYWORD_ID) ?? false;
 
 export const personSummarySchema = z.object({
   id: z.number().int(),
@@ -115,6 +148,39 @@ export const personSummarySchema = z.object({
   knownFor: z.array(z.string()),
 });
 export type PersonSummary = z.infer<typeof personSummarySchema>;
+
+/** Titre de la filmographie d'une personne : « actor » (distribution) et/ou « crew » (équipe). */
+export const creditRoleSchema = z.enum(['actor', 'crew']);
+export type CreditRole = z.infer<typeof creditRoleSchema>;
+export const creditSchema = mediaSummarySchema.extend({ roles: z.array(creditRoleSchema) });
+export type Credit = z.infer<typeof creditSchema>;
+
+/** Page d'une personne : fiche et filmographie (films et séries, les plus populaires d'abord), statuts compris. */
+export const personDetailsSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  profilePath: z.string().nullable(),
+  /** Service de TMDB en anglais (`Acting`, `Directing`…), traduit par le client. */
+  knownForDepartment: z.string().nullable(),
+  birthday: z.string().nullable(),
+  deathday: z.string().nullable(),
+  placeOfBirth: z.string().nullable(),
+  biography: z.string(),
+  movies: z.array(creditSchema),
+  shows: z.array(creditSchema),
+});
+export type PersonDetails = z.infer<typeof personDetailsSchema>;
+
+/** Saga : films triés par date de sortie, sans date en dernier. */
+export const collectionDetailsSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  overview: z.string(),
+  posterPath: z.string().nullable(),
+  backdropPath: z.string().nullable(),
+  parts: z.array(mediaSummarySchema),
+});
+export type CollectionDetails = z.infer<typeof collectionDetailsSchema>;
 
 /** Une page de résultats (le `page` de TMDB commence à 1). */
 export interface Paged<T> {

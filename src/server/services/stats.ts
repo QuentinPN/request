@@ -1,7 +1,7 @@
 import { and, asc, avg, count, desc, eq, gte, inArray, isNotNull, max, sql } from 'drizzle-orm';
 import { keyOf, type MediaType } from '../../shared/media.ts';
 import { STATS_MONTHS, STATS_TOP, type Stats, type StatsDelay } from '../../shared/stats.ts';
-import { type RequestEventType, type RequestStatus, requestStatuses } from '../../shared/status.ts';
+import { emptyRequestCounts, type RequestEventType, type RequestStatus } from '../../shared/status.ts';
 import type { Db } from '../db/index.ts';
 import { issues, media, requestEvents, requests, users, watchlist } from '../db/schema.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
@@ -125,7 +125,7 @@ function delayOf(db: Reader, event: keyof typeof reached): StatsDelay {
 
 /** Statistiques de la page « Statistiques » ; `now` est injecté pour des tests déterministes. */
 export async function computeStats(db: Db, tmdb: () => TmdbClient, now: Date = new Date()): Promise<Stats> {
-  const byStatus = Object.fromEntries(requestStatuses.map((s) => [s, 0])) as Stats['requests']['byStatus'];
+  const byStatus: Stats['requests']['byStatus'] = emptyRequestCounts();
   const byType: Stats['requests']['byType'] = { movie: 0, tv: 0 };
   const byQuality = { standard: 0, fourK: 0 };
   for (const { status, type, is4k, n } of requestMixQuery(db).all()) {

@@ -1,11 +1,12 @@
 import { plural } from '@shared/text.ts';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { useId, useState } from 'react';
 import { ChipGroup, FilterChip } from '@/components/media/title-parts';
 import { Notice } from '@/components/notice';
 import { QueryState } from '@/components/query-state';
 import { RequestStatusPill, RequestStepBar, RequestThumb } from '@/components/requests/request-progress';
+import { useEditRequestAction } from '@/components/requests/request-sheet';
 import { EmptyState, Loading } from '@/components/states';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -17,12 +18,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { FieldHint, Label, NativeSelect } from '@/components/ui/field';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useViewer } from '@/hooks/use-viewer';
 import { titleLink } from '@/lib/catalogue';
 import { errorMessage } from '@/lib/http';
 import { useMediaServerName } from '@/lib/media-server';
 import {
+  ALL_MEMBERS,
   formatDay,
+  memberOptionsQuery,
   myRequestsQuery,
   onBehalfLabel,
   requestCountsQuery,
@@ -53,8 +58,9 @@ const filters: { id: FilterId; label: string; statuses?: readonly RequestStatus[
   { id: 'all', label: 'Toutes', empty: 'Aucune demande pour l’instant' },
 ];
 
-function QuotaLine() {
-  const quota = useQuery(requestQuotaQuery());
+/** Quota utilisé : le sien, ou celui d'un autre membre (`userId`, gestionnaires). */
+function QuotaLine({ userId }: { userId?: string }) {
+  const quota = useQuery(requestQuotaQuery(userId));
   if (!quota.data || quota.data.exempt) return null;
   const { movies, seasons } = quota.data;
   const days = (n: number) => plural(n, 'jour', 'jours');
@@ -110,8 +116,10 @@ const rowBox =
   'flex gap-3 max-lg:rounded-card max-lg:border max-lg:border-border max-lg:bg-card max-lg:p-3 lg:items-center lg:gap-5 lg:border-b lg:border-border lg:px-5 lg:py-3 lg:last:border-b-0';
 const rowGrid = 'min-w-0 grow lg:grid lg:grid-cols-[minmax(0,1fr)_300px_170px] lg:items-center lg:gap-6';
 
-function RequestRow({ request }: { request: RequestView }) {
+/** Hors de ses propres demandes : pas d'annulation, et la liste de tous les membres dit de qui est chaque demande. */
+function RequestRow({ request, scope, viewerId }: { request: RequestView; scope: Scope; viewerId?: string }) {
   const progress = requestProgress(request, useMediaServerName());
+  const edit = useEditRequestAction(request);
   const title = request.media?.title ?? 'Titre inconnu';
   return (
     <li className={rowBox}>
@@ -125,8 +133,13 @@ function RequestRow({ request }: { request: RequestView }) {
             {title}
           </Link>
           <p className="truncate text-[13px] text-muted-foreground">{requestMeta(request).join(' · ')}</p>
+          {!scope.own && scope.all && (
+            <p className="truncate text-xs text-muted-foreground">Membre : {request.requester.name}</p>
+          )}
           {request.createdBy && (
-            <p className="truncate text-xs text-muted-foreground">{onBehalfLabel(request, request.requester.id)}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {onBehalfLabel(request, scope.own ? request.requester.id : viewerId)}
+            </p>
           )}
         </div>
         <div className="mt-2 space-y-1.5 lg:mt-0">
@@ -141,16 +154,24 @@ function RequestRow({ request }: { request: RequestView }) {
           Demandée le {formatDay(request.createdAt)}
         </p>
       </div>
-      <div className="shrink-0 self-start text-right empty:max-lg:hidden lg:w-24 lg:self-center">
-        {request.status === 'pending' && <CancelRequest request={request} />}
+      <div className="flex shrink-0 flex-col items-end gap-2 self-start empty:max-lg:hidden lg:w-[200px] lg:flex-row lg:justify-end lg:self-center">
+        {edit && (
+          <Button variant="secondary" size="sm" onClick={edit}>
+            Modifier<span className="sr-only"> la demande de {title}</span>
+          </Button>
+        )}
+        {request.status === 'pending' && scope.own && <CancelRequest request={request} />}
       </div>
     </li>
   );
 }
 
-function RowsSkeleton() {
+function RowsSkeleton({ own }: { own: boolean }) {
   return (
-    <Loading label="Chargement de vos demandes…" className="space-y-2 lg:space-y-0 lg:rounded-card lg:border lg:py-2">
+    <Loading
+      label={own ? 'Chargement de vos demandes…' : 'Chargement des demandes…'}
+      className="space-y-2 lg:space-y-0 lg:rounded-card lg:border lg:py-2"
+    >
       {Array.from({ length: 4 }, (_, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: liste fixe de squelettes identiques
         <div key={i} aria-hidden className={rowBox}>
@@ -167,12 +188,19 @@ function RowsSkeleton() {
 
 type Filter = (typeof filters)[number];
 
+/** Qui la page montre : ses propres demandes, celles de tous les membres, ou celles d'un membre (gestionnaires). */
+type Scope = { own: true } | { own: false; all: boolean; label: string };
+
 function RequestList({
+  scope,
+  viewerId,
   filter,
   pages,
   onFilter,
   more,
 }: {
+  scope: Scope;
+  viewerId?: string;
   filter: Filter;
   pages: RequestPage[];
   onFilter: (id: FilterId) => void;
@@ -194,11 +222,17 @@ function RequestList({
       {requests.length === 0 ? (
         <EmptyState
           title={filter.empty}
-          description="Demandez un film ou une série depuis Découvrir : son avancement s’affichera ici."
+          description={
+            scope.own
+              ? 'Demandez un film ou une série depuis Découvrir : son avancement s’affichera ici.'
+              : 'Aucune demande ne correspond à ce filtre.'
+          }
           action={
-            <Link to="/" className={buttonVariants({ variant: 'secondary' })}>
-              Aller à Découvrir
-            </Link>
+            scope.own ? (
+              <Link to="/" className={buttonVariants({ variant: 'secondary' })}>
+                Aller à Découvrir
+              </Link>
+            ) : undefined
           }
         />
       ) : (
@@ -208,7 +242,7 @@ function RequestList({
             className="space-y-2 lg:space-y-0 lg:rounded-card lg:border lg:border-border lg:bg-card lg:py-2"
           >
             {requests.map((request) => (
-              <RequestRow key={request.id} request={request} />
+              <RequestRow key={request.id} request={request} scope={scope} viewerId={viewerId} />
             ))}
           </ul>
           {more && (
@@ -224,44 +258,111 @@ function RequestList({
   );
 }
 
-/** Mes demandes (maquettes A-Demandes et R-Mobile) : filtres, avancement en quatre étapes, annulation. */
+/**
+ * Sélecteur des gestionnaires : mes demandes, celles de tous les membres, ou d'un membre. Le choix vit dans
+ * l'adresse (`?membre=`), comme le lien « Voir ses demandes » de Réglages › Membres.
+ */
+function MemberScopePicker({ value, viewerId }: { value: string; viewerId?: string }) {
+  const id = useId();
+  const navigate = useNavigate();
+  const members = useQuery(memberOptionsQuery);
+  const others = (members.data ?? []).filter((m) => m.id !== viewerId);
+  return (
+    <div className="max-w-sm">
+      <Label htmlFor={id}>Demandes de</Label>
+      <NativeSelect
+        id={id}
+        value={value}
+        onChange={(e) => void navigate({ to: '/demandes', search: e.target.value ? { membre: e.target.value } : {} })}
+      >
+        <option value="">Moi</option>
+        <option value={ALL_MEMBERS}>Tous les membres</option>
+        {value !== '' && value !== ALL_MEMBERS && !others.some((m) => m.id === value) && (
+          <option value={value}>Membre inconnu</option>
+        )}
+        {others.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+          </option>
+        ))}
+      </NativeSelect>
+      {members.isError && (
+        <FieldHint className="text-(--text-danger)">La liste des membres n’a pas pu se charger.</FieldHint>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Mes demandes (maquettes A-Demandes et R-Mobile) : filtres, avancement en quatre étapes, annulation. Un gestionnaire
+ * y lit aussi les demandes d'un membre ou de tous (`?membre=`), sans pouvoir annuler celles des autres.
+ */
 export function DemandesPage() {
+  const viewer = useViewer();
+  const canManage = viewer?.capabilities.canManageRequests ?? false;
+  const { membre } = useSearch({ strict: false });
+  // Un membre sans droit de gestion ne lit que les siennes : le paramètre est ignoré (le serveur le fait aussi).
+  const member = canManage && membre !== viewer?.id ? membre : undefined;
+  const members = useQuery({ ...memberOptionsQuery, enabled: member !== undefined && member !== ALL_MEMBERS });
+  const scope: Scope =
+    member === undefined
+      ? { own: true }
+      : member === ALL_MEMBERS
+        ? { own: false, all: true, label: 'tous les membres' }
+        : { own: false, all: false, label: members.data?.find((m) => m.id === member)?.name ?? 'ce membre' };
+
   const counts = useQuery(requestCountsQuery());
   const [picked, setPicked] = useState<FilterId>();
-  // Sans demande en cours, la page s'ouvre sur toutes les demandes plutôt que sur une liste vide.
-  const initial: FilterId | undefined = counts.data
-    ? counts.data.mineActive > 0
-      ? 'active'
-      : 'all'
-    : counts.isError
-      ? 'all'
-      : undefined;
+  // Sans demande en cours, la page s'ouvre sur toutes les demandes plutôt que sur une liste vide ; celles d'un autre
+  // membre s'ouvrent sur toutes (les compteurs sont les siens).
+  const initial: FilterId | undefined = !scope.own
+    ? 'all'
+    : counts.data
+      ? counts.data.mineActive > 0
+        ? 'active'
+        : 'all'
+      : counts.isError
+        ? 'all'
+        : undefined;
   const filter = filters.find((f) => f.id === (picked ?? initial));
   // Changement de filtre : la liste précédente reste affichée (avec ses filtres) le temps de lire la nouvelle.
   const query = useInfiniteQuery({
-    ...myRequestsQuery(filter?.statuses),
+    ...myRequestsQuery(filter?.statuses, member),
     enabled: !!filter,
     placeholderData: keepPreviousData,
   });
   return (
     <div className="space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Mes demandes</h1>
-        <QuotaLine />
+      <header className="space-y-3">
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {scope.own ? 'Mes demandes' : scope.all ? 'Demandes de tous les membres' : `Demandes de ${scope.label}`}
+        </h1>
+        {canManage && <MemberScopePicker value={member ?? ''} viewerId={viewer?.id} />}
+        {scope.own ? <QuotaLine /> : !scope.all && member && <QuotaLine userId={member} />}
       </header>
       <QueryState
         query={query}
-        skeleton={<RowsSkeleton />}
-        errorMessage="Vos demandes n’ont pas pu se charger."
-        empty={{
-          title: 'Aucune demande pour l’instant',
-          description: 'Vos demandes de films et de séries, avec leur statut et leur progression, apparaîtront ici.',
-        }}
+        skeleton={<RowsSkeleton own={scope.own} />}
+        errorMessage={scope.own ? 'Vos demandes n’ont pas pu se charger.' : 'Les demandes n’ont pas pu se charger.'}
+        empty={
+          scope.own
+            ? {
+                title: 'Aucune demande pour l’instant',
+                description:
+                  'Vos demandes de films et de séries, avec leur statut et leur progression, apparaîtront ici.',
+              }
+            : {
+                title: 'Aucune demande pour l’instant',
+                description: 'Aucune demande de films ou de séries à afficher.',
+              }
+        }
         isEmpty={(data) => !data.pages[0] || totalOf(data.pages[0].totals) === 0}
       >
         {(data) =>
           filter && (
             <RequestList
+              scope={scope}
+              viewerId={viewer?.id}
               filter={filter}
               pages={data.pages}
               onFilter={setPicked}

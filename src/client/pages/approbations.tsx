@@ -23,9 +23,11 @@ import {
   declineOutcome,
   type Feedback,
   profileName,
+  requestSendChoice,
   type SendChoice,
   sendOutcome,
   sendTargetOf,
+  shownSendChoice,
   useApprovalActions,
   useSendOptions,
 } from '@/lib/approvals';
@@ -89,7 +91,8 @@ export function ApprobationsPage() {
     const options = optionsOf(request);
     const id =
       request.status === 'pending'
-        ? (choices[request.id]?.qualityProfileId ?? options?.defaultProfileId)
+        ? shownSendChoice(options, { approver: choices[request.id], stored: requestSendChoice(request) })
+            .qualityProfileId
         : request.qualityProfileId;
     return profileName(options, id);
   };

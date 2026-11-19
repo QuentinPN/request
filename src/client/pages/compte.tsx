@@ -13,7 +13,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { useViewer } from '@/hooks/use-viewer';
 import { apiSend } from '@/lib/http';
 import { releaseDevicePush } from '@/lib/push';
-import { forgetSession } from '@/lib/session';
+import { forgetSession, opensSettings } from '@/lib/session';
 
 export function ComptePage() {
   const viewer = useViewer();
@@ -52,7 +52,7 @@ export function ComptePage() {
               <NavBadge item={item} />
             </Link>
           ))}
-          {(viewer.capabilities.isOwner || viewer.capabilities.canManageBlocklist) && (
+          {opensSettings(viewer) && (
             <Link to="/reglages" className={buttonVariants({ variant: 'secondary' })}>
               <Settings data-icon="inline-start" />
               Réglages

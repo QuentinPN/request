@@ -17,10 +17,12 @@
     "moduleDetection": "force",
     "skipLibCheck": true,
     "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsconfig.tsbuildinfo",
     "paths": {
       "@/*": ["./src/client/*"],
       "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src", "test", "e2e", "scripts", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "test", "scripts", "vite.config.ts"]
 }

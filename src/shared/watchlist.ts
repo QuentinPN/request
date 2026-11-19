@@ -36,6 +36,32 @@ export type WatchlistPage = z.output<typeof watchlistPageSchema>;
 export const inWatchlistSchema = z.object({ inList: z.boolean() });
 export type InWatchlist = z.output<typeof inWatchlistSchema>;
 
+// --- Demande automatique à l'ajout (droit « Demander automatiquement depuis Ma liste ») ---
+
+export const WATCHLIST_AUTO_REQUEST_PATH = `${WATCHLIST_PATH}/auto-request`;
+
+/** Option du membre : demander aussi chaque titre qu'il ajoute à sa liste (droit `canAutoRequestWatchlist` requis). */
+export const autoRequestSettingSchema = z.object({ enabled: z.boolean() });
+export type AutoRequestSetting = z.output<typeof autoRequestSettingSchema>;
+
+/** Sort de la demande lancée par un ajout : faite, ou sautée (l'ajout à la liste, lui, a toujours réussi) avec son motif. */
+export type AutoRequestOutcome = { status: 'requested' } | { status: 'skipped'; reason: string };
+
+/** Réponse de l'ajout : `autoRequest` n'est présent que si l'option du membre était active. */
+export interface AddedToWatchlist extends InWatchlist {
+  autoRequest?: AutoRequestOutcome;
+}
+
+/** Message discret après un ajout (« Ajouté à Ma liste et demandé »), `null` quand rien n'est à dire. */
+export function addedMessage(outcome: AutoRequestOutcome | undefined): string | null {
+  if (!outcome) return null;
+  if (outcome.status === 'requested') return 'Ajouté à Ma liste et demandé.';
+  const reason = /^[A-ZÀ-Ý][a-zà-ÿ]/.test(outcome.reason)
+    ? outcome.reason.charAt(0).toLowerCase() + outcome.reason.slice(1)
+    : outcome.reason;
+  return `Ajouté à Ma liste ; pas demandé : ${reason}`;
+}
+
 // --- Import Trakt et Letterboxd ---
 
 export const importSources = ['trakt', 'letterboxd'] as const satisfies readonly WatchlistSource[];

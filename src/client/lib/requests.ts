@@ -5,8 +5,18 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query';
+import { z } from 'zod';
 import { arrKindOf, arrLabel } from '../../shared/arr-servers.ts';
-import { type Member, USERS_PATH, userPath } from '../../shared/auth.ts';
+import {
+  type Member,
+  type MemberOption,
+  type MembersBulkUpdate,
+  type MemberUpdate,
+  USERS_BULK_PATH,
+  USERS_DEFAULTS_PATH,
+  USERS_PATH,
+  userPath,
+} from '../../shared/auth.ts';
 import type { MediaKey, MediaType } from '../../shared/media.ts';
 import {
   type CreateRequestInput,
@@ -21,7 +31,9 @@ import {
   type RequestView,
   requestListParams,
   requestPath,
+  type UpdateRequestInput,
 } from '../../shared/requests.ts';
+import type { Setting } from '../../shared/settings.ts';
 import {
   type ActiveRequestStatus,
   activeRequestStatuses,
@@ -42,8 +54,9 @@ export const requestKeys = {
   all: ['requests'] as const,
   /** Une page de la liste, par filtre (statuts, titre, les siennes). */
   list: (filter: RequestListFilter) => ['requests', 'list', filter] as const,
-  /** Mes demandes, page après page (« Charger plus »), par filtre de statuts. */
-  mine: (status: readonly RequestStatus[] | undefined) => ['requests', 'mine', status ?? 'all'] as const,
+  /** Les demandes d'un périmètre (les miennes, celles d'un membre, toutes), page après page, par filtre de statuts. */
+  mine: (status: readonly RequestStatus[] | undefined, member?: string) =>
+    ['requests', 'mine', status ?? 'all', member ?? 'moi'] as const,
   /** Quota du membre connecté, ou d'un autre membre (feuille de demande pour autrui). */
   quota: (userId?: string) => ['requests', 'quota', userId ?? 'moi'] as const,
   counts: ['requests', 'counts'] as const,
@@ -57,11 +70,19 @@ const fetchPage = (filter: RequestListFilter, signal?: AbortSignal) =>
 export const requestListQuery = (filter: RequestListFilter) =>
   queryOptions({ queryKey: requestKeys.list(filter), queryFn: ({ signal }) => fetchPage(filter, signal) });
 
-/** Mes demandes, plus récentes d'abord, 20 par page lue à la demande. */
-export const myRequestsQuery = (status?: readonly RequestStatus[]) =>
+/** `?membre=` de Mes demandes : « tous » ou l'identifiant d'un membre ; absent ou illisible : les siennes. */
+export const ALL_MEMBERS = 'tous';
+export const requestsSearchSchema = z.object({ membre: z.string().min(1).optional().catch(undefined) });
+
+/** Périmètre d'une liste (voir `ALL_MEMBERS`) : les siennes, toutes, ou celles d'un membre (gestionnaires). */
+const memberScope = (member?: string): RequestListFilter =>
+  member === undefined ? { mine: true } : member === ALL_MEMBERS ? {} : { userId: member };
+
+/** Mes demandes (ou celles d'un membre, pour un gestionnaire), plus récentes d'abord, 20 par page lue à la demande. */
+export const myRequestsQuery = (status?: readonly RequestStatus[], member?: string) =>
   infiniteQueryOptions({
-    queryKey: requestKeys.mine(status),
-    queryFn: ({ pageParam, signal }) => fetchPage({ status, mine: true, page: pageParam }, signal),
+    queryKey: requestKeys.mine(status, member),
+    queryFn: ({ pageParam, signal }) => fetchPage({ status, ...memberScope(member), page: pageParam }, signal),
     initialPageParam: 1,
     getNextPageParam: nextPageParam,
   });
@@ -88,11 +109,76 @@ export const requestQuotaQuery = (userId?: string) =>
       ),
   });
 
-/** Membres de l'appli (gestionnaires) : sélecteur de la feuille de demande pour autrui. */
+/** Membres de l'appli, droits et quotas compris : Réglages › Membres (le serveur le réserve à qui gère les membres). */
 export const membersQuery = queryOptions({
   queryKey: ['users'],
   queryFn: ({ signal }) => apiGet<Member[]>(USERS_PATH, undefined, signal),
 });
+
+/** Membres à choisir : sélecteur de la feuille de demande pour autrui, filtre des demandes (vue réduite). */
+export const memberOptionsQuery = queryOptions({
+  queryKey: [...membersQuery.queryKey, 'options'],
+  queryFn: ({ signal }) => apiGet<MemberOption[]>(USERS_PATH, undefined, signal),
+});
+
+/** Rôle, droits et quotas d'un membre (droit « Gérer les membres ») ; son quota et la liste sont relus ensuite. */
+export function useUpdateMember() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, update }: { id: string; update: MemberUpdate }) =>
+      apiSend<Member>('PUT', userPath(encodeURIComponent(id)), update),
+    onSuccess: (member) => {
+      client.setQueryData<Member[]>(membersQuery.queryKey, (members) =>
+        members?.map((m) => (m.id === member.id ? member : m)),
+      );
+      void client.invalidateQueries({ queryKey: membersQuery.queryKey });
+      void client.invalidateQueries({ queryKey: requestKeys.quota(member.id) });
+    },
+  });
+}
+
+/**
+ * Suppression d'un membre (droit « Gérer les membres ») : ses demandes disparaissent, donc le statut des titres, les
+ * compteurs, les listes et les statistiques sont relus avec la liste des membres.
+ */
+export function useDeleteMember() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiSend<void>('DELETE', userPath(encodeURIComponent(id))),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: membersQuery.queryKey });
+      void client.invalidateQueries({ queryKey: ['stats'] });
+      invalidateAfterRequest(client);
+    },
+  });
+}
+
+/** Rôle et droits de plusieurs membres en une fois ; la liste renvoyée remplace celle en cache. */
+export function useBulkUpdateMembers() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (update: MembersBulkUpdate) => apiSend<Member[]>('POST', USERS_BULK_PATH, update),
+    onSuccess: (members) => {
+      client.setQueryData(membersQuery.queryKey, members);
+      void client.invalidateQueries({ queryKey: requestKeys.all });
+    },
+  });
+}
+
+/** « Droits par défaut » des nouveaux membres (propriétaire). */
+export const memberDefaultsQuery = queryOptions({
+  queryKey: ['member-defaults'],
+  queryFn: ({ signal }) => apiGet<Setting<'memberDefaults'>>(USERS_DEFAULTS_PATH, undefined, signal),
+});
+
+export function useSaveMemberDefaults() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (defaults: Setting<'memberDefaults'>) =>
+      apiSend<Setting<'memberDefaults'>>('PUT', USERS_DEFAULTS_PATH, defaults),
+    onSuccess: (saved) => client.setQueryData(memberDefaultsQuery.queryKey, saved),
+  });
+}
 
 /** « Déconnecter partout » (propriétaire) : ferme toutes les sessions du membre, sur tous ses appareils. */
 export const signOutMemberEverywhere = (memberId: string) =>
@@ -122,6 +208,16 @@ export function useCreateRequest() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateRequestInput) => apiSend<RequestDetail>('POST', REQUESTS_PATH, input),
+    onSuccess: () => invalidateAfterRequest(client),
+  });
+}
+
+/** Modification d'une demande en attente (saisons, choix d'envoi). */
+export function useUpdateRequest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: UpdateRequestInput }) =>
+      apiSend<RequestDetail>('PATCH', requestPath(id), input),
     onSuccess: () => invalidateAfterRequest(client),
   });
 }

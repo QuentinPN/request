@@ -40,6 +40,8 @@ export interface SetupState {
   hasMembers: boolean;
   /** Toutes les sections enregistrées et un propriétaire désigné. */
   complete: boolean;
+  /** Titre de l'appli (Réglages › Général) : public, l'onglet du navigateur le porte dès la page de connexion. */
+  appTitle: string;
 }
 
 /** Bibliothèque d'un serveur multimédia (section Plex), classée films, séries ou autre. */
@@ -60,6 +62,8 @@ export interface ArrTestResult {
   version: string;
   qualityProfiles: Array<{ id: number; name: string }>;
   rootFolders: Array<{ id: number; path: string; freeSpace: number }>;
+  /** Étiquettes du serveur ; absentes si la liste n'a pas pu être lue. */
+  tags?: Array<{ id: number; label: string }>;
 }
 
 export interface SonarrTestResult extends ArrTestResult {

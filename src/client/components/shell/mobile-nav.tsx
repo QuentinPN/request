@@ -3,7 +3,7 @@ import { cn } from 'cn';
 import { type LucideIcon, Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { MenuBadge, NavBadge } from './nav-badge';
-import { activeOptions, focusRing, useMenuActive, useNavItems } from './nav-items';
+import { activeOptions, focusRing, useMenuActive, useNavItems, useSettingsActive } from './nav-items';
 import { searchShortcut, useOpenSearch } from './search';
 
 // Cinq onglets au plus (gestionnaire) dans 390 px.
@@ -28,12 +28,14 @@ export function MobileNav() {
   const [home, ...rest] = useNavItems('tabs');
   const openSearch = useOpenSearch();
   const menuActive = useMenuActive();
+  const settingsActive = useSettingsActive();
+  const accountSection = menuActive || settingsActive;
   const link = (item: NonNullable<typeof home>) => (
     <Link
       key={item.to}
       to={item.to}
       activeOptions={activeOptions(item.to)}
-      aria-current={menuActive && item.in.includes('account') ? 'page' : undefined}
+      aria-current={accountSection && item.in.includes('account') ? 'page' : undefined}
       className={tab}
     >
       <TabContent icon={item.icon}>{item.mobileLabel ?? item.label}</TabContent>

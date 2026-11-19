@@ -13,7 +13,9 @@ import {
 } from '../src/server/services/email.ts';
 import { withStoredSecrets } from '../src/server/services/settings.ts';
 import {
+  AGENT_EVENTS_VERSION,
   NOTIFICATION_PREFERENCES_PATH,
+  notificationKinds,
   SERVICE_WORKER_PATH,
   SMTP_SETTINGS_PATH,
   SMTP_TEST_PATH,
@@ -71,12 +73,26 @@ describe('réglage SMTP', () => {
     expect((await manager.post(SMTP_TEST_PATH, {})).statusCode).toBe(403);
   });
 
+  it('types envoyés par courriel : tous par défaut, ceux cochés enregistrés, un type inconnu refusé', async () => {
+    const { as } = await setup();
+    const owner = await as('owner');
+    const chosen = await owner.put(SMTP_SETTINGS_PATH, { ...SMTP, events: ['issue_created', 'declined'] });
+    expect(chosen.json()).toMatchObject({ events: ['issue_created', 'declined'] });
+    expect((await owner.put(SMTP_SETTINGS_PATH, { ...SMTP, events: ['inconnu'] })).statusCode).toBe(400);
+  });
+
   it('le mot de passe est chiffré, jamais renvoyé, gardé si le champ est vide', async () => {
     const { as, data } = await setup();
     const owner = await as('owner');
     expect((await owner.get(SMTP_SETTINGS_PATH)).statusCode).toBe(404);
     const saved = await owner.put(SMTP_SETTINGS_PATH, SMTP);
-    expect(saved.json()).toEqual({ ...SMTP, enabled: true, password: { set: true } });
+    expect(saved.json()).toEqual({
+      ...SMTP,
+      enabled: true,
+      events: notificationKinds,
+      eventsVersion: AGENT_EVENTS_VERSION,
+      password: { set: true },
+    });
     expect((await owner.get(SMTP_SETTINGS_PATH)).body).not.toContain('mot-de-passe-smtp');
     const raw = data.db.select().from(settings).where(eq(settings.key, 'smtp')).get()?.value ?? '';
     expect(raw).not.toContain('mot-de-passe-smtp');
@@ -152,6 +168,7 @@ describe('réglage SMTP', () => {
         enabled: true,
         username: null,
         password: null,
+        events: [...notificationKinds],
       };
       const attempt = email.test(config, 'proprio@exemple.fr');
       const outcome = expect(attempt).rejects.toMatchObject({
@@ -197,12 +214,12 @@ describe('gabarit de courriel', () => {
       body: 'Votre demande de « A & B » a été approuvée.',
       path: '/titre/movie/1',
     };
-    const linked = mailContent(message, 'https://demandes.exemple.fr');
+    const linked = mailContent(message, 'https://demandes.exemple.fr', 'Request');
     expect(linked.subject).toBe('Demande approuvée');
     expect(linked.text).toContain('Ouvrir Request : https://demandes.exemple.fr/titre/movie/1');
     expect(linked.html).toContain('href="https://demandes.exemple.fr/titre/movie/1"');
     expect(linked.html).toContain('« A &amp; B »');
-    const plain = mailContent(message, null);
+    const plain = mailContent(message, null, 'Request');
     expect(plain.text).not.toContain('Ouvrir');
     expect(plain.html).not.toContain('href');
   });

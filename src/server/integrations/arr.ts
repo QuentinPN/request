@@ -59,6 +59,75 @@ export async function createOrRecover<T>(create: () => Promise<T>, recover: () =
   }
 }
 
+// --- Étiquettes ---
+
+const tagSchema = z.looseObject({ id: z.number(), label: z.string() });
+export interface ArrTag {
+  id: number;
+  label: string;
+}
+
+/** Étiquettes du serveur (id et libellé, les libellés étant en minuscules chez Radarr et Sonarr). */
+export async function listTags(kind: ArrKind, config: ArrConfig): Promise<ArrTag[]> {
+  const tags = await arrClient(kind, config).get('/tag', z.array(tagSchema));
+  return tags.map(({ id, label }) => ({ id, label }));
+}
+
+/** Texte accepté dans un libellé d'étiquette (lettres, chiffres, tirets), comme `sanitizeDisplayName` de Seerr. */
+const tagText = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/gi, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+
+/**
+ * Étiquette d'un membre sur le serveur, créée au besoin : libellé `<id>-<nom>` comme Seerr. Le libellé exact l'emporte
+ * (un identifiant à tirets peut être le préfixe d'un autre) ; à défaut, retrouvée par son préfixe `<id>-` (ou
+ * `<id> - `, ancien format de Seerr) : un membre renommé garde son étiquette. Deux envois simultanés qui la créent
+ * ensemble se retrouvent (la seconde création, refusée en 400, relit la liste). Tout échec nomme l'étape.
+ */
+export async function findOrCreateMemberTag(
+  kind: ArrKind,
+  config: ArrConfig,
+  member: { id: string; name: string },
+): Promise<number> {
+  const id = tagText(member.id);
+  const name = tagText(member.name);
+  const label = name ? `${id}-${name}` : id;
+  try {
+    if (!id) throw new IntegrationError('http', ARR_SERVICE[kind], 'identifiant du membre inutilisable');
+    const find = async () => {
+      const tags = (await listTags(kind, config)).map((tag) => ({ ...tag, label: tag.label.toLowerCase() }));
+      return (
+        tags.find((tag) => tag.label === label) ??
+        tags.find((tag) => tag.label === id || tag.label.startsWith(`${id}-`) || tag.label.startsWith(`${id} - `))
+      )?.id;
+    };
+    const found = await find();
+    if (found !== undefined) return found;
+    return await createOrRecover(
+      async () => (await arrClient(kind, config).post('/tag', tagSchema, { label })).id,
+      find,
+    );
+  } catch (error) {
+    if (!(error instanceof IntegrationError)) throw error;
+    const { status, url } = error;
+    throw new IntegrationError(
+      error.kind,
+      error.service,
+      `Création du tag du membre dans ${ARR_SERVICE[kind]} impossible : ${error.message}`,
+      { ...(status !== undefined && { status }), ...(url !== undefined && { url }) },
+    );
+  }
+}
+
+/** Étiquettes sans doublon, dans l'ordre. */
+export const mergeTags = (...lists: ReadonlyArray<readonly number[]>): number[] => [...new Set(lists.flat())];
+
 // --- Test de connexion (assistant) ---
 
 export const profileSchema = z.looseObject({ id: z.number(), name: z.string() });
@@ -87,11 +156,13 @@ export async function listArrOptions(kind: ArrKind, config: ArrConfig): Promise<
 
 /** Vérifie l'adresse et la clé, et renvoie de quoi alimenter les listes déroulantes. */
 export async function testArr(kind: ArrKind, config: ArrConfig): Promise<ArrTestResult> {
-  const [status, options] = await Promise.all([
+  const [status, options, tags] = await Promise.all([
     arrClient(kind, config).get('/system/status', statusSchema),
     listArrOptions(kind, config),
+    // Facultatives : sans la liste, le formulaire garde les étiquettes enregistrées sans pouvoir les changer.
+    listTags(kind, config).catch(() => undefined),
   ]);
-  return { version: status.version, ...options };
+  return { version: status.version, ...options, ...(tags && { tags }) };
 }
 
 // --- File de téléchargement ---

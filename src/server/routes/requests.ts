@@ -21,6 +21,7 @@ import {
   sendOptionsParamsSchema,
   sendOptionsPath,
   sendOptionsQuerySchema,
+  updateRequestSchema,
 } from '../../shared/requests.ts';
 import { parseRequest } from '../lib/api-errors.ts';
 import { requireCapability, viewerOf } from '../plugins/auth.ts';
@@ -36,6 +37,8 @@ export function requestsRoutes(app: FastifyInstance) {
   const service = createRequests(app.data, { tmdb: app.tmdb, availability: app.availability });
   const canRequest = { preHandler: requireCapability('canRequest') };
   const canManage = { preHandler: requireCapability('canManageRequests') };
+  // Listes d'envoi : approbateurs, et membres qui choisissent eux-mêmes (« Demande avancée »).
+  const canChooseSend = { preHandler: requireCapability('canManageRequests', 'canAdvancedRequest') };
   const idOf = (params: unknown) => parseRequest(requestIdParamsSchema, params).id;
 
   app.post(REQUESTS_PATH, canRequest, async (req, reply): Promise<RequestDetail> => {
@@ -62,13 +65,15 @@ export function requestsRoutes(app: FastifyInstance) {
 
   app.get(REQUEST_COUNTS_PATH, canRequest, async (req): Promise<RequestCounts> => service.counts(viewerOf(req)));
 
-  // Listes de l'approbation (serveurs, profils, dossiers) : ni adresse ni clé ; aucun serveur → 503.
+  // Listes de l'approbation et de la demande avancée (serveurs, profils, dossiers) : ni adresse ni clé ; aucun
+  // serveur → 503.
   app.get(
     sendOptionsPath(':type'),
-    canManage,
+    canChooseSend,
     async (req): Promise<SendOptions> =>
       sendOptions(
         app.data,
+        app.tmdb,
         parseRequest(sendOptionsParamsSchema, req.params).type,
         parseRequest(sendOptionsQuerySchema, req.query),
       ),
@@ -78,6 +83,14 @@ export function requestsRoutes(app: FastifyInstance) {
     requestPath(':id'),
     canRequest,
     async (req): Promise<RequestDetail> => service.get(viewerOf(req), idOf(req.params)),
+  );
+
+  // Modification d'une demande en attente : le demandeur, ou un gestionnaire (contrôlé par le service).
+  app.patch(
+    requestPath(':id'),
+    canRequest,
+    async (req): Promise<RequestDetail> =>
+      service.update(viewerOf(req), idOf(req.params), parseRequest(updateRequestSchema, req.body ?? {})),
   );
 
   app.post(
