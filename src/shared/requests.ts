@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ArrServerSummary } from './arr-servers.ts';
-import { type MediaSummary, type MediaType, mediaTypeSchema, type Paged, type Season } from './media.ts';
+import { type MediaType, mediaSummarySchema, mediaTypeSchema, pagedSchema, type Season } from './media.ts';
 import type { AppliedRule } from './override-rules.ts';
 import type { Capabilities } from './roles.ts';
 import { profileId, rootFolderPath, type SeriesType, seriesTypes } from './settings.ts';
@@ -8,8 +8,9 @@ import type { ArrTestResult } from './setup.ts';
 import {
   isRequestableStatus,
   type MediaStatus,
-  type RequestEventType,
   type RequestStatus,
+  requestEventTypes,
+  requestStatuses,
   requestStatusSchema,
 } from './status.ts';
 
@@ -289,63 +290,67 @@ export const requestIdParamsSchema = z.object({ id: z.coerce.number().pipe(reque
 
 // --- Réponses ---
 
-export interface RequestPerson {
-  id: string;
-  name: string;
-  avatarUrl: string | null;
-}
+export const requestPersonSchema = z.object({ id: z.string(), name: z.string(), avatarUrl: z.string().nullable() });
+export type RequestPerson = z.output<typeof requestPersonSchema>;
 
-export interface RequestView {
-  id: number;
-  type: MediaType;
-  tmdbId: number;
-  status: RequestStatus;
+export const requestViewSchema = z.object({
+  id: z.number().int(),
+  type: mediaTypeSchema,
+  tmdbId: z.number().int(),
+  status: requestStatusSchema,
   /** Saisons demandées (séries), triées ; vide pour un film. */
-  seasons: number[];
+  seasons: z.array(z.number().int()),
   /** Membre à qui la demande appartient (quota, notifications). */
-  requester: RequestPerson;
+  requester: requestPersonSchema,
   /** Gestionnaire qui l'a faite à sa place (« Demandée par X pour Y ») ; `null` : le membre lui-même. */
-  createdBy: RequestPerson | null;
+  createdBy: requestPersonSchema.nullable(),
   /** Hors quota : ne compte pas dans le quota du membre. */
-  quotaExempt: boolean;
+  quotaExempt: z.boolean(),
   /** Qui a approuvé ou refusé ; `null` tant que la demande est en attente. */
-  decidedBy: RequestPerson | null;
-  declineReason: string | null;
-  qualityProfileId: number | null;
-  rootFolder: string | null;
-  seriesType: SeriesType | null;
-  is4k: boolean;
+  decidedBy: requestPersonSchema.nullable(),
+  declineReason: z.string().nullable(),
+  qualityProfileId: z.number().int().nullable(),
+  rootFolder: z.string().nullable(),
+  seriesType: z.enum(seriesTypes).nullable(),
+  is4k: z.boolean(),
   /** Serveur Radarr/Sonarr choisi (demande avancée, approbation) ; `null` = serveur par défaut au moment de l'envoi. */
-  server: { id: number; name: string } | null;
+  server: z.object({ id: z.number().int(), name: z.string() }).nullable(),
   /** ISO 8601. */
-  createdAt: string;
-  updatedAt: string;
+  createdAt: z.string(),
+  updatedAt: z.string(),
   /** Résumé TMDB (titre, affiche) ; `null` si TMDB ne répond pas. */
-  media: MediaSummary | null;
+  media: mediaSummarySchema.nullable(),
   /** Raison du dernier échec d'envoi (frise) ; `null` sauf pour une demande en échec. */
-  failureReason: string | null;
-}
+  failureReason: z.string().nullable(),
+});
+export type RequestView = z.output<typeof requestViewSchema>;
 
-export interface RequestEventView {
-  id: number;
-  type: RequestEventType;
-  actor: RequestPerson | null;
-  detail: string | null;
-  createdAt: string;
-}
+export const requestEventViewSchema = z.object({
+  id: z.number().int(),
+  type: z.enum(requestEventTypes),
+  actor: requestPersonSchema.nullable(),
+  detail: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type RequestEventView = z.output<typeof requestEventViewSchema>;
 
 /** Demande avec sa frise, dans l'ordre chronologique. */
-export interface RequestDetail extends RequestView {
-  events: RequestEventView[];
-}
+export const requestDetailSchema = requestViewSchema.extend({ events: z.array(requestEventViewSchema) });
+export type RequestDetail = z.output<typeof requestDetailSchema>;
 
 /**
  * Page de demandes, avec le nombre de demandes par statut sur tout le périmètre (les siennes, ou toutes pour un
  * approbateur, restreint au titre si `type`/`tmdbId`), quel que soit le filtre `status` : de quoi compter chaque onglet.
  */
-export interface RequestPage extends Paged<RequestView> {
-  totals: Record<RequestStatus, number>;
-}
+export const requestPageSchema = pagedSchema(requestViewSchema).extend({
+  totals: z.object(
+    Object.fromEntries(requestStatuses.map((status) => [status, z.number().int()])) as Record<
+      RequestStatus,
+      z.ZodNumber
+    >,
+  ),
+});
+export type RequestPage = z.output<typeof requestPageSchema>;
 
 /**
  * Serveurs du type et de la qualité de la demande, puis profils de qualité et dossiers racines de l'un d'eux (`serverId`,
@@ -384,27 +389,30 @@ export const sendOptionsQuerySchema = z.object({
   tmdbId: z.coerce.number().int().positive().optional(),
 });
 
-export interface QuotaUsage {
-  limit: number;
-  days: number;
-  used: number;
-  remaining: number;
-}
+export const quotaUsageSchema = z.object({
+  limit: z.number().int(),
+  days: z.number().int(),
+  used: z.number().int(),
+  remaining: z.number().int(),
+});
+export type QuotaUsage = z.output<typeof quotaUsageSchema>;
 
 /** Quota restant du membre connecté (ou du membre `?userId=`) : films et saisons sur leur fenêtre glissante. */
-export interface RequestQuota {
-  movies: QuotaUsage;
-  seasons: QuotaUsage;
+export const requestQuotaSchema = z.object({
+  movies: quotaUsageSchema,
+  seasons: quotaUsageSchema,
   /** Propriétaire et gestionnaires : aucune limite, les champs ci-dessus sont indicatifs. */
-  exempt: boolean;
-}
+  exempt: z.boolean(),
+});
+export type RequestQuota = z.output<typeof requestQuotaSchema>;
 
-export interface RequestCounts {
+export const requestCountsSchema = z.object({
   /** Demandes en attente d'approbation ; `null` pour qui ne peut pas approuver. */
-  pendingApprovals: number | null;
+  pendingApprovals: z.number().int().nullable(),
   /** Demandes en cours du membre connecté. */
-  mineActive: number;
-}
+  mineActive: z.number().int(),
+});
+export type RequestCounts = z.output<typeof requestCountsSchema>;
 
 export type BatchItemResult =
   | { id: number; ok: true; request: RequestDetail }

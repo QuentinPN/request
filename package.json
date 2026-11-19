@@ -16,6 +16,7 @@
     "test": "vitest run",
     "verify": "npm run lint && npm run check && npm test && npm run build",
     "backup": "node scripts/backup.ts",
+    "openapi": "node scripts/openapi.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

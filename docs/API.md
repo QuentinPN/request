@@ -25,6 +25,8 @@ curl -H "X-Api-Key: ur_…" https://requetes.exemple.fr/api/auth/me
 
 ## Routes utiles
 
+Les routes d’un membre (connexion et sessions, catalogue, images et photos des membres, ses demandes, Ma liste, notifications) sont décrites en OpenAPI 3.1 dans [`docs/openapi.json`](openapi.json), généré depuis les schémas Zod par `npm run openapi` ; un test échoue s’il n’est plus à jour.
+
 | Besoin                     | Appel                                                                                           | Droit requis                                                                                                                                                                                                                                                                       |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Version de l'API           | `GET /api/version`                                                                              | public (sans session)                                                                                                                                                                                                                                                              |

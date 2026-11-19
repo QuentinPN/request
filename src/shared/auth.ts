@@ -79,6 +79,10 @@ export const viewerSchema = z.object({
 });
 export type Viewer = z.output<typeof viewerSchema>;
 
+/** Réponse de `LOGIN_PATH` et de `VIEWER_PATH` : le membre connecté. */
+export const viewerResponseSchema = z.object({ viewer: viewerSchema });
+export type ViewerResponse = z.output<typeof viewerResponseSchema>;
+
 /** Réponse de `EMBY_TOKEN_PATH` : le jeton de session (montré une seule fois), son expiration et le membre. */
 export const embyTokenSessionSchema = z.object({
   token: z.string(),

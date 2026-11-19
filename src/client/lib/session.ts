@@ -1,4 +1,4 @@
-import { VIEWER_PATH, type Viewer } from '@shared/auth.ts';
+import { VIEWER_PATH, type Viewer, type ViewerResponse } from '@shared/auth.ts';
 import { SETUP_STATE_PATH, type SetupState } from '@shared/setup.ts';
 import { type QueryClient, queryOptions } from '@tanstack/react-query';
 import { AuthRequiredError, apiGet } from './http.ts';
@@ -8,7 +8,7 @@ export const viewerQuery = queryOptions({
   queryKey: ['viewer'],
   queryFn: async (): Promise<Viewer | null> => {
     try {
-      return (await apiGet<{ viewer: Viewer }>(VIEWER_PATH)).viewer;
+      return (await apiGet<ViewerResponse>(VIEWER_PATH)).viewer;
     } catch (error) {
       if (error instanceof AuthRequiredError) return null;
       throw error;

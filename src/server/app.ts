@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
-import Fastify, { LogController } from 'fastify';
+import Fastify, { LogController, type RouteOptions } from 'fastify';
 import { API_FEATURES, API_VERSION, API_VERSION_PATH, type ApiVersion } from '../shared/api-version.ts';
 import { HEALTH_PATH, type Health } from '../shared/health.ts';
 import { SERVICE_WORKER_PATH } from '../shared/notifications.ts';
@@ -121,6 +121,7 @@ export async function buildApp({
   data,
   upstreams = {},
   schedule = false,
+  onRoute,
   publicUrl = parsePublicUrl(process.env.PUBLIC_URL),
   setupToken = parseSetupToken(process.env.SETUP_TOKEN),
 }: {
@@ -133,6 +134,8 @@ export async function buildApp({
   setupToken?: string;
   /** Balayages planifiés (services/sync.ts) : le serveur seulement, jamais les tests. */
   schedule?: boolean;
+  /** Appelé pour chaque route enregistrée, plugins compris (test du document OpenAPI). */
+  onRoute?: (route: RouteOptions) => void;
 }) {
   // Journal en mémoire : pino écrit dans le tampon, la sortie standard n'en reçoit une copie expurgée que sur le serveur (`schedule`), pour les journaux Docker. Pas de ligne par requête (les affiches
   // et l'actualisation des journaux eux-mêmes noieraient le tampon) : seulement le hook `onResponse`, les tâches et les erreurs.
@@ -142,6 +145,8 @@ export async function buildApp({
     logController: new LogController({ disableRequestLogging: true }),
     trustProxy,
   });
+  // Avant toute route : les plugins enregistrés ensuite héritent du hook.
+  if (onRoute) app.addHook('onRoute', onRoute);
   app.decorate('logs', logs);
   setAppLog(app.log);
   app.decorate('data', data);
