@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
+import { API_FEATURES, API_VERSION, API_VERSION_PATH, type ApiVersion } from '../shared/api-version.ts';
 import { HEALTH_PATH, type Health } from '../shared/health.ts';
 import { SERVICE_WORKER_PATH } from '../shared/notifications.ts';
 import { normalizeUrl } from '../shared/settings.ts';
@@ -207,6 +208,11 @@ export async function buildApp({
     }
     return { status: 'ok', version };
   });
+  // Version du contrat d'API et capacités, publiques : les clients natifs y détectent un serveur trop ancien.
+  app.get(
+    API_VERSION_PATH,
+    async (): Promise<ApiVersion> => ({ apiVersion: API_VERSION, features: [...API_FEATURES] }),
+  );
   authRoutes(app);
   setupRoutes(app);
   arrServersRoutes(app);

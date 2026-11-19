@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { API_KEY_HEADER } from '../../shared/api-keys.ts';
+import { API_VERSION_PATH } from '../../shared/api-version.ts';
 import { CSRF_HEADER, CSRF_VALUE, LOGIN_PATH, LOGOUT_PATH } from '../../shared/auth.ts';
 import { HEALTH_PATH } from '../../shared/health.ts';
 import { PLEX_PIN_CHECK_PATH, PLEX_PIN_PATH } from '../../shared/media-server.ts';
@@ -51,6 +52,7 @@ const COOKIE_OPTIONS = {
  */
 const PUBLIC_ROUTES = new Set([
   `GET ${HEALTH_PATH}`,
+  `GET ${API_VERSION_PATH}`,
   `POST ${LOGIN_PATH}`,
   `POST ${PLEX_PIN_PATH}`,
   `POST ${PLEX_PIN_CHECK_PATH}`,
