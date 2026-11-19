@@ -43,7 +43,7 @@ Les routes d’un membre (connexion et sessions, catalogue, images et photos des
 | Approuver / refuser        | `POST /api/requests/{id}/approve`, `POST /api/requests/{id}/decline` `{ "reason": "…" }`        | gestionnaire                                                                                                                                                                                                                                                                       |
 | Annuler une demande        | `POST /api/requests/{id}/cancel`                                                                | peut demander                                                                                                                                                                                                                                                                      |
 
-`GET /api/version` répond `{ "apiVersion": "1.0.0", "features": ["api-version"] }` sans session : un client natif compare `apiVersion` (semver) à celle qu'il exige et teste la présence d'un nom dans `features` avant d'appeler une route récente.
+`GET /api/version` répond `{ "apiVersion": "1.0.0", "features": ["api.version", "media.item-id", "auth.emby-token", "auth.bearer", "auth.sessions"] }` sans session (liste à jour : `API_FEATURES`, `src/shared/api-version.ts`) : un client natif compare `apiVersion` (semver) à celle qu'il exige et teste la présence d'un nom dans `features` avant d'appeler une route récente.
 
 Le **statut** d'un titre (`status` dans la fiche et dans les résultats de recherche) dit s'il est disponible dans Emby, demandé, en attente d'approbation, etc. ; un titre absent de la bibliothèque et jamais demandé n'a pas de `status`.
 
