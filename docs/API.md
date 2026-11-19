@@ -12,9 +12,9 @@ curl -H "X-Api-Key: ur_…" https://requetes.exemple.fr/api/auth/me
 
 - La requête agit **comme le propriétaire qui a créé la clé, avec ses droits du moment** : une clé a donc les droits d'un propriétaire (réglages et secrets masqués compris). Si son créateur n'est plus propriétaire, la clé est refusée.
 - Pas de cookie, donc **ni en-tête `X-Request` ni contrôle d'origine** à fournir, y compris pour les écritures (`POST`, `PUT`, `DELETE`).
-- **Cookie de session et clé ne se combinent pas** : une requête qui porte les deux est refusée (400), sans repli de l'un sur l'autre. Un client à clé n'envoie aucun cookie.
+- **Cookie de session, clé et jeton Bearer ne se combinent pas** : une requête qui en porte plusieurs est refusée (400), sans repli de l'un sur l'autre. Un client à clé n'envoie aucun cookie.
 - Clé inconnue, vide ou révoquée : `401`. Après 10 clés invalides en 5 minutes depuis une même adresse IP, cette adresse reçoit `429` (en-tête `Retry-After`) pour toute requête à clé, même valide.
-- Une clé ne gère pas les clés : `GET`, `POST` et `DELETE /api/settings/api-keys` répondent `403` à une requête à clé.
+- Une clé ne gère pas les clés ni les sessions : `GET`, `POST` et `DELETE /api/settings/api-keys`, `GET /api/auth/sessions` et `DELETE /api/auth/sessions/{id}` répondent `403` à une requête à clé.
 - Les erreurs sont du JSON `{ "error": "message" }`.
 
 ## Clés
@@ -90,7 +90,30 @@ Content-Type: application/json
 
 - `userId` : id du compte (1 à 64 caractères : lettres, chiffres, `_`, `-`) ; `accessToken` : jeton du membre (1 à 512 caractères, sans espace ni guillemet) ; `deviceName` : nom de l'appareil, rogné, 1 à 64 caractères sans caractère de contrôle.
 - Request demande au serveur multimédia, avec ce jeton, s'il vaut pour `userId` (comparé sans casse ni tirets) : Jellyfin, `GET /Users/Me` ; Emby (sans `/Users/Me`), `GET /Sessions` avec un appareil de vérification neuf à chaque connexion (`request-verify-<nonce>`) : la session qu'Emby crée pour cet appareil doit appartenir à ce compte. Chaque connexion par jeton laisse une entrée « Verification Viewer » dans Emby › Appareils (rare : la session dure ensuite 30 jours), à nettoyer au besoin. Jeton refusé, autre compte, compte désactivé ou inconnu : `401`. Serveur injoignable : `502`, comme `POST /api/auth/login`.
-- Réponse `200` : `{ "token", "expiresAt", "viewer" }` (`embyTokenSessionSchema`, `src/shared/auth.ts`). Le jeton de session n'est montré qu'une fois et expire 30 jours après sa dernière utilisation. **Aucun cookie** n'est posé. Son envoi en `Authorization: Bearer` sur les autres routes arrive dans une version suivante.
+- Réponse `200` : `{ "token", "expiresAt", "viewer" }` (`embyTokenSessionSchema`, `src/shared/auth.ts`). Le jeton de session n'est montré qu'une fois et expire 30 jours après sa dernière utilisation. **Aucun cookie** n'est posé : le client l'envoie ensuite en `Authorization: Bearer` (ci-dessous).
 - Ni en-tête `X-Request` ni contrôle d'origine (pas de cookie, donc pas de CSRF). Limite partagée avec la connexion par mot de passe : 10 essais par adresse IP en 5 minutes, puis `429` (`Retry-After`).
 - Serveur Plex, ou aucun serveur : `400`. Corps invalide : `400`.
 - Le jeton Emby/Jellyfin n'est ni conservé ni journalisé.
+
+### Jeton de session en Bearer
+
+Le jeton reçu s'envoie dans l'en-tête `Authorization` de chaque requête :
+
+```http
+GET /api/auth/me
+Authorization: Bearer <token>
+```
+
+- Accepté sur toutes les routes `/api`, `/api/images` comprise. La requête a **le rôle et les droits réels du membre** de la session (un membre reçoit `403` sur une route de gestionnaire), pas ceux du propriétaire comme une clé d'API.
+- Ni en-tête `X-Request` ni contrôle d'origine, y compris pour les écritures : pas de cookie, donc pas de CSRF.
+- Même durée que la session de navigateur : 30 jours après la dernière utilisation (l'utilisation la prolonge).
+- **Jamais dans l'adresse** : `?token=` ou `?access_token=` ne sont pas lus (une adresse finit dans les journaux).
+- Erreurs : jeton `Bearer` inconnu, expiré, révoqué, vide ou malformé : `401`, sans repli sur un cookie. Les autres schémas (`Basic`…) sont ignorés : avec un cookie, la session du cookie sert ; seuls, ils sont sans effet (route publique normale, `401` « non connecté » sur une route protégée, hors limiteur). Bearer avec cookie de session ou `X-Api-Key` : `400`. Après 10 jetons invalides en 5 minutes depuis une même adresse IP : `429` (`Retry-After`) pour tout jeton invalide ; un jeton valide passe toujours.
+- L'en-tête `Authorization` est lu sur toute route `/api`, publiques comprises : ne pas l'envoyer à `POST /api/auth/emby-token` (un jeton périmé y donnerait `401` au lieu d'une nouvelle connexion).
+
+### Sessions et déconnexion
+
+- `GET /api/auth/sessions` : sessions en cours du membre, la plus récemment utilisée d'abord : `{ "sessions": [{ "id", "deviceName", "userAgent", "createdAt", "lastSeenAt", "expiresAt", "current" }] }` (`authSessionsSchema`, `src/shared/auth.ts`). `deviceName` : nom donné à la connexion par jeton, `null` pour un navigateur ; `userAgent` : résumé (« Firefox · Windows », sinon le premier produit, ex. `okhttp/4.12.0`), `null` s'il manquait ; `current` : la session de la requête. `id` : identifiant opaque (32 hexadécimaux), ni le jeton ni son empreinte.
+- `DELETE /api/auth/sessions/{id}` : révoque l'une de ses sessions (`204`), la courante comprise ; `404` si l'id n'est pas celui d'une de ses sessions, `400` s'il est malformé.
+- `POST /api/auth/logout` en Bearer révoque la session du jeton (`204`, aucun cookie touché).
+- Valables par cookie (avec `X-Request` pour `DELETE`) comme en Bearer, pour tout membre ; `403` avec une clé d'API. Les routes de gestion des clés d'API (`/api/api-keys`) refusent aussi le Bearer (`403`) : un jeton volé ne peut pas créer une clé qui survivrait à la révocation de la session. « Déconnecter partout » (propriétaire, `DELETE /api/users/{id}/sessions`) révoque aussi les jetons des appareils.

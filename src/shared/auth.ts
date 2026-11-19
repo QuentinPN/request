@@ -25,6 +25,9 @@ export const LOGOUT_PATH = '/api/auth/logout';
 export const VIEWER_PATH = '/api/auth/me';
 /** Connexion d'un client natif (Viewer) par son jeton d'accès Emby ou Jellyfin : session renvoyée dans le corps. */
 export const EMBY_TOKEN_PATH = '/api/auth/emby-token';
+/** Sessions du membre connecté (navigateurs et appareils), et révocation de l'une d'elles. */
+export const AUTH_SESSIONS_PATH = '/api/auth/sessions';
+export const authSessionPath = (id: string) => `${AUTH_SESSIONS_PATH}/${id}`;
 
 export const USERS_PATH = '/api/users';
 export const USERS_IMPORT_PATH = `${USERS_PATH}/import`;
@@ -83,6 +86,29 @@ export const embyTokenSessionSchema = z.object({
   viewer: viewerSchema,
 });
 export type EmbyTokenSession = z.output<typeof embyTokenSessionSchema>;
+
+/**
+ * Une session du membre connecté (`GET AUTH_SESSIONS_PATH`). `id` : identifiant opaque, ni le jeton ni son empreinte
+ * en base. `deviceName` : nom de l'appareil d'un client natif, `null` pour un navigateur ; `userAgent` : navigateur et
+ * système déduits de l'en-tête `User-Agent` (« Firefox · Windows »), `null` s'il manquait. `current` : la session de
+ * cette requête.
+ */
+export const authSessionSchema = z.object({
+  id: z.string(),
+  deviceName: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  lastSeenAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime(),
+  current: z.boolean(),
+});
+export type AuthSession = z.output<typeof authSessionSchema>;
+
+export const authSessionsSchema = z.object({ sessions: z.array(authSessionSchema) });
+export type AuthSessions = z.output<typeof authSessionsSchema>;
+
+/** Identifiant public d'une session : 32 caractères hexadécimaux (voir `publicSessionId`). */
+export const authSessionParamsSchema = z.object({ id: z.string().regex(/^[0-9a-f]{32}$/, 'Session inconnue') });
 
 /** Droits de demande d'un membre : ce qu'il faut pour demander à sa place sans voir le reste de ses droits. */
 export const memberRequestKeys = [

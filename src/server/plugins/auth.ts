@@ -18,8 +18,11 @@ import { hasOwner, type User } from '../services/users.ts';
 export interface SessionViewer {
   user: User;
   capabilities: Capabilities;
-  /** Comment la requête s'est authentifiée : cookie de session, ou clé d'API (`X-Api-Key`). */
-  via: 'session' | 'apiKey';
+  /**
+   * Comment la requête s'est authentifiée : cookie de session, clé d'API (`X-Api-Key`, droits de son créateur), ou
+   * jeton de session en `Authorization: Bearer` (client natif : droits réels du membre de la session).
+   */
+  via: 'session' | 'apiKey' | 'bearer';
 }
 
 declare module 'fastify' {
@@ -131,12 +134,72 @@ function readViewer(req: FastifyRequest): SessionViewer | null {
   return user ? { user, capabilities: capabilitiesOf(user), via: 'session' } : null;
 }
 
-// --- Clé d'API ---
+// --- Justificatifs en en-tête : clé d'API, jeton de session en Bearer ---
 
 /** Essais de clé d'API invalide par adresse IP ; au-delà, toute clé invalide de cette adresse reçoit 429. */
 export const API_KEY_LIMIT = { limit: 10, windowMs: 5 * 60_000 };
 /** Essais de jeton d'installation invalide par adresse IP : mêmes bornes. */
 export const SETUP_TOKEN_LIMIT = API_KEY_LIMIT;
+/** Essais de jeton Bearer invalide par adresse IP : mêmes bornes. */
+export const BEARER_LIMIT = API_KEY_LIMIT;
+
+/**
+ * `Authorization: Bearer <jeton>` : schéma sans casse (RFC 7235), un seul espace, jeton base64url comme ceux de
+ * `createSession`. Tout autre contenu (autre schéma, jeton vide ou malformé) est refusé sans consulter la base. Le jeton
+ * n'est lu que dans cet en-tête, jamais dans l'adresse (`?token=`, `?access_token=`) : une adresse finit dans les
+ * journaux, l'historique et l'en-tête `Referer`.
+ */
+const BEARER = /^Bearer ([\w-]+)$/i;
+/** Schéma `Bearer` (même mal formé) : les autres schémas (`Basic`…) ne sont pas à nous, on les ignore. */
+const BEARER_SCHEME = /^Bearer(\s|$)/i;
+
+function bearerToken(req: FastifyRequest): string | null {
+  const header = req.headers.authorization;
+  return typeof header === 'string' ? (BEARER.exec(header)?.[1] ?? null) : null;
+}
+
+/** Façons de s'authentifier par en-tête, sans cookie. */
+type HeaderVia = Exclude<SessionViewer['via'], 'session'>;
+
+const HEADER_CREDENTIALS: Record<
+  HeaderVia,
+  {
+    present: (req: FastifyRequest) => boolean;
+    user: (req: FastifyRequest) => User | null;
+    refused: string;
+    tooMany: string;
+  }
+> = {
+  apiKey: {
+    present: (req) => req.headers[API_KEY_HEADER] !== undefined,
+    user: (req) => {
+      const secret = req.headers[API_KEY_HEADER];
+      return typeof secret === 'string' ? authenticateApiKey(req.server.data.db, secret) : null;
+    },
+    refused: 'Clé d’API invalide',
+    tooMany: 'Trop de clés d’API invalides, réessayez dans quelques minutes',
+  },
+  bearer: {
+    present: (req) => BEARER_SCHEME.test(req.headers.authorization ?? ''),
+    // Même validation que le cookie : session révoquée ou expirée refusée, expiration glissante.
+    user: (req) => {
+      const token = bearerToken(req);
+      return token ? validateSession(req.server.data.db, token) : null;
+    },
+    refused: 'Jeton de session invalide, expiré ou révoqué',
+    tooMany: 'Trop de jetons de session invalides, réessayez dans quelques minutes',
+  },
+};
+
+/** Justificatif en en-tête de la requête (le Bearer d'abord), `null` s'il n'y en a aucun. */
+const headerViaOf = (req: FastifyRequest): HeaderVia | null =>
+  HEADER_CREDENTIALS.bearer.present(req) ? 'bearer' : HEADER_CREDENTIALS.apiKey.present(req) ? 'apiKey' : null;
+
+/** Nombre de justificatifs présentés (cookie de session, clé d'API, en-tête `Authorization`), valides ou non. */
+const credentialCount = (req: FastifyRequest) =>
+  [req.cookies[SESSION_COOKIE] !== undefined, ...Object.values(HEADER_CREDENTIALS).map((c) => c.present(req))].filter(
+    Boolean,
+  ).length;
 
 type RateLimiter = ReturnType<typeof createRateLimiter>;
 
@@ -158,33 +221,29 @@ function refuseCounted(
 }
 
 /**
- * Requête à clé d'API : la clé est le seul justificatif, jamais combiné à un cookie de session (refus 400, sans
- * repli de l'un sur l'autre). Pas de cookie, donc pas de CSRF ni d'origine à contrôler. Clé inconnue, révoquée ou
- * dont le créateur n'est plus propriétaire : essai compté pour l'IP, 401, ou 429 si la limite est atteinte. Une clé
+ * Requête à clé d'API ou à jeton Bearer : ce justificatif est le seul, jamais combiné à un autre (cookie de session,
+ * clé, Bearer : refus 400, sans repli de l'un sur l'autre). Pas de cookie, donc pas de CSRF ni d'origine à contrôler.
+ * Justificatif inconnu, malformé, révoqué ou expiré (clé dont le créateur n'est plus propriétaire comprise) : essai
+ * compté pour l'IP, avec un compteur par sorte de justificatif, 401, ou 429 si la limite est atteinte. Un justificatif
  * valide passe toujours, sans consulter la limite. S'applique à toute route `/api`, publiques comprises.
  */
-function authenticateWithApiKey(
+function authenticateWithHeader(
   req: FastifyRequest,
   reply: FastifyReply,
+  via: HeaderVia,
   limiter: RateLimiter,
 ): FastifyReply | undefined {
-  if (req.cookies[SESSION_COOKIE] !== undefined)
-    return reply
-      .code(400)
-      .send({ error: 'Cookie de session et clé d’API ne se combinent pas : n’envoyez que l’un des deux' });
-  const secret = req.headers[API_KEY_HEADER];
-  const user = typeof secret === 'string' ? authenticateApiKey(req.server.data.db, secret) : null;
+  if (credentialCount(req) > 1)
+    return reply.code(400).send({
+      error: 'Cookie de session, clé d’API et jeton Bearer ne se combinent pas : n’envoyez qu’un seul des trois',
+    });
+  const credential = HEADER_CREDENTIALS[via];
+  const user = credential.user(req);
   if (user) {
-    req.viewer = { user, capabilities: capabilitiesOf(user), via: 'apiKey' };
+    req.viewer = { user, capabilities: capabilitiesOf(user), via };
     return undefined;
   }
-  return refuseCounted(
-    req,
-    reply,
-    limiter,
-    { code: 401, error: 'Clé d’API invalide' },
-    'Trop de clés d’API invalides, réessayez dans quelques minutes',
-  );
+  return refuseCounted(req, reply, limiter, { code: 401, error: credential.refused }, credential.tooMany);
 }
 
 /** Ouvre une session pour ce membre et pose le cookie. */
@@ -203,10 +262,25 @@ export function refreshSessionCookie(req: FastifyRequest, reply: FastifyReply): 
     reply.setCookie(SESSION_COOKIE, token, { ...COOKIE_OPTIONS, expires: new Date(Date.now() + SESSION_TTL_MS) });
 }
 
-/** Révoque la session courante (si elle existe) et efface le cookie. */
+/** Jeton de la session de cette requête (cookie ou Bearer), `null` pour une clé d'API ou sans session. */
+export function currentSessionToken(req: FastifyRequest): string | null {
+  if (req.viewer?.via === 'bearer') return bearerToken(req);
+  return req.viewer?.via === 'session' ? sessionToken(req) : null;
+}
+
+/**
+ * Révoque la session courante : celle du Bearer (aucun cookie à effacer), sinon celle du cookie s'il existe, et efface
+ * le cookie.
+ */
 export function endSession(req: FastifyRequest, reply: FastifyReply): void {
+  const { db } = req.server.data;
+  if (req.viewer?.via === 'bearer') {
+    const token = bearerToken(req);
+    if (token) revokeSession(db, token);
+    return;
+  }
   const token = sessionToken(req);
-  if (token) revokeSession(req.server.data.db, token);
+  if (token) revokeSession(db, token);
   reply.clearCookie(SESSION_COOKIE, COOKIE_OPTIONS);
 }
 
@@ -231,15 +305,27 @@ export const requireCapability =
 /** Options d'une route réservée au propriétaire (le serveur multimédia reste ouvert pendant l'amorçage, `isBootstrap`). */
 export const ownerOnly = { preHandler: requireCapability('isOwner') };
 
-/** preHandler : 403 si la requête s'est authentifiée par clé d'API (réservé à la session : une clé ne crée pas de clé). */
+/**
+ * preHandler : 403 si la requête s'est authentifiée par clé d'API (réservé aux sessions : une clé ne crée pas de clé et
+ * ne gère pas de sessions). Un jeton Bearer passe : c'est la session d'un membre, pas une clé.
+ */
 export const forbidApiKey = async (req: FastifyRequest) => {
   if (req.viewer?.via === 'apiKey') throw new HttpError(403, 'Cette route n’accepte pas les clés d’API');
 };
 
 /**
- * Cookies signés, membre de la session (ou de la clé d'API) sur `req.viewer`, et garde global de `/api` : toute
- * route est protégée par défaut (401), les exceptions sont listées ci-dessus. Les écritures de session passent le
- * contrôle CSRF (403).
+ * preHandler : réservé aux sessions par cookie, ni clé d'API ni Bearer. Un jeton Bearer volé ne doit pas pouvoir créer
+ * une clé qui survivrait à la révocation de la session.
+ */
+export const forbidHeaderCredentials = async (req: FastifyRequest) => {
+  await forbidApiKey(req);
+  if (req.viewer?.via === 'bearer') throw new HttpError(403, 'Cette route n’accepte pas les jetons Bearer');
+};
+
+/**
+ * Cookies signés, membre de la session (cookie ou Bearer) ou de la clé d'API sur `req.viewer`, et garde global de
+ * `/api` : toute route est protégée par défaut (401), les exceptions sont listées ci-dessus. Les écritures à cookie
+ * passent le contrôle CSRF (403).
  * Une adresse sans route garde son 404.
  */
 export async function registerAuth(app: FastifyInstance, { setupToken }: { setupToken: string }) {
@@ -250,14 +336,20 @@ export async function registerAuth(app: FastifyInstance, { setupToken }: { setup
   app.decorate('setupToken', setupToken);
 
   // Par instance : chaque application (et chaque test) a ses propres compteurs.
-  const apiKeyLimiter = createRateLimiter(API_KEY_LIMIT);
+  const headerLimiters: Record<HeaderVia, RateLimiter> = {
+    apiKey: createRateLimiter(API_KEY_LIMIT),
+    bearer: createRateLimiter(BEARER_LIMIT),
+  };
   const setupTokenLimiter = createRateLimiter(SETUP_TOKEN_LIMIT);
 
   app.addHook('onRequest', async (req, reply) => {
     const url = req.routeOptions.url;
     if (!url?.startsWith('/api/') || WEBHOOK_ROUTES.has(routeKey(req))) return;
-    // Avant le CSRF : une requête à clé n'a pas de cookie à protéger.
-    if (req.headers[API_KEY_HEADER] !== undefined) return authenticateWithApiKey(req, reply, apiKeyLimiter);
+    // Avant le CSRF, ni `X-Request` ni origine exigés : le CSRF abuse d'un justificatif que le navigateur joint de
+    // lui-même (le cookie). Une clé ou un jeton Bearer n'est envoyé que par le code qui le détient, et une requête qui
+    // en porte un n'a pas de cookie (refus 400 sinon) : un autre site ne peut rien faire en son nom.
+    const via = headerViaOf(req);
+    if (via) return authenticateWithHeader(req, reply, via, headerLimiters[via]);
     if (!NATIVE_ROUTES.has(routeKey(req)) && !passesCsrf(req))
       return reply.code(403).send({ error: 'Requête refusée' });
     req.viewer = readViewer(req);

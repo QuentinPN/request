@@ -1,6 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  AUTH_SESSIONS_PATH,
+  type AuthSessions,
+  authSessionParamsSchema,
+  authSessionPath,
   EMBY_TOKEN_PATH,
   type EmbyTokenSession,
   embyTokenLoginSchema,
@@ -27,8 +31,15 @@ import {
 import { checkPlexPin, createPlexPin, type PlexPin, plexAuthUrl } from '../integrations/plex.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
 import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
-import { endSession, refreshSessionCookie, startSession, viewerOf } from '../plugins/auth.ts';
-import { createSession } from '../services/sessions.ts';
+import {
+  currentSessionToken,
+  endSession,
+  forbidApiKey,
+  refreshSessionCookie,
+  startSession,
+  viewerOf,
+} from '../plugins/auth.ts';
+import { createSession, listUserSessions, revokeUserSession } from '../services/sessions.ts';
 import { memberDefaultsOf, toViewer, type User, upsertFromEmby } from '../services/users.ts';
 
 export const LOGIN_LIMIT = { limit: 10, windowMs: 5 * 60_000 };
@@ -215,8 +226,30 @@ export function authRoutes(app: FastifyInstance) {
     }
   });
 
+  // En Bearer, révoque la session du jeton ; sinon celle du cookie, qui est effacé.
   app.post(LOGOUT_PATH, async (req, reply) => {
     endSession(req, reply);
+    return reply.code(204).send();
+  });
+
+  /**
+   * Sessions du membre connecté, par cookie ou par Bearer, quel que soit son rôle. Pas avec une clé d'API (403, comme la
+   * gestion des clés) : une clé n'a pas de session, et une liste vide ferait croire que son créateur n'en a aucune.
+   */
+  const ownSessions = { preHandler: forbidApiKey };
+
+  app.get(
+    AUTH_SESSIONS_PATH,
+    ownSessions,
+    async (req): Promise<AuthSessions> => ({
+      sessions: listUserSessions(app.data, viewerOf(req).user.id, currentSessionToken(req)),
+    }),
+  );
+
+  /** Révoque une session du membre (la courante comprise) ; 404 si l'identifiant n'est pas celui d'une des siennes. */
+  app.delete(authSessionPath(':id'), ownSessions, async (req, reply) => {
+    const { id } = parseRequest(authSessionParamsSchema, req.params);
+    if (!revokeUserSession(app.data, viewerOf(req).user.id, id)) throw new HttpError(404, 'Session introuvable');
     return reply.code(204).send();
   });
 

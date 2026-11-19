@@ -76,12 +76,32 @@ export interface TestSession {
  * comme le ferait la connexion. Un même `id` réutilise le même membre.
  */
 export async function loginAs(app: FastifyInstance, role: Role, id = `membre-${role}`): Promise<TestSession> {
+  const user = await memberAs(app, role, id);
+  const { token } = createSession(app.data.db, user.id, null);
+  return { user, headers: { cookie: `${SESSION_COOKIE}=${app.signCookie(token)}`, ...CSRF_HEADERS } };
+}
+
+/** Membre de ce rôle créé en base (un même `id` réutilise le même membre). */
+async function memberAs(app: FastifyInstance, role: Role, id: string): Promise<User> {
   await app.ready();
   const { db } = app.data;
-  let user = upsertFromEmby(db, { id, name: `Nom ${id}`, avatar: null, isEmbyAdmin: false });
-  if (user.role !== role) user = setRole(db, id, role);
-  const { token } = createSession(db, user.id, null);
-  return { user, headers: { cookie: `${SESSION_COOKIE}=${app.signCookie(token)}`, ...CSRF_HEADERS } };
+  const user = upsertFromEmby(db, { id, name: `Nom ${id}`, avatar: null, isEmbyAdmin: false });
+  return user.role === role ? user : setRole(db, id, role);
+}
+
+/**
+ * Session d'un client natif pour un membre de ce rôle, comme `POST /api/auth/emby-token` l'ouvre : `headers` ne porte
+ * que `Authorization: Bearer`, ni cookie ni en-tête CSRF.
+ */
+export async function bearerAs(
+  app: FastifyInstance,
+  role: Role,
+  id = `membre-${role}`,
+  deviceName = 'Salon (Android TV)',
+): Promise<TestSession & { token: string }> {
+  const user = await memberAs(app, role, id);
+  const { token } = createSession(app.data.db, user.id, 'okhttp/4.12.0', new Date(), deviceName);
+  return { user, token, headers: { authorization: `Bearer ${token}` } };
 }
 
 /** Session du propriétaire (crée le membre propriétaire au besoin). */

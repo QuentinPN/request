@@ -9,7 +9,13 @@ export const API_VERSION = '1.0.0';
  * Capacités de l'API que les clients natifs testent. Chaque PR qui ajoute une capacité attendue par un client ajoute
  * son nom ici, en kebab-case `domaine.capacite`.
  */
-export const API_FEATURES = ['api.version', 'media.item-id', 'auth.emby-token'] as const;
+export const API_FEATURES = [
+  'api.version',
+  'media.item-id',
+  'auth.emby-token',
+  'auth.bearer',
+  'auth.sessions',
+] as const;
 
 export const apiVersionSchema = z.object({
   apiVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
