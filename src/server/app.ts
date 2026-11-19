@@ -48,7 +48,7 @@ import { createImageCache, parseImageCacheMaxBytes } from './services/images.ts'
 import { createJobCenter, scanIntervalsOf } from './services/job-center.ts';
 import { failOrphanJobs } from './services/jobs.ts';
 import { createMediaServers, type MediaServers } from './services/media-server.ts';
-import { createNotifications, onNotificationsCreated, onRequestEvent } from './services/notifications.ts';
+import { createNotifications, onAgentEvent, onNotificationsCreated } from './services/notifications.ts';
 import { createPush, type PushSender, vapidSubject, webPushSender } from './services/push.ts';
 import { failInterruptedSends } from './services/requests.ts';
 import { createSync, startScheduler } from './services/sync.ts';
@@ -179,7 +179,7 @@ export async function buildApp({
   const email = createEmail(data, { transport: upstreams.mailTransport ?? smtpTransport, publicUrl });
   const push = createPush(data, { send: upstreams.pushSender ?? webPushSender, subject: vapidSubject(publicUrl) });
   const delivery = createDelivery(data, { afterCommit, notifications: notificationService, email, push });
-  const unsubscribe = [onRequestEvent(agents.enqueue), onNotificationsCreated(delivery.enqueue)];
+  const unsubscribe = [onAgentEvent(agents.enqueue), onNotificationsCreated(delivery.enqueue)];
   // Le balayage, la sauvegarde et les envois de notifications en cours finissent avant la fermeture de la base.
   app.addHook('onClose', async () => {
     for (const stop of unsubscribe) stop();

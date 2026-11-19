@@ -9,6 +9,7 @@ import {
   authSessionsSchema,
   CSRF_HEADER,
   CSRF_VALUE,
+  currentViewerResponseSchema,
   EMBY_TOKEN_PATH,
   embyTokenLoginSchema,
   embyTokenSessionSchema,
@@ -140,6 +141,7 @@ export const COMPONENTS: Record<string, z.ZodType> = {
   RequestPerson: requestPersonSchema,
   RequestQuota: requestQuotaSchema,
   RequestView: requestViewSchema,
+  CurrentViewerResponse: currentViewerResponseSchema,
   Viewer: viewerSchema,
   ViewerResponse: viewerResponseSchema,
   WatchlistEntry: watchlistEntrySchema,
@@ -292,8 +294,10 @@ export const OPERATIONS: Operation[] = [
     path: VIEWER_PATH,
     tag: 'auth',
     summary: 'Membre connecté et ses droits',
-    description: 'Prolonge aussi le cookie de session (expiration glissante).',
-    responses: { 200: viewerResponseSchema },
+    description:
+      'Prolonge aussi le cookie de session (expiration glissante). `apiKeyScope` : portée de la clé d’API qui a ' +
+      'servi à l’appel (`read`, `requests` ou `full`), `null` avec un cookie ou un Bearer.',
+    responses: { 200: currentViewerResponseSchema },
   },
   {
     operationId: 'listSessions',

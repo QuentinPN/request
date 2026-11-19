@@ -213,8 +213,9 @@ export function buildOpenApi(): Json {
           in: 'header',
           name: API_KEY_HEADER,
           description:
-            'Script ou outil externe : clé d’API créée par le propriétaire (Réglages › API), qui agit avec les droits ' +
-            'de son créateur. Pas de contrôle CSRF.',
+            'Script ou outil externe : clé d’API créée par le propriétaire (Réglages › API), qui agit au plus avec ' +
+            'les droits de son créateur. Sa portée (`read`, `requests` ou `full`) limite les routes : une route hors ' +
+            'portée répond 403. Pas de contrôle CSRF.',
         },
       },
     },

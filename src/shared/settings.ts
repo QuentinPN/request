@@ -4,7 +4,7 @@ import { appTitleSchema, DEFAULT_APP_TITLE } from './app-info.ts';
 import { blockedKeywordSchema } from './blocklist.ts';
 import { discoverLayoutSchema } from './discover-layout.ts';
 import { JOB, jobIntervalSchema } from './jobs.ts';
-import { AGENT_EVENTS_VERSION, agentEventKinds, notificationKinds } from './notifications.ts';
+import { AGENT_EVENTS_VERSION, agentEventKinds, defaultAgentEventKinds, notificationKinds } from './notifications.ts';
 import { assignableRoleSchema, permissionOverridesSchema, quotaRuleSchema } from './roles.ts';
 import { tmdbLocaleSchema } from './tmdb-locale.ts';
 
@@ -88,14 +88,14 @@ const mediaServer = service.extend({
 export const smtpSecurities = ['none', 'starttls', 'tls'] as const;
 
 /**
- * Réglage d'un agent de notification (`shared/agents.ts`) : activé ou non, évènements envoyés (tous par défaut), et sa
+ * Réglage d'un agent de notification (`shared/agents.ts`) : activé ou non, évènements envoyés (les six historiques par défaut, `defaultAgentEventKinds`), et sa
  * configuration (`shape`). Activé, il exige les champs de `required` (champ → message).
  */
 function agent<S extends z.ZodRawShape>(shape: S, required: Record<string, string>) {
   return z
     .object({
       enabled: z.boolean().default(false),
-      events: z.array(z.enum(agentEventKinds)).default([...agentEventKinds]),
+      events: z.array(z.enum(agentEventKinds)).default([...defaultAgentEventKinds]),
       /** Écrit par le serveur à chaque enregistrement : `events` est alors pris tel quel (`withAutoApproved`). */
       eventsVersion: z.literal(AGENT_EVENTS_VERSION).optional(),
       ...shape,

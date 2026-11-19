@@ -38,10 +38,22 @@ export const notificationKinds = [
 export type NotificationKind = (typeof notificationKinds)[number];
 
 /**
- * Évènements que reçoivent les agents (Discord, ntfy, Telegram, webhook sortant) : ceux des demandes, plus
- * `auto_approved` (qui est aussi une notification de l'appli, `notificationKinds`, depuis le lot 8.10).
+ * Évènements de demande que reçoivent les agents depuis le début (Discord, ntfy, Telegram, webhook sortant) : ceux des
+ * demandes, plus `auto_approved` (qui est aussi une notification de l'appli, `notificationKinds`, depuis le lot 8.10).
+ * Aussi la valeur par défaut des `events` d'un agent : un agent enregistré sans `events` ne reçoit pas les types ajoutés
+ * depuis, à cocher par le propriétaire.
  */
-export const agentEventKinds = [...requestNotificationKinds, 'auto_approved'] as const;
+export const defaultAgentEventKinds = [...requestNotificationKinds, 'auto_approved'] as const;
+
+/**
+ * Évènements ajoutés après coup, propres aux agents (pas des notifications de l'appli) : une demande annulée, un
+ * signalement créé (`issue_opened`, `issue_created` côté appli) ou résolu (`issue_resolved`, jamais à la réouverture).
+ */
+export const agentIssueEventKinds = ['issue_opened', 'issue_resolved'] as const;
+export type AgentIssueEventKind = (typeof agentIssueEventKinds)[number];
+
+/** Évènements que reçoivent les agents, chacun choisissant les siens (`events`). */
+export const agentEventKinds = [...defaultAgentEventKinds, 'cancelled', ...agentIssueEventKinds] as const;
 export type AgentEventKind = (typeof agentEventKinds)[number];
 
 /** Version des réglages d'agent écrite à chaque enregistrement : sa présence dit que `events` est un choix du propriétaire. */
@@ -51,7 +63,7 @@ export const AGENT_EVENTS_VERSION = 2;
  * Anciennes configurations d'agent ou SMTP (sans `eventsVersion`) : `approved` sans `auto_approved` (ajouté après) reçoit aussi
  * les approbations automatiques, comme avant. Une configuration enregistrée depuis est prise telle quelle.
  */
-export const withAutoApproved = <T extends { events: NotificationKind[]; eventsVersion?: number }>(agent: T): T =>
+export const withAutoApproved = <T extends { events: string[]; eventsVersion?: number }>(agent: T): T =>
   agent.eventsVersion === undefined && agent.events.includes('approved') && !agent.events.includes('auto_approved')
     ? { ...agent, events: [...agent.events, 'auto_approved'] }
     : agent;

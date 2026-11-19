@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const API_VERSION_PATH = '/api/version';
 
 /** Version du contrat de l'API pour les clients natifs (semver), indépendante de la version du paquet. */
-export const API_VERSION = '1.0.0';
+export const API_VERSION = '1.1.0';
 
 /**
  * Capacités de l'API que les clients natifs testent. Chaque PR qui ajoute une capacité attendue par un client ajoute
@@ -15,6 +15,8 @@ export const API_FEATURES = [
   'auth.emby-token',
   'auth.bearer',
   'auth.sessions',
+  'auth.api-key-scopes',
+  'agents.issue-events',
 ] as const;
 
 export const apiVersionSchema = z.object({

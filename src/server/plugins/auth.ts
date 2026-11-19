@@ -1,13 +1,36 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { API_KEY_HEADER } from '../../shared/api-keys.ts';
+import { API_KEY_HEADER, type ApiKeyScope } from '../../shared/api-keys.ts';
 import { API_VERSION_PATH } from '../../shared/api-version.ts';
-import { CSRF_HEADER, CSRF_VALUE, EMBY_TOKEN_PATH, LOGIN_PATH, LOGOUT_PATH } from '../../shared/auth.ts';
+import {
+  CSRF_HEADER,
+  CSRF_VALUE,
+  EMBY_TOKEN_PATH,
+  LOGIN_PATH,
+  LOGOUT_PATH,
+  userPath,
+  VIEWER_PATH,
+} from '../../shared/auth.ts';
+import {
+  browsePath,
+  collectionPath,
+  DISCOVER_PATH,
+  discoverListPath,
+  genresPath,
+  mediaPath,
+  personPath,
+  providersPath,
+  SEARCH_PATH,
+} from '../../shared/catalogue.ts';
 import { HEALTH_PATH } from '../../shared/health.ts';
+import { ISSUE_COUNTS_PATH, ISSUES_PATH, issuePath } from '../../shared/issues.ts';
+import { IMAGE_BASE_URL } from '../../shared/media.ts';
 import { PLEX_PIN_CHECK_PATH, PLEX_PIN_PATH } from '../../shared/media-server.ts';
+import { REQUEST_COUNTS_PATH, REQUEST_QUOTA_PATH, REQUESTS_PATH, requestPath } from '../../shared/requests.ts';
 import { type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
 import { SETUP_STATE_PATH, SETUP_TOKEN_HEADER, settingPath, setupTestPath } from '../../shared/setup.ts';
+import { STATS_PATH } from '../../shared/stats.ts';
 import { webhookPath, webhookServices } from '../../shared/webhooks.ts';
 import { HttpError } from '../lib/api-errors.ts';
 import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
@@ -19,10 +42,13 @@ export interface SessionViewer {
   user: User;
   capabilities: Capabilities;
   /**
-   * Comment la requête s'est authentifiée : cookie de session, clé d'API (`X-Api-Key`, droits de son créateur), ou
-   * jeton de session en `Authorization: Bearer` (client natif : droits réels du membre de la session).
+   * Comment la requête s'est authentifiée : cookie de session, clé d'API (`X-Api-Key`, au plus les droits de son
+   * créateur, limités à sa portée), ou jeton de session en `Authorization: Bearer` (client natif : droits réels du
+   * membre de la session).
    */
   via: 'session' | 'apiKey' | 'bearer';
+  /** Portée de la clé d'API (`via: 'apiKey'`), `null` pour une session ou un Bearer. */
+  apiKeyScope: ApiKeyScope | null;
 }
 
 declare module 'fastify' {
@@ -53,7 +79,7 @@ const COOKIE_OPTIONS = {
  * Routes ouvertes sans session (`MÉTHODE /motif`, HEAD compté comme GET). La déconnexion en fait partie : elle
  * efface toujours le cookie, même si la session est déjà invalide.
  */
-const PUBLIC_ROUTES = new Set([
+export const PUBLIC_ROUTES = new Set([
   `GET ${HEALTH_PATH}`,
   `GET ${API_VERSION_PATH}`,
   `POST ${LOGIN_PATH}`,
@@ -74,12 +100,50 @@ const NATIVE_ROUTES = new Set([`POST ${EMBY_TOKEN_PATH}`]);
  * Webhooks entrants Radarr/Sonarr, ces deux routes exactement : authentifiés par leur propre jeton (routes/webhooks.ts),
  * sans session ni en-tête CSRF (Radarr et Sonarr ne peuvent envoyer ni l'un ni l'autre).
  */
-const WEBHOOK_ROUTES = new Set(webhookServices.map((service) => `POST ${webhookPath(service)}`));
+export const WEBHOOK_ROUTES = new Set(webhookServices.map((service) => `POST ${webhookPath(service)}`));
 /**
  * Amorçage (PRODUCT §1) : tant qu'aucun propriétaire n'existe, tester et enregistrer le serveur multimédia est ouvert
  * sans session à qui présente le jeton d'installation (`X-Setup-Token`), écrit dans les journaux du serveur.
  */
 const BOOTSTRAP_ROUTES = new Set([`POST ${setupTestPath(':service')}`, `PUT ${settingPath(':service')}`]);
+
+/**
+ * Routes d'une clé d'API à portée limitée (`MÉTHODE /motif`, HEAD compté comme GET), refus par défaut : toute route
+ * absente de la liste est refusée (403), les routes publiques mises à part. Lecture seule : rien de ce qui expose un
+ * réglage ou un secret du serveur, ni les listes d'envoi (serveurs, profils et dossiers Radarr/Sonarr).
+ */
+const READ_SCOPE_ROUTES = [
+  `GET ${VIEWER_PATH}`,
+  `GET ${REQUESTS_PATH}`,
+  `GET ${REQUEST_COUNTS_PATH}`,
+  `GET ${REQUEST_QUOTA_PATH}`,
+  `GET ${requestPath(':id')}`,
+  `GET ${ISSUES_PATH}`,
+  `GET ${ISSUE_COUNTS_PATH}`,
+  `GET ${issuePath(':id')}`,
+  `GET ${STATS_PATH}`,
+  `GET ${SEARCH_PATH}`,
+  `GET ${DISCOVER_PATH}`,
+  `GET ${browsePath(':type')}`,
+  `GET ${discoverListPath(':type', ':id')}`,
+  `GET ${genresPath(':type')}`,
+  `GET ${providersPath(':type')}`,
+  `GET ${mediaPath(':type', ':id')}`,
+  `GET ${personPath(':id')}`,
+  `GET ${collectionPath(':id')}`,
+  `GET ${IMAGE_BASE_URL}/:size/:file`,
+  // Avatars des membres : les `avatarUrl` des demandes, des signalements et de `/me` y renvoient.
+  `GET ${userPath(':id', 'avatar')}`,
+];
+export const API_KEY_SCOPE_ROUTES: Record<Exclude<ApiKeyScope, 'full'>, ReadonlySet<string>> = {
+  read: new Set(READ_SCOPE_ROUTES),
+  requests: new Set([
+    ...READ_SCOPE_ROUTES,
+    `POST ${REQUESTS_PATH}`,
+    `POST ${requestPath(':id', 'approve')}`,
+    `POST ${requestPath(':id', 'decline')}`,
+  ]),
+};
 
 const routeKey = (req: FastifyRequest) => `${req.method === 'HEAD' ? 'GET' : req.method} ${req.routeOptions.url ?? ''}`;
 
@@ -103,6 +167,14 @@ function hasSetupToken(req: FastifyRequest): boolean {
 const isBootstrap = (req: FastifyRequest) => isBootstrapRoute(req) && hasSetupToken(req);
 
 const isPublic = (req: FastifyRequest) => PUBLIC_ROUTES.has(routeKey(req)) || isBootstrap(req);
+
+export const OUT_OF_SCOPE_ERROR = 'Cette clé d’API n’a pas accès à cette route';
+
+/** Clé d'API à portée limitée sur une route que sa portée n'ouvre pas (les routes publiques restent ouvertes). */
+function isOutOfScope(req: FastifyRequest): boolean {
+  const scope = req.viewer?.apiKeyScope;
+  return !!scope && scope !== 'full' && !isPublic(req) && !API_KEY_SCOPE_ROUTES[scope].has(routeKey(req));
+}
 
 /** Écriture : en-tête maison exigé, et origine absente ou identique à l'hôte appelé. */
 function passesCsrf(req: FastifyRequest): boolean {
@@ -131,7 +203,7 @@ function sessionToken(req: FastifyRequest): string | null {
 function readViewer(req: FastifyRequest): SessionViewer | null {
   const token = sessionToken(req);
   const user = token ? validateSession(req.server.data.db, token) : null;
-  return user ? { user, capabilities: capabilitiesOf(user), via: 'session' } : null;
+  return user ? { user, capabilities: capabilitiesOf(user), via: 'session', apiKeyScope: null } : null;
 }
 
 // --- Justificatifs en en-tête : clé d'API, jeton de session en Bearer ---
@@ -165,16 +237,17 @@ const HEADER_CREDENTIALS: Record<
   HeaderVia,
   {
     present: (req: FastifyRequest) => boolean;
-    user: (req: FastifyRequest) => User | null;
+    authenticate: (req: FastifyRequest) => { user: User; apiKeyScope: ApiKeyScope | null } | null;
     refused: string;
     tooMany: string;
   }
 > = {
   apiKey: {
     present: (req) => req.headers[API_KEY_HEADER] !== undefined,
-    user: (req) => {
+    authenticate: (req) => {
       const secret = req.headers[API_KEY_HEADER];
-      return typeof secret === 'string' ? authenticateApiKey(req.server.data.db, secret) : null;
+      const key = typeof secret === 'string' ? authenticateApiKey(req.server.data.db, secret) : null;
+      return key && { user: key.user, apiKeyScope: key.scope };
     },
     refused: 'Clé d’API invalide',
     tooMany: 'Trop de clés d’API invalides, réessayez dans quelques minutes',
@@ -182,9 +255,10 @@ const HEADER_CREDENTIALS: Record<
   bearer: {
     present: (req) => BEARER_SCHEME.test(req.headers.authorization ?? ''),
     // Même validation que le cookie : session révoquée ou expirée refusée, expiration glissante.
-    user: (req) => {
+    authenticate: (req) => {
       const token = bearerToken(req);
-      return token ? validateSession(req.server.data.db, token) : null;
+      const user = token ? validateSession(req.server.data.db, token) : null;
+      return user && { user, apiKeyScope: null };
     },
     refused: 'Jeton de session invalide, expiré ou révoqué',
     tooMany: 'Trop de jetons de session invalides, réessayez dans quelques minutes',
@@ -238,9 +312,9 @@ function authenticateWithHeader(
       error: 'Cookie de session, clé d’API et jeton Bearer ne se combinent pas : n’envoyez qu’un seul des trois',
     });
   const credential = HEADER_CREDENTIALS[via];
-  const user = credential.user(req);
-  if (user) {
-    req.viewer = { user, capabilities: capabilitiesOf(user), via };
+  const found = credential.authenticate(req);
+  if (found) {
+    req.viewer = { user: found.user, capabilities: capabilitiesOf(found.user), via, apiKeyScope: found.apiKeyScope };
     return undefined;
   }
   return refuseCounted(req, reply, limiter, { code: 401, error: credential.refused }, credential.tooMany);
@@ -349,7 +423,13 @@ export async function registerAuth(app: FastifyInstance, { setupToken }: { setup
     // lui-même (le cookie). Une clé ou un jeton Bearer n'est envoyé que par le code qui le détient, et une requête qui
     // en porte un n'a pas de cookie (refus 400 sinon) : un autre site ne peut rien faire en son nom.
     const via = headerViaOf(req);
-    if (via) return authenticateWithHeader(req, reply, via, headerLimiters[via]);
+    if (via) {
+      const refused = authenticateWithHeader(req, reply, via, headerLimiters[via]);
+      if (refused) return refused;
+      // Clé valide mais hors de sa portée : 403, sans compter dans la limite des clés invalides.
+      if (isOutOfScope(req)) return reply.code(403).send({ error: OUT_OF_SCOPE_ERROR });
+      return;
+    }
     if (!NATIVE_ROUTES.has(routeKey(req)) && !passesCsrf(req))
       return reply.code(403).send({ error: 'Requête refusée' });
     req.viewer = readViewer(req);

@@ -5,6 +5,7 @@ import {
   type AuthSessions,
   authSessionParamsSchema,
   authSessionPath,
+  type CurrentViewerResponse,
   EMBY_TOKEN_PATH,
   type EmbyTokenSession,
   embyTokenLoginSchema,
@@ -255,8 +256,8 @@ export function authRoutes(app: FastifyInstance) {
 
   // Appelée par le client au chargement : prolonge aussi le cookie.
   app.get(VIEWER_PATH, async (req, reply) => {
-    const { user } = viewerOf(req);
+    const { user, apiKeyScope } = viewerOf(req);
     refreshSessionCookie(req, reply);
-    return { viewer: toViewer(user) };
+    return { viewer: toViewer(user), apiKeyScope } satisfies CurrentViewerResponse;
   });
 }

@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { keyOf } from '../../shared/media.ts';
 import {
   type AgentEventKind,
+  type AgentIssueEventKind,
   type IssueNotificationKind,
   isRequestNotificationKind,
   type markNotificationsReadSchema,
@@ -92,9 +93,14 @@ export function notificationMessage(
   }
 }
 
-/** Titre court d'un évènement d'agent : celui de la notification du membre. */
+/**
+ * Titre court d'un évènement d'agent : celui de la notification du membre, sauf les évènements propres aux agents
+ * (`cancelled`, et `issue_opened` qui est `issue_created` côté appli).
+ */
 export function agentEventTitle(kind: AgentEventKind, serverName: string): string {
-  return notificationMessage(kind, { title: null, requesterName: null, detail: null, serverName }).title;
+  if (kind === 'cancelled') return 'Demande annulée';
+  const notificationKind = kind === 'issue_opened' ? 'issue_created' : kind;
+  return notificationMessage(notificationKind, { title: null, requesterName: null, detail: null, serverName }).title;
 }
 
 // --- Écriture (dans la transaction de l'évènement) ---
@@ -193,20 +199,37 @@ export interface RequestEventFact {
 }
 
 /** Évènement de demande vu par les agents : `type` est celui de la frise, `kind` ce que l'agent en fait (`auto_approved`). */
-export type AgentRequestEvent = RequestEventFact & { kind: AgentEventKind };
+export type AgentRequestEvent = RequestEventFact & { kind: Exclude<AgentEventKind, AgentIssueEventKind> };
 
-type RequestEventListener = (event: AgentRequestEvent) => void;
-const requestEventListeners = new Set<RequestEventListener>();
+/** Évènement de signalement vu par les agents : `actorId` est l'auteur (`issue_opened`) ou celui qui résout. */
+export interface AgentIssueEvent {
+  issueId: number;
+  kind: AgentIssueEventKind;
+  actorId: string | null;
+  at: Date;
+}
+
+export type AgentEvent = AgentRequestEvent | AgentIssueEvent;
+
+/** Un évènement de signalement, pas de demande. */
+export const isAgentIssueEvent = (event: AgentEvent): event is AgentIssueEvent => 'issueId' in event;
+
+type AgentEventListener = (event: AgentEvent) => void;
+const agentEventListeners = new Set<AgentEventListener>();
 
 /**
- * S'abonne aux évènements qui méritent une notification (ceux de `notifyRequestEvent`, une fois par évènement et non
- * par destinataire). L'écouteur est appelé dans la transaction de l'évènement : il ne fait que planifier son travail,
- * qui s'exécute après la validation. Renvoie le désabonnement.
+ * S'abonne aux évènements des agents (ceux de `notifyRequestEvent` et `notifyIssueEvent`, plus l'annulation d'une
+ * demande, une fois par évènement et non par destinataire). L'écouteur est appelé dans la transaction de l'évènement :
+ * il ne fait que planifier son travail, qui s'exécute après la validation. Renvoie le désabonnement.
  */
-export function onRequestEvent(listener: RequestEventListener): () => void {
-  requestEventListeners.add(listener);
-  return () => requestEventListeners.delete(listener);
+export function onAgentEvent(listener: AgentEventListener): () => void {
+  agentEventListeners.add(listener);
+  return () => agentEventListeners.delete(listener);
 }
+
+const emitAgentEvent = (event: AgentEvent) => {
+  for (const listener of agentEventListeners) listener(event);
+};
 
 /**
  * Notifications d'un évènement de demande, écrites dans sa transaction : liées à la transition (elle-même
@@ -219,6 +242,8 @@ export function onRequestEvent(listener: RequestEventListener): () => void {
  */
 export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: RequestEventFact) {
   const { type: kind, requestId, actorId, detail, at, auto } = event;
+  // L'annulation prévient les agents seulement : le membre qui annule est le seul concerné, pas de notification de l'appli.
+  if (kind === 'cancelled') return emitAgentEvent({ ...event, kind });
   if (!isRequestNotificationKind(kind)) return;
   const request = tx
     .select({
@@ -238,7 +263,7 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
   // Même règle que l'approbation automatique de `requests.create` (`autoApproves`) : elle prévient à sa place.
   if (kind === 'requested' && (detail !== null || autoApproves(capabilitiesOf(request), request))) return;
   const agentEvent = { ...event, kind: auto ? ('auto_approved' as const) : kind };
-  for (const listener of requestEventListeners) listener(agentEvent);
+  emitAgentEvent(agentEvent);
   notify(tx, { kind, recipients: holdersOf(tx, kind) ?? [request.userId], actorId, requestId, detail, at });
   // Approbation automatique : ceux qui suivent les demandes en sont prévenus (désactivé par défaut, `notificationTypes`),
   // sauf le gestionnaire qui a demandé à la place du membre : c'est lui qui agit.
@@ -275,6 +300,9 @@ export interface IssueEventFact {
 export function notifyIssueEvent(tx: Pick<Db, 'select' | 'insert'>, { issueId, kind, actorId, at }: IssueEventFact) {
   const issue = tx.select({ userId: issues.userId }).from(issues).where(eq(issues.id, issueId)).get();
   if (!issue) return;
+  // Les agents : signalement créé ou résolu (pas rouvert ni commenté).
+  if (kind === 'issue_created') emitAgentEvent({ issueId, kind: 'issue_opened', actorId, at });
+  else if (kind === 'issue_resolved') emitAgentEvent({ issueId, kind, actorId, at });
   const managers = holdersOf(tx, 'issue_created') ?? [];
   let to: string[];
   if (kind === 'issue_created') to = managers;

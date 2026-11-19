@@ -147,7 +147,7 @@ describe('POST /api/auth/login', () => {
       url: '/api/auth/me',
       headers: { cookie: `request_session=${cookie.value}` },
     });
-    expect(me.json()).toEqual({ viewer });
+    expect(me.json()).toEqual({ viewer, apiKeyScope: null });
   });
 
   it('pose un cookie secure derrière un proxy HTTPS', async () => {

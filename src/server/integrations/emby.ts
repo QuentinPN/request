@@ -271,8 +271,8 @@ const VERIFY_DEVICE = 'Verification Viewer';
  * réponse : une session à ce `DeviceId` ne peut venir que de cet appel, quelles que soient les sessions existantes ou
  * les appels simultanés. Le jeton vaut pour `userId` si exactement une session porte cet appareil et qu'elle appartient
  * à `userId` (administrateur comme membre) ; sinon refusé (échec fermé). Le compte (nom, administrateur, photo) est
- * ensuite lu à `GET /Users/{id}` avec le même en-tête ; inconnu → `not_found`. Coût : une entrée d'appareil par
- * connexion par jeton dans Emby.
+ * ensuite lu à `GET /Users/{id}` avec le même en-tête ; inconnu → `not_found`. Aucun appareil créé (constaté) : Emby
+ * renomme l'appareil du jeton `VERIFY_DEVICE` jusqu'au prochain appel du client, qui lui rend son nom.
  */
 export async function verifyEmbyUserToken(config: EmbyConfig, token: string, userId: string): Promise<EmbyUser> {
   const deviceId = `request-verify-${randomUUID().replaceAll('-', '')}`;

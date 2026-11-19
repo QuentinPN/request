@@ -1,19 +1,33 @@
 import { and, eq } from 'drizzle-orm';
 import { type AgentKey, agentKeys } from '../../shared/agents.ts';
-import type { AgentEventKind } from '../../shared/notifications.ts';
+import { issueTypeLabels } from '../../shared/issues.ts';
+import type { MediaType } from '../../shared/media.ts';
+import type { AgentEventKind, AgentIssueEventKind } from '../../shared/notifications.ts';
 import type { Data } from '../db/index.ts';
-import { media, requestEvents, requests, users } from '../db/schema.ts';
+import { issues, media, requestEvents, requests, users } from '../db/schema.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import type { AfterCommit } from './after-commit.ts';
 import { type AgentChannel, type AgentMessage, createChannels } from './agent-channels.ts';
 import { DEFAULT_UPSTREAM as TMDB_IMAGES_URL } from './images.ts';
 import { mediaServerName } from './media-server.ts';
-import { type AgentRequestEvent, agentEventTitle } from './notifications.ts';
+import {
+  type AgentEvent,
+  type AgentIssueEvent,
+  type AgentRequestEvent,
+  agentEventTitle,
+  isAgentIssueEvent,
+} from './notifications.ts';
 import { getAppTitle, getSetting } from './settings.ts';
 import { loadSummaries } from './tmdb.ts';
 
 /** Libellé du détail de l'évènement dans le message (motif du refus, raison de l'échec). */
 const DETAIL_LABELS: Partial<Record<AgentEventKind, string>> = { declined: 'Motif', failed: 'Raison' };
+
+/** Ce qu'a fait le membre nommé dans le message d'un signalement (l'auteur, ou celui qui l'a résolu). */
+const ISSUE_USER_LABELS: Record<AgentIssueEventKind, string> = {
+  issue_opened: 'Signalé par',
+  issue_resolved: 'Résolu par',
+};
 
 /**
  * Agents de notification (Discord, ntfy, Telegram, webhook sortant), facultatifs : un message par évènement (pas par
@@ -48,31 +62,78 @@ export function createAgents(
       .where(and(eq(requestEvents.requestId, requestId), eq(requestEvents.type, type), eq(requestEvents.createdAt, at)))
       .get();
 
-  async function render(event: AgentRequestEvent): Promise<AgentMessage | null> {
+  /**
+   * Le signalement est bien en base dans l'état de l'évènement (créé, ou résolu à cette date), avec son titre. Relu
+   * après la validation : un signalement rouvert avant l'envoi de `issue_resolved` n'envoie rien, et `issue.status`
+   * est l'état au moment de l'envoi (comme `request.status` pour une demande).
+   */
+  const committedIssue = ({ issueId, kind, at }: AgentIssueEvent) =>
+    db
+      .select({ type: media.type, tmdbId: media.tmdbId, issueType: issues.type, status: issues.status })
+      .from(issues)
+      .innerJoin(media, eq(media.id, issues.mediaId))
+      .where(
+        and(
+          eq(issues.id, issueId),
+          kind === 'issue_opened'
+            ? eq(issues.createdAt, at)
+            : and(eq(issues.status, 'resolved'), eq(issues.resolvedAt, at)),
+        ),
+      )
+      .get();
+
+  /** Le titre concerné, avec l'année et l'affiche de TMDB (absents s'il ne répond pas). */
+  async function mediaOf(title: { type: MediaType; tmdbId: number }): Promise<NonNullable<AgentMessage['media']>> {
+    const summary = (await loadSummaries(deps.tmdb, [title])).values().next().value;
+    return {
+      type: title.type,
+      tmdbId: title.tmdbId,
+      title: summary?.title ?? null,
+      year: summary?.year ?? null,
+      // Les images de TMDB sont publiques ; /api/images exige une session que l'agent n'a pas.
+      posterUrl: summary?.posterPath ? `${TMDB_IMAGES_URL}/w342${summary.posterPath}` : null,
+    };
+  }
+
+  async function renderRequest(event: AgentRequestEvent): Promise<AgentMessage | null> {
     const row = committed(event);
     if (!row) return null;
-    const summary = (await loadSummaries(deps.tmdb, [{ type: row.type, tmdbId: row.tmdbId }])).values().next().value;
     const label = DETAIL_LABELS[event.kind];
     return {
       kind: event.kind,
       title: agentEventTitle(event.kind, mediaServerName(data)),
       note: null,
-      media: {
-        type: row.type,
-        tmdbId: row.tmdbId,
-        title: summary?.title ?? null,
-        year: summary?.year ?? null,
-        // Les images de TMDB sont publiques ; /api/images exige une session que l'agent n'a pas.
-        posterUrl: summary?.posterPath ? `${TMDB_IMAGES_URL}/w342${summary.posterPath}` : null,
-      },
+      media: await mediaOf(row),
       request: { id: event.requestId, status: row.status },
-      user: { name: row.requester },
+      issue: null,
+      user: { name: row.requester, label: 'Demandé par' },
       detail: label && row.detail ? { label, value: row.detail } : null,
       at: event.at,
     };
   }
 
-  async function deliver(event: AgentRequestEvent) {
+  async function renderIssue(event: AgentIssueEvent): Promise<AgentMessage | null> {
+    const row = committedIssue(event);
+    if (!row) return null;
+    const actor = event.actorId
+      ? db.select({ name: users.name }).from(users).where(eq(users.id, event.actorId)).get()
+      : null;
+    return {
+      kind: event.kind,
+      title: agentEventTitle(event.kind, mediaServerName(data)),
+      note: null,
+      media: await mediaOf(row),
+      request: null,
+      issue: { id: event.issueId, type: row.issueType, status: row.status },
+      user: actor ? { name: actor.name, label: ISSUE_USER_LABELS[event.kind] } : null,
+      detail: { label: 'Problème', value: issueTypeLabels[row.issueType] },
+      at: event.at,
+    };
+  }
+
+  const render = (event: AgentEvent) => (isAgentIssueEvent(event) ? renderIssue(event) : renderRequest(event));
+
+  async function deliver(event: AgentEvent) {
     const wanted = agentKeys.flatMap((key) => {
       const config = getSetting(db, cryptoKey, key);
       return config?.enabled && config.events.includes(event.kind) ? [{ channel: channels[key], config }] : [];
@@ -87,7 +148,7 @@ export function createAgents(
 
   return {
     /** Planifie les envois après la transaction en cours (synchrone) ; ne lève jamais. */
-    enqueue: (event: AgentRequestEvent) => deps.afterCommit.schedule('agents', () => deliver(event)),
+    enqueue: (event: AgentEvent) => deps.afterCommit.schedule('agents', () => deliver(event)),
     /** Résolu quand les envois planifiés (tous canaux) sont terminés (fermeture de l'appli, tests). */
     idle: deps.afterCommit.idle,
     /** Message d'essai avec ce réglage ; `IntegrationError` (message lisible) si le service le refuse. */
@@ -98,6 +159,7 @@ export function createAgents(
         note: 'Le test réussit : les notifications choisies arriveront ici.',
         media: null,
         request: null,
+        issue: null,
         user: null,
         detail: null,
         at: new Date(),

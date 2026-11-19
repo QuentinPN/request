@@ -22,9 +22,9 @@ export function apiKeysRoutes(app: FastifyInstance) {
   app.get(API_KEYS_PATH, sessionOwner, async (): Promise<ApiKey[]> => listApiKeys(db));
 
   app.post(API_KEYS_PATH, sessionOwner, async (req, reply): Promise<ApiKeyCreated> => {
-    const { name } = parseRequest(apiKeyCreateSchema, req.body);
+    const { name, scope } = parseRequest(apiKeyCreateSchema, req.body);
     reply.code(201);
-    return createApiKey(db, viewerOf(req).user, name);
+    return createApiKey(db, viewerOf(req).user, name, scope);
   });
 
   app.delete(apiKeyPath(':id'), sessionOwner, async (req, reply) => {
