@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { openDataDir } from '../src/server/db/index.ts';
+import { media } from '../src/server/db/schema.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
 import {
   type AgentKey,
@@ -10,7 +11,8 @@ import {
   NTFY_DEFAULT_URL,
   type OutgoingWebhookPayload,
 } from '../src/shared/agents.ts';
-import { agentEventKinds } from '../src/shared/notifications.ts';
+import type { IssueDetail } from '../src/shared/issues.ts';
+import { agentEventKinds, defaultAgentEventKinds } from '../src/shared/notifications.ts';
 import type { RequestDetail } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import type { SettingInput } from '../src/shared/settings.ts';
@@ -140,6 +142,7 @@ describe('distribution aux agents', () => {
       media: { type: 'movie', tmdbId: 603, title: 'Matrix' },
       request: { id: request.id, status: 'pending' },
       user: { name: member.user.name },
+      issue: null,
     } satisfies OutgoingWebhookPayload);
     expect(saved.ntfy.token).toBe(NTFY_TOKEN);
   });
@@ -260,16 +263,114 @@ describe('distribution aux agents', () => {
   });
 });
 
+const NEW_KINDS = ['cancelled', 'issue_opened', 'issue_resolved'] as const;
+
+describe('annulation et signalements', () => {
+  /** Chaque agent a son propre choix : le webhook tout, ntfy `ntfy`, Telegram rien (valeur par défaut). */
+  async function setupWithChoices(ntfy: readonly (typeof agentEventKinds)[number][]) {
+    const ctx = await setup();
+    const { db, cryptoKey } = ctx.data;
+    setSetting(db, cryptoKey, 'outgoingWebhook', { ...ctx.saved.outgoingWebhook, events: [...agentEventKinds] });
+    setSetting(db, cryptoKey, 'ntfy', { ...ctx.saved.ntfy, events: [...ntfy] });
+    // Telegram enregistré sans `events` : il ne reçoit pas les nouveaux types.
+    setSetting(db, cryptoKey, 'telegram', ctx.saved.telegram);
+    return ctx;
+  }
+
+  it('un agent enregistré sans « events » a les six types historiques, pas les nouveaux', async () => {
+    const { data, saved } = await setup();
+    setSetting(data.db, data.cryptoKey, 'telegram', saved.telegram);
+    const events = getSetting(data.db, data.cryptoKey, 'telegram')?.events;
+    expect(events).toEqual([...defaultAgentEventKinds]);
+    for (const kind of NEW_KINDS) expect(events).not.toContain(kind);
+  });
+
+  it('annulation : « cancelled » part seulement aux agents qui l’ont coché', async () => {
+    const { as, sent } = await setupWithChoices(['cancelled']);
+    const member = await as('member');
+    const request = await requestMovie(member);
+    const response = await member.post(`/api/requests/${request.id}/cancel`);
+    expect(response.statusCode).toBe(200);
+
+    const { ntfy, telegram, webhook } = await sent();
+    expect(ntfy).toHaveLength(1);
+    expect(ntfy[0]?.body).toMatchObject({
+      title: 'Demande annulée',
+      message: `Matrix (1999)\nDemandé par ${member.user.name}`,
+    });
+    expect(telegram.map((r) => r.body.text)).toEqual([
+      `Nouvelle demande à approuver\nMatrix (1999)\nDemandé par ${member.user.name}`,
+    ]);
+    expect(webhook.map((r) => r.body.type)).toEqual(['requested', 'cancelled']);
+    expect(webhook[1]?.body).toEqual({
+      type: 'cancelled',
+      title: 'Demande annulée',
+      message: `Matrix (1999)\nDemandé par ${member.user.name}`,
+      media: { type: 'movie', tmdbId: 603, title: 'Matrix' },
+      request: { id: request.id, status: 'cancelled' },
+      user: { name: member.user.name },
+      issue: null,
+    } satisfies OutgoingWebhookPayload);
+  });
+
+  it('signalement créé puis résolu : « issue_opened » et « issue_resolved », pas à la réouverture', async () => {
+    const { as, sent, data } = await setupWithChoices(['issue_opened']);
+    data.db
+      .insert(media)
+      .values({ id: 1, type: 'movie', tmdbId: 603, status: 'available', statusUpdatedAt: new Date() })
+      .run();
+    const member = await as('member');
+    const manager = await as('manager');
+    const created = await member.post('/api/issues', {
+      type: 'subtitles',
+      mediaType: 'movie',
+      tmdbId: 603,
+      message: 'Sous-titres décalés',
+    });
+    expect(created.statusCode).toBe(201);
+    const issue = created.json<IssueDetail>();
+    expect((await manager.post(`/api/issues/${issue.id}/resolve`)).statusCode).toBe(200);
+    // Les envois sont relus après la validation : celui de « résolu » finit avant la réouverture.
+    await sent();
+    expect((await manager.post(`/api/issues/${issue.id}/reopen`)).statusCode).toBe(200);
+
+    const { ntfy, telegram, webhook } = await sent();
+    expect(telegram).toEqual([]);
+    expect(ntfy.map((r) => r.body.title)).toEqual(['Nouveau signalement']);
+    expect(ntfy[0]?.body.message).toBe(`Matrix (1999)\nSignalé par ${member.user.name}\nProblème : Sous-titres`);
+    expect(webhook.map((r) => r.body.type)).toEqual(['issue_opened', 'issue_resolved']);
+    expect(webhook[0]?.body).toEqual({
+      type: 'issue_opened',
+      title: 'Nouveau signalement',
+      message: `Matrix (1999)\nSignalé par ${member.user.name}\nProblème : Sous-titres`,
+      media: { type: 'movie', tmdbId: 603, title: 'Matrix' },
+      request: null,
+      user: { name: member.user.name },
+      issue: { id: issue.id, type: 'subtitles', status: 'open' },
+    } satisfies OutgoingWebhookPayload);
+    // Résolu : l'utilisateur est celui qui résout (le gestionnaire), pas l'auteur.
+    expect(webhook[1]?.body).toEqual({
+      type: 'issue_resolved',
+      title: 'Signalement résolu',
+      message: `Matrix (1999)\nRésolu par ${manager.user.name}\nProblème : Sous-titres`,
+      media: { type: 'movie', tmdbId: 603, title: 'Matrix' },
+      request: null,
+      user: { name: manager.user.name },
+      issue: { id: issue.id, type: 'subtitles', status: 'resolved' },
+    } satisfies OutgoingWebhookPayload);
+  });
+});
+
 describe.each(['ntfy', 'telegram', 'outgoingWebhook'] as const)('réglages %s', (key) => {
   const path = agentSettingsPath(key);
   const secrets = { ntfy: [NTFY_TOKEN], telegram: [BOT_TOKEN], outgoingWebhook: [AUTHORIZATION] }[key];
 
-  it('par défaut : désactivé, tous les évènements, aucun secret', async () => {
+  it('par défaut : désactivé, les six évènements historiques, aucun secret', async () => {
     const { as } = await setup();
     const response = await (await as('owner')).get(path);
     expect(response.statusCode).toBe(200);
     const body = response.json<Record<string, unknown>>();
-    expect(body).toMatchObject({ enabled: false, events: agentEventKinds });
+    expect(body).toMatchObject({ enabled: false, events: defaultAgentEventKinds });
     if (key === 'ntfy') expect(body.url).toBe(NTFY_DEFAULT_URL);
     for (const value of Object.values(body)) expect(value).not.toEqual({ set: true });
   });

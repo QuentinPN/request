@@ -52,6 +52,17 @@ export function trackApps() {
   };
 }
 
+/** Application, et ses routes `/api` enregistrées dans Fastify, en `MÉTHODE /motif` (les HEAD automatiques exclus). */
+export async function appWithApiRoutes(newApp: ReturnType<typeof trackApps>) {
+  const routes = new Set<string>();
+  const app = await newApp({
+    onRoute: ({ method, url }) => {
+      for (const m of [method].flat()) if (m !== 'HEAD' && url.startsWith('/api')) routes.add(`${m} ${url}`);
+    },
+  });
+  return { app, routes };
+}
+
 /** Démarre de faux services (voir fake-server.ts), arrêtés après chaque test. */
 export function trackFakeServers() {
   const servers: Array<Awaited<ReturnType<typeof startFakeServer>>> = [];

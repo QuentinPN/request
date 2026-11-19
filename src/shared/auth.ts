@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { apiKeyScopeSchema } from './api-keys.ts';
 import {
   assignableRoleSchema,
   capabilitiesSchema,
@@ -82,6 +83,13 @@ export type Viewer = z.output<typeof viewerSchema>;
 /** Réponse de `LOGIN_PATH` et de `VIEWER_PATH` : le membre connecté. */
 export const viewerResponseSchema = z.object({ viewer: viewerSchema });
 export type ViewerResponse = z.output<typeof viewerResponseSchema>;
+
+/**
+ * Réponse de `VIEWER_PATH` : le membre, et la portée de la clé d'API qui a servi à l'appeler (`null` : cookie de session
+ * ou jeton Bearer, sans limite de portée). Un client à clé sait ainsi ce qu'il peut afficher.
+ */
+export const currentViewerResponseSchema = viewerResponseSchema.extend({ apiKeyScope: apiKeyScopeSchema.nullable() });
+export type CurrentViewerResponse = z.output<typeof currentViewerResponseSchema>;
 
 /** Réponse de `EMBY_TOKEN_PATH` : le jeton de session (montré une seule fois), son expiration et le membre. */
 export const embyTokenSessionSchema = z.object({

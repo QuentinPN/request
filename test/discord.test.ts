@@ -4,7 +4,7 @@ import { openDataDir } from '../src/server/db/index.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { createSync } from '../src/server/services/sync.ts';
 import { DISCORD_SETTINGS_PATH, DISCORD_TEST_PATH } from '../src/shared/discord.ts';
-import { AGENT_EVENTS_VERSION, type AgentEventKind, agentEventKinds } from '../src/shared/notifications.ts';
+import { AGENT_EVENTS_VERSION, type AgentEventKind, defaultAgentEventKinds } from '../src/shared/notifications.ts';
 import type { RequestDetail } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { status } from './fake-server.ts';
@@ -251,7 +251,7 @@ describe('réglages Discord', () => {
   it('par défaut : désactivé, tous les évènements, aucune adresse', async () => {
     const { as } = await setup();
     const response = await (await as('owner')).get(DISCORD_SETTINGS_PATH);
-    expect(response.json()).toEqual({ webhookUrl: { set: false }, enabled: false, events: agentEventKinds });
+    expect(response.json()).toEqual({ webhookUrl: { set: false }, enabled: false, events: defaultAgentEventKinds });
   });
 
   it('propriétaire seulement', async () => {

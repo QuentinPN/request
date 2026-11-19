@@ -15,7 +15,8 @@ const EXAMPLE = `{
   "message": "Matrix (1999)\\nDemandé par Alice",
   "media": { "type": "movie", "tmdbId": 603, "title": "Matrix" },
   "request": { "id": 12, "status": "pending" },
-  "user": { "name": "Alice" }
+  "user": { "name": "Alice" },
+  "issue": null
 }`;
 
 function OutgoingWebhookForm({ stored, ...frame }: SectionFrameProps & { stored: MaskedSetting<'outgoingWebhook'> }) {

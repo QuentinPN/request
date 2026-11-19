@@ -1,20 +1,54 @@
+import Database from 'better-sqlite3';
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '../src/server/crypto.ts';
+import { migrationsFolder } from '../src/server/db/index.ts';
 import { apiKeys } from '../src/server/db/schema.ts';
-import { API_KEY_LIMIT } from '../src/server/plugins/auth.ts';
+import {
+  API_KEY_LIMIT,
+  API_KEY_SCOPE_ROUTES,
+  OUT_OF_SCOPE_ERROR,
+  PUBLIC_ROUTES,
+  WEBHOOK_ROUTES,
+} from '../src/server/plugins/auth.ts';
 import { LAST_USED_REFRESH_MS } from '../src/server/services/api-keys.ts';
-import { API_KEYS_PATH, type ApiKey, type ApiKeyCreated, apiKeyPath } from '../src/shared/api-keys.ts';
-import { loginAs, loginAsOwner, setRole, trackApps } from './helpers.ts';
+import {
+  API_KEYS_PATH,
+  type ApiKey,
+  type ApiKeyCreated,
+  type ApiKeyScope,
+  apiKeyPath,
+  apiKeyScopes,
+} from '../src/shared/api-keys.ts';
+import { GENERAL_SETTINGS_PATH } from '../src/shared/app-info.ts';
+import { VIEWER_PATH } from '../src/shared/auth.ts';
+import { REQUESTS_PATH, requestPath } from '../src/shared/requests.ts';
+import {
+  appWithApiRoutes,
+  loginAs,
+  loginAsOwner,
+  setRole,
+  trackApps,
+  trackTempDirs,
+  truncatedMigrations,
+} from './helpers.ts';
 
 const newApp = trackApps();
+const tempDir = trackTempDirs();
 const UNTRUSTED = '203.0.113.7';
 
-/** Crée une clé par la route (session propriétaire) et renvoie sa réponse. */
-async function createKey(app: FastifyInstance, name = 'Script') {
+/** Crée une clé par la route (session propriétaire) et renvoie sa réponse ; `scope` absent : le corps n'en porte pas. */
+async function createKey(app: FastifyInstance, name = 'Script', scope?: ApiKeyScope) {
   const owner = await loginAsOwner(app);
-  const res = await app.inject({ method: 'POST', url: API_KEYS_PATH, headers: owner.headers, payload: { name } });
+  const res = await app.inject({
+    method: 'POST',
+    url: API_KEYS_PATH,
+    headers: owner.headers,
+    payload: { name, ...(scope && { scope }) },
+  });
   expect(res.statusCode).toBe(201);
   return { owner, created: res.json<ApiKeyCreated>() };
 }
@@ -209,5 +243,141 @@ describe('authentification par X-Api-Key', () => {
     const { created } = await createKey(app);
     for (let i = 0; i < API_KEY_LIMIT.limit * 2; i++)
       expect((await withKey(app, created.secret, '/api/auth/me', UNTRUSTED)).statusCode).toBe(200);
+  });
+});
+
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+const call = (app: FastifyInstance, secret: string, method: Method, url: string) =>
+  app.inject({
+    method,
+    url,
+    headers: { 'x-api-key': secret },
+    ...(method !== 'GET' && method !== 'DELETE' && { payload: {} }),
+  });
+
+describe('portée des clés', () => {
+  it('crée une clé complète par défaut, et refuse une portée inconnue', async () => {
+    const app = await newApp();
+    const { owner, created } = await createKey(app);
+    expect(created.apiKey.scope).toBe('full');
+    const bad = await app.inject({
+      method: 'POST',
+      url: API_KEYS_PATH,
+      headers: owner.headers,
+      payload: { name: 'x', scope: 'admin' },
+    });
+    expect(bad.statusCode).toBe(400);
+    const list = await app.inject({ method: 'GET', url: API_KEYS_PATH, headers: owner.headers });
+    expect(list.json<ApiKey[]>().map((key) => key.scope)).toEqual(['full']);
+  });
+
+  it('une clé « lecture » lit les demandes mais ne peut pas en créer (403)', async () => {
+    const app = await newApp();
+    const { created } = await createKey(app, 'Hub', 'read');
+    expect(created.apiKey.scope).toBe('read');
+    expect((await call(app, created.secret, 'GET', REQUESTS_PATH)).statusCode).toBe(200);
+    const write = await call(app, created.secret, 'POST', REQUESTS_PATH);
+    expect(write.statusCode).toBe(403);
+    expect(write.json()).toEqual({ error: OUT_OF_SCOPE_ERROR });
+    // Une route publique reste ouverte.
+    expect((await call(app, created.secret, 'GET', '/api/health')).statusCode).toBe(200);
+  });
+
+  it('une clé « demandes » approuve et refuse, mais n’ouvre pas les réglages (403)', async () => {
+    const app = await newApp();
+    const { created } = await createKey(app, 'Hub', 'requests');
+    expect((await call(app, created.secret, 'GET', GENERAL_SETTINGS_PATH)).statusCode).toBe(403);
+    expect((await call(app, created.secret, 'PUT', GENERAL_SETTINGS_PATH)).statusCode).toBe(403);
+    // Routes ouvertes : le garde de portée laisse passer (la suite, 404 ou 400, vient de la route).
+    for (const action of ['approve', 'decline'] as const)
+      expect((await call(app, created.secret, 'POST', requestPath(999, action))).statusCode).not.toBe(403);
+    expect((await call(app, created.secret, 'POST', requestPath(999, 'cancel'))).statusCode).toBe(403);
+    expect((await call(app, created.secret, 'POST', '/api/requests/batch')).statusCode).toBe(403);
+    expect((await call(app, created.secret, 'POST', REQUESTS_PATH)).statusCode).toBe(400);
+  });
+
+  it('une clé « complète » garde l’accès d’avant les portées', async () => {
+    const app = await newApp();
+    const { created } = await createKey(app, 'Script', 'full');
+    expect((await call(app, created.secret, 'GET', GENERAL_SETTINGS_PATH)).statusCode).toBe(200);
+  });
+
+  it('une clé inconnue est refusée avant la portée (401)', async () => {
+    const app = await newApp();
+    expect((await call(app, 'ur_inconnue', 'POST', REQUESTS_PATH)).statusCode).toBe(401);
+  });
+
+  it('GET /api/auth/me renvoie la portée de la clé, null avec un cookie', async () => {
+    const app = await newApp();
+    const { owner, created } = await createKey(app, 'Hub', 'requests');
+    const viaKey = await call(app, created.secret, 'GET', VIEWER_PATH);
+    expect(viaKey.json()).toMatchObject({ viewer: { id: owner.user.id }, apiKeyScope: 'requests' });
+    const viaCookie = await app.inject({ method: 'GET', url: VIEWER_PATH, headers: owner.headers });
+    expect(viaCookie.json().apiKeyScope).toBeNull();
+  });
+
+  it('la migration 0017 laisse les clés existantes « complètes »', () => {
+    const sqlite = new Database(':memory:');
+    const db = drizzle({ client: sqlite });
+    migrate(db, { migrationsFolder: truncatedMigrations(tempDir(), 17) });
+    sqlite.prepare("INSERT INTO users (id, name, role) VALUES ('u', 'u', 'owner')").run();
+    sqlite
+      .prepare("INSERT INTO api_keys (name, key_hash, prefix, created_by) VALUES ('Ancienne', 'h', 'ur_anci', 'u')")
+      .run();
+    migrate(db, { migrationsFolder });
+    expect(sqlite.prepare('SELECT name, scope FROM api_keys').all()).toEqual([{ name: 'Ancienne', scope: 'full' }]);
+    // La contrainte est en place : une portée inconnue est refusée.
+    expect(() =>
+      sqlite
+        .prepare(
+          "INSERT INTO api_keys (name, key_hash, prefix, scope, created_by) VALUES ('x', 'h2', 'ur_x', 'admin', 'u')",
+        )
+        .run(),
+    ).toThrow(/CHECK/);
+    sqlite.close();
+  });
+
+  it('une clé d’avant les portées reste « complète » à l’authentification', async () => {
+    const app = await newApp();
+    const owner = await loginAsOwner(app);
+    const secret = 'ur_ancienne-cle';
+    app.data.db.$client
+      .prepare('INSERT INTO api_keys (name, key_hash, prefix, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run('Ancienne', sha256Hex(secret), 'ur_anci', owner.user.id, 1);
+    expect((await call(app, secret, 'GET', GENERAL_SETTINGS_PATH)).statusCode).toBe(200);
+    expect((await call(app, secret, 'GET', VIEWER_PATH)).json().apiKeyScope).toBe('full');
+  });
+
+  it('liste blanche : chaque entrée est une route enregistrée, tout le reste est refusé (403)', async () => {
+    const { app, routes } = await appWithApiRoutes(newApp);
+    const owner = await loginAsOwner(app);
+    const scopes = apiKeyScopes.filter((scope) => scope !== 'full');
+    const secrets = new Map<ApiKeyScope, string>();
+    for (const scope of scopes) {
+      const res = await app.inject({
+        method: 'POST',
+        url: API_KEYS_PATH,
+        headers: owner.headers,
+        payload: { name: scope, scope },
+      });
+      secrets.set(scope, res.json<ApiKeyCreated>().secret);
+    }
+
+    for (const scope of scopes)
+      for (const entry of API_KEY_SCOPE_ROUTES[scope]) expect(routes, `${scope} : ${entry}`).toContain(entry);
+    // « demandes » ouvre au moins tout ce qu'ouvre « lecture ».
+    for (const entry of API_KEY_SCOPE_ROUTES.read) expect(API_KEY_SCOPE_ROUTES.requests.has(entry)).toBe(true);
+
+    for (const route of routes) {
+      if (PUBLIC_ROUTES.has(route) || WEBHOOK_ROUTES.has(route)) continue;
+      const [method, pattern] = route.split(' ') as [Method, string];
+      for (const scope of scopes) {
+        const res = await call(app, secrets.get(scope) ?? '', method, pattern.replace(/:\w+/g, '1'));
+        const refused = res.statusCode === 403 && res.json<{ error?: string }>().error === OUT_OF_SCOPE_ERROR;
+        expect(refused, `${scope} sur ${route}`).toBe(!API_KEY_SCOPE_ROUTES[scope].has(route));
+        if (scope === 'read' && method !== 'GET') expect(res.statusCode, `lecture sur ${route}`).toBe(403);
+      }
+    }
   });
 });

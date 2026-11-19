@@ -1,6 +1,7 @@
 import { type AnyColumn, sql } from 'drizzle-orm';
 import { check, customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { z } from 'zod';
+import { apiKeyScopes } from '../../shared/api-keys.ts';
 import { arrKinds } from '../../shared/arr-servers.ts';
 import type { BlockedKeyword } from '../../shared/blocklist.ts';
 import { issueStatuses, issueTypes } from '../../shared/issues.ts';
@@ -527,7 +528,8 @@ export const blockedTitles = sqliteTable(
 
 /**
  * Clés d'API publiques : seul le hash SHA-256 (hexadécimal) est gardé, `prefix` sert à les reconnaître. Une clé
- * authentifie comme son créateur ; révoquée (`revokedAt`), elle ne sert plus.
+ * authentifie comme son créateur, limitée à sa portée (`scope`, `full` pour les clés d'avant les portées) ; révoquée
+ * (`revokedAt`), elle ne sert plus.
  */
 export const apiKeys = sqliteTable(
   'api_keys',
@@ -536,6 +538,7 @@ export const apiKeys = sqliteTable(
     name: text().notNull(),
     keyHash: text().notNull(),
     prefix: text().notNull(),
+    scope: text({ enum: apiKeyScopes }).notNull().default('full'),
     createdBy: text()
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -544,6 +547,7 @@ export const apiKeys = sqliteTable(
     revokedAt: integer({ mode: 'timestamp' }),
   },
   (table) => [
+    enumCheck('api_keys_scope_check', table.scope, apiKeyScopes),
     // Authentification d'une requête `X-Api-Key` : recherche par hash.
     uniqueIndex('api_keys_key_hash_unique').on(table.keyHash),
     index('api_keys_created_by_idx').on(table.createdBy),

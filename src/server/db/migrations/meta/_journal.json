@@ -120,6 +120,13 @@
       "when": 1795102452248,
       "tag": "0016_sessions_appareil",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1795113449181,
+      "tag": "0017_portee_cles_api",
+      "breakpoints": true
     }
   ]
 }

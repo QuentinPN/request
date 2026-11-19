@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import type { ApiKey, ApiKeyCreated } from '../../shared/api-keys.ts';
+import type { ApiKey, ApiKeyCreated, ApiKeyScope } from '../../shared/api-keys.ts';
 import { capabilitiesOf } from '../../shared/roles.ts';
 import { sha256Hex } from '../crypto.ts';
 import type { Db } from '../db/index.ts';
@@ -20,6 +20,7 @@ const toApiKey = (row: typeof apiKeys.$inferSelect, createdByName: string): ApiK
   id: row.id,
   name: row.name,
   prefix: row.prefix,
+  scope: row.scope,
   createdByName,
   createdAt: row.createdAt.toISOString(),
   lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
@@ -27,7 +28,13 @@ const toApiKey = (row: typeof apiKeys.$inferSelect, createdByName: string): ApiK
 });
 
 /** Crée une clé : 256 bits aléatoires, seul le hash SHA-256 est gardé. Le secret n'est renvoyé qu'ici, une seule fois. */
-export function createApiKey(db: Db, creator: User, name: string, now = new Date()): ApiKeyCreated {
+export function createApiKey(
+  db: Db,
+  creator: User,
+  name: string,
+  scope: ApiKeyScope = 'full',
+  now = new Date(),
+): ApiKeyCreated {
   const random = randomBytes(32).toString('base64url');
   const secret = `${KEY_PREFIX}${random}`;
   const row = db
@@ -36,6 +43,7 @@ export function createApiKey(db: Db, creator: User, name: string, now = new Date
       name,
       keyHash: sha256Hex(secret),
       prefix: `${KEY_PREFIX}${random.slice(0, VISIBLE_CHARS)}`,
+      scope,
       createdBy: creator.id,
       createdAt: now,
     })
@@ -66,12 +74,17 @@ export function revokeApiKey(db: Db, id: number, now = new Date()): void {
 }
 
 /**
- * Membre derrière une clé reçue, ou `null` : clé inconnue, révoquée, ou créateur qui n'est plus propriétaire (ses
- * droits actuels font foi). Recherche par hash (index unique). Met `last_used_at` à jour au plus une fois par minute.
+ * Membre derrière une clé reçue et portée de la clé, ou `null` : clé inconnue, révoquée, ou créateur qui n'est plus
+ * propriétaire (ses droits actuels font foi). Recherche par hash (index unique). Met `last_used_at` à jour au plus une
+ * fois par minute.
  */
-export function authenticateApiKey(db: Db, secret: string, now = new Date()): User | null {
+export function authenticateApiKey(
+  db: Db,
+  secret: string,
+  now = new Date(),
+): { user: User; scope: ApiKeyScope } | null {
   const row = db
-    .select({ id: apiKeys.id, lastUsedAt: apiKeys.lastUsedAt, user: users })
+    .select({ id: apiKeys.id, lastUsedAt: apiKeys.lastUsedAt, scope: apiKeys.scope, user: users })
     .from(apiKeys)
     .innerJoin(users, eq(users.id, apiKeys.createdBy))
     .where(and(eq(apiKeys.keyHash, sha256Hex(secret)), isNull(apiKeys.revokedAt)))
@@ -79,5 +92,5 @@ export function authenticateApiKey(db: Db, secret: string, now = new Date()): Us
   if (!row || !capabilitiesOf(row.user).isOwner) return null;
   if (!row.lastUsedAt || row.lastUsedAt.getTime() <= now.getTime() - LAST_USED_REFRESH_MS)
     db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, row.id)).run();
-  return row.user;
+  return { user: row.user, scope: row.scope };
 }

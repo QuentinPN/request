@@ -1,4 +1,15 @@
-import { API_KEYS_PATH, type ApiKey, type ApiKeyCreated, apiKeyCreateSchema, apiKeyPath } from '@shared/api-keys.ts';
+import {
+  API_KEYS_PATH,
+  type ApiKey,
+  type ApiKeyCreated,
+  type ApiKeyCreateInput,
+  type ApiKeyScope,
+  apiKeyCreateSchema,
+  apiKeyPath,
+  apiKeyScopeDescriptions,
+  apiKeyScopeLabels,
+  apiKeyScopes,
+} from '@shared/api-keys.ts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useState } from 'react';
 import { Notice } from '@/components/notice';
@@ -12,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input, Label } from '@/components/ui/field';
+import { FieldHint, Input, Label, NativeSelect } from '@/components/ui/field';
 import { apiSend } from '@/lib/http';
 import { formatDateTime, formatDay } from '@/lib/requests';
 import { CopyField } from './copy-field';
@@ -22,15 +33,16 @@ import { actionClass, LoadedSection, SectionFrame, type SectionFrameProps } from
 const isActive = (key: ApiKey) => key.revokedAt === null;
 
 /** Clé affichée une seule fois : le serveur ne garde que son empreinte, la fermer la perd pour de bon. */
-function SecretDialog({ secret, onClose }: { secret: string; onClose: () => void }) {
+function SecretDialog({ created, onClose }: { created: ApiKeyCreated; onClose: () => void }) {
+  const { secret, apiKey } = created;
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-sm:top-auto max-sm:bottom-4 max-sm:translate-y-0">
         <DialogHeader>
           <DialogTitle>Clé créée</DialogTitle>
           <DialogDescription>
-            Copiez-la maintenant et gardez-la en lieu sûr : elle ne sera plus jamais affichée. Elle donne les droits du
-            propriétaire ; en cas de doute, révoquez-la.
+            Copiez-la maintenant et gardez-la en lieu sûr : elle ne sera plus jamais affichée. Portée «{' '}
+            {apiKeyScopeLabels[apiKey.scope]} » : {apiKeyScopeDescriptions[apiKey.scope]} En cas de doute, révoquez-la.
           </DialogDescription>
         </DialogHeader>
         <CopyField label="Clé d’API" copyLabel="Copier la clé" value={secret} />
@@ -76,17 +88,18 @@ function RevokeDialog({ apiKey, onClose }: { apiKey: ApiKey; onClose: () => void
   );
 }
 
-function CreateForm({ onCreated }: { onCreated: (secret: string) => void }) {
+function CreateForm({ onCreated }: { onCreated: (created: ApiKeyCreated) => void }) {
   const id = useId();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
-  const parsed = apiKeyCreateSchema.safeParse({ name });
+  const [scope, setScope] = useState<ApiKeyScope>('read');
+  const parsed = apiKeyCreateSchema.safeParse({ name, scope });
   const create = useMutation({
-    mutationFn: (input: { name: string }) => apiSend<ApiKeyCreated>('POST', API_KEYS_PATH, input),
-    onSuccess: async ({ secret }) => {
+    mutationFn: (input: ApiKeyCreateInput) => apiSend<ApiKeyCreated>('POST', API_KEYS_PATH, input),
+    onSuccess: async (created) => {
       setName('');
       await queryClient.invalidateQueries({ queryKey: apiKeysQuery.queryKey });
-      onCreated(secret);
+      onCreated(created);
     },
   });
 
@@ -97,9 +110,9 @@ function CreateForm({ onCreated }: { onCreated: (secret: string) => void }) {
 
   return (
     <form noValidate onSubmit={onSubmit} className="flex flex-col gap-3">
-      <div>
-        <Label htmlFor={`${id}-name`}>Nom de la clé</Label>
-        <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0 grow">
+          <Label htmlFor={`${id}-name`}>Nom de la clé</Label>
           <Input
             id={`${id}-name`}
             value={name}
@@ -110,13 +123,30 @@ function CreateForm({ onCreated }: { onCreated: (secret: string) => void }) {
               setName(e.target.value);
               create.reset();
             }}
-            className="min-w-0"
           />
-          <Button type="submit" size="lg" className={actionClass} disabled={!parsed.success || create.isPending}>
-            {create.isPending ? 'Création…' : 'Créer la clé'}
-          </Button>
         </div>
+        <div className="sm:w-48 sm:shrink-0">
+          <Label htmlFor={`${id}-scope`}>Portée</Label>
+          <NativeSelect
+            id={`${id}-scope`}
+            value={scope}
+            onChange={(e) => {
+              setScope(e.target.value as ApiKeyScope);
+              create.reset();
+            }}
+          >
+            {apiKeyScopes.map((value) => (
+              <option key={value} value={value}>
+                {apiKeyScopeLabels[value]}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <Button type="submit" size="lg" className={actionClass} disabled={!parsed.success || create.isPending}>
+          {create.isPending ? 'Création…' : 'Créer la clé'}
+        </Button>
       </div>
+      <FieldHint className="mt-0">{apiKeyScopeDescriptions[scope]}</FieldHint>
       {create.isError && <Notice tone="error">{create.error.message}</Notice>}
     </form>
   );
@@ -130,6 +160,7 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: ApiKey; onRevoke: () => void }) 
         <span className="flex flex-wrap items-center gap-2">
           <span className={active ? 'font-semibold' : 'font-semibold text-muted-foreground'}>{apiKey.name}</span>
           <code className="text-[13px] text-muted-foreground">{apiKey.prefix}…</code>
+          <Badge variant="outline">{apiKeyScopeLabels[apiKey.scope]}</Badge>
           {!active && <Badge variant="secondary">Révoquée</Badge>}
         </span>
         <span className="text-xs text-muted-foreground">
@@ -153,12 +184,12 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: ApiKey; onRevoke: () => void }) 
 }
 
 /**
- * Clés d'API publiques (propriétaire) : l'en-tête `X-Api-Key` authentifie un script comme son créateur (docs/API.md).
+ * Clés d'API publiques (propriétaire) : l'en-tête `X-Api-Key` authentifie un script comme son créateur, dans les limites de sa portée (docs/API.md).
  * Pas un réglage de l'assistant : rien à tester ni à enregistrer. Le secret n'apparaît qu'à la création.
  */
 export function ApiKeysSection(frame: SectionFrameProps) {
   const query = useQuery(apiKeysQuery);
-  const [secret, setSecret] = useState<string | null>(null);
+  const [created, setCreated] = useState<ApiKeyCreated | null>(null);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
 
   return (
@@ -176,10 +207,10 @@ export function ApiKeysSection(frame: SectionFrameProps) {
               <p className="text-sm text-muted-foreground">
                 Pour un script ou un outil externe : envoyez la clé dans l’en-tête{' '}
                 <code className="text-[13px] text-foreground">X-Api-Key</code> de chaque requête vers{' '}
-                <code className="text-[13px] text-foreground">/api</code>. La requête agit comme vous, avec vos droits
-                de propriétaire.
+                <code className="text-[13px] text-foreground">/api</code>. La requête agit comme vous, mais seulement
+                dans les limites de la portée choisie : une route qu’elle n’ouvre pas répond 403.
               </p>
-              <CreateForm onCreated={setSecret} />
+              <CreateForm onCreated={setCreated} />
               {keys.length > 0 && (
                 <ul className="divide-y divide-border border-y border-border">
                   {keys.map((apiKey) => (
@@ -188,7 +219,7 @@ export function ApiKeysSection(frame: SectionFrameProps) {
                 </ul>
               )}
             </div>
-            {secret !== null && <SecretDialog secret={secret} onClose={() => setSecret(null)} />}
+            {created && <SecretDialog created={created} onClose={() => setCreated(null)} />}
             {revoking && <RevokeDialog apiKey={revoking} onClose={() => setRevoking(null)} />}
           </SectionFrame>
         );

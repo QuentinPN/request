@@ -2,20 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { OPENAPI_FILE, openApiJson, toOpenApiPath } from '../src/server/openapi/document.ts';
 import { OPERATIONS } from '../src/server/openapi/operations.ts';
-import { trackApps } from './helpers.ts';
+import { appWithApiRoutes, trackApps } from './helpers.ts';
 
 const newApp = trackApps();
 
-/** Routes `/api` enregistrées dans Fastify, en `MÉTHODE /chemin` (les HEAD automatiques exclus). */
-async function registeredRoutes(): Promise<Set<string>> {
-  const routes = new Set<string>();
-  await newApp({
-    onRoute: ({ method, url }) => {
-      for (const m of [method].flat()) if (m !== 'HEAD' && url.startsWith('/api')) routes.add(`${m} ${url}`);
-    },
-  });
-  return routes;
-}
+const registeredRoutes = async () => (await appWithApiRoutes(newApp)).routes;
 
 const documented = new Set(OPERATIONS.map((op) => `${op.method.toUpperCase()} ${op.path}`));
 

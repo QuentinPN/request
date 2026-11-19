@@ -1,11 +1,13 @@
-import type { MediaType } from './media.ts';
-import type { AgentEventKind } from './notifications.ts';
+import { z } from 'zod';
+import { issueStatusSchema, issueTypeSchema } from './issues.ts';
+import { mediaTypeSchema } from './media.ts';
+import { agentEventKinds } from './notifications.ts';
 import { settingsPathOf } from './settings-path.ts';
-import type { RequestStatus } from './status.ts';
+import { requestStatusSchema } from './status.ts';
 
 /**
  * Agents de notification (propriétaire seulement) : des services qui reçoivent un message par évènement d'une demande
- * (et non un par destinataire). Chacun est un réglage `settingSchemas[clé]` : activé, évènements choisis, et sa
+ * ou d'un signalement (et non un par destinataire). Chacun est un réglage `settingSchemas[clé]` : activé, évènements choisis, et sa
  * configuration.
  */
 export const agentKeys = ['discord', 'ntfy', 'telegram', 'outgoingWebhook'] as const;
@@ -35,15 +37,21 @@ export const agentRequired = {
 export const NTFY_DEFAULT_URL = 'https://ntfy.sh';
 
 /**
- * Corps JSON envoyé (POST) par le webhook sortant, toujours ces six champs. `type` : l'évènement (`AgentEventKind`),
- * ou `test` pour l'essai du propriétaire (alors `media`, `request` et `user` valent `null`). `message` : phrases en
- * français, séparées par des retours à la ligne. `media.title` est `null` si TMDB ne répond pas.
+ * Corps JSON envoyé (POST) par le webhook sortant, toujours ces sept champs. `type` : l'évènement
+ * (`agentEventKinds`), ou `test` pour l'essai du propriétaire (alors `media`, `request`, `issue` et `user` valent
+ * `null`). `message` : phrases en français, séparées par des retours à la ligne. `media.title` est `null` si TMDB
+ * ne répond pas. `request` : la demande des évènements de demande (`null` pour un signalement). `issue` : le
+ * signalement des évènements `issue_opened` et `issue_resolved` (`null` pour une demande). `user` : le membre qui
+ * a demandé (évènement de demande), qui a signalé (`issue_opened`) ou qui a résolu (`issue_resolved`, pas
+ * forcément l'auteur).
  */
-export interface OutgoingWebhookPayload {
-  type: AgentEventKind | 'test';
-  title: string;
-  message: string;
-  media: { type: MediaType; tmdbId: number; title: string | null } | null;
-  request: { id: number; status: RequestStatus } | null;
-  user: { name: string } | null;
-}
+export const outgoingWebhookPayloadSchema = z.object({
+  type: z.enum([...agentEventKinds, 'test']),
+  title: z.string(),
+  message: z.string(),
+  media: z.object({ type: mediaTypeSchema, tmdbId: z.number().int(), title: z.string().nullable() }).nullable(),
+  request: z.object({ id: z.number().int(), status: requestStatusSchema }).nullable(),
+  user: z.object({ name: z.string() }).nullable(),
+  issue: z.object({ id: z.number().int(), type: issueTypeSchema, status: issueStatusSchema }).nullable(),
+});
+export type OutgoingWebhookPayload = z.output<typeof outgoingWebhookPayloadSchema>;

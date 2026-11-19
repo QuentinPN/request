@@ -1,4 +1,5 @@
 import type { AgentKey, OutgoingWebhookPayload } from '../../shared/agents.ts';
+import type { IssueStatus, IssueType } from '../../shared/issues.ts';
 import type { MediaType } from '../../shared/media.ts';
 import type { AgentEventKind } from '../../shared/notifications.ts';
 import type { Setting } from '../../shared/settings.ts';
@@ -14,7 +15,7 @@ import { postNtfy } from '../integrations/ntfy.ts';
 import { postWebhook } from '../integrations/outgoing-webhook.ts';
 import { postTelegram } from '../integrations/telegram.ts';
 
-/** Ce que reçoit un agent : l'évènement d'une demande (ou l'essai du propriétaire), rendu une fois pour tous. */
+/** Ce que reçoit un agent : l'évènement d'une demande ou d'un signalement (ou l'essai du propriétaire), rendu une fois pour tous. */
 export interface AgentMessage {
   kind: AgentEventKind | 'test';
   /** Titre court : « Demande approuvée ». */
@@ -29,10 +30,13 @@ export interface AgentMessage {
     year: number | null;
     posterUrl: string | null;
   } | null;
+  /** La demande d'un évènement de demande ; `null` pour un signalement. */
   request: { id: number; status: RequestStatus } | null;
-  /** Le membre qui a demandé. */
-  user: { name: string } | null;
-  /** Motif du refus, raison de l'échec. */
+  /** Le signalement d'un évènement de signalement ; `null` pour une demande. */
+  issue: { id: number; type: IssueType; status: IssueStatus } | null;
+  /** Le membre concerné, avec ce qu'il a fait (`label` : « Demandé par », « Signalé par », « Résolu par »). */
+  user: { name: string; label: string } | null;
+  /** Motif du refus, raison de l'échec, nature du problème signalé. */
   detail: { label: string; value: string } | null;
   at: Date;
 }
@@ -56,7 +60,7 @@ const mediaLine = ({ title, year }: NonNullable<AgentMessage['media']>) =>
 export function agentText({ media, note, user, detail }: AgentMessage): string {
   return [
     media ? mediaLine(media) : note,
-    user && `Demandé par ${user.name}`,
+    user && `${user.label} ${user.name}`,
     detail && `${detail.label} : ${detail.value}`,
   ]
     .filter((line) => line)
@@ -70,6 +74,9 @@ const COLORS: Record<AgentMessage['kind'], number> = {
   declined: 0xed4245,
   available: 0x3ba55d,
   failed: 0xed4245,
+  cancelled: 0x747f8d,
+  issue_opened: 0xf0b232,
+  issue_resolved: 0x3ba55d,
   test: 0x5865f2,
 };
 
@@ -82,7 +89,7 @@ function discordEmbed(message: AgentMessage): DiscordEmbed {
     : (message.note ?? '');
   const fields = [
     ...(message.user
-      ? [{ name: 'Demandé par', value: truncate(message.user.name, DISCORD_FIELD_MAX), inline: true }]
+      ? [{ name: message.user.label, value: truncate(message.user.name, DISCORD_FIELD_MAX), inline: true }]
       : []),
     ...(message.detail
       ? [{ name: message.detail.label, value: truncate(message.detail.value, DISCORD_FIELD_MAX) }]
@@ -144,7 +151,8 @@ export function createChannels(urls: { discord?: string; telegram?: string } = {
             title: message.media.title,
           },
           request: message.request,
-          user: message.user,
+          user: message.user && { name: message.user.name },
+          issue: message.issue,
         } satisfies OutgoingWebhookPayload),
     },
   };
