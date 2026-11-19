@@ -53,7 +53,7 @@ export function getSetting<K extends SettingKey>(db: Db, cryptoKey: Buffer, key:
   if (!row) return null;
   const value = settingSchemas[key].parse(mapSecrets(key, JSON.parse(row.value), (s) => decrypt(cryptoKey, s)));
   return (
-    (agentKeys as readonly string[]).includes(key) ? withAutoApproved(value as Setting<AgentKey>) : value
+    ([...agentKeys, 'smtp'] as string[]).includes(key) ? withAutoApproved(value as Setting<AgentKey | 'smtp'>) : value
   ) as Setting<K>;
 }
 

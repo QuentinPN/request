@@ -201,6 +201,8 @@ export const settingSchemas = {
     from: z.string().trim().min(1, 'Expéditeur requis'),
     /** Notifications envoyées par courriel (toutes par défaut), en plus du choix de chaque membre. */
     events: z.array(z.enum(notificationKinds)).default([...notificationKinds]),
+    /** Écrit par le serveur à chaque enregistrement : `events` est alors pris tel quel (`withAutoApproved`). */
+    eventsVersion: z.literal(AGENT_EVENTS_VERSION).optional(),
   }),
   /** Clés VAPID des notifications push, générées par le serveur, jamais saisies. La publique va aux navigateurs. */
   vapid: z.object({ publicKey: z.string().min(1), privateKey: z.string().min(1) }),

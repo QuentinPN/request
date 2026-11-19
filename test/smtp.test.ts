@@ -13,6 +13,7 @@ import {
 } from '../src/server/services/email.ts';
 import { withStoredSecrets } from '../src/server/services/settings.ts';
 import {
+  AGENT_EVENTS_VERSION,
   NOTIFICATION_PREFERENCES_PATH,
   notificationKinds,
   SERVICE_WORKER_PATH,
@@ -77,7 +78,7 @@ describe('réglage SMTP', () => {
     const owner = await as('owner');
     const chosen = await owner.put(SMTP_SETTINGS_PATH, { ...SMTP, events: ['issue_created', 'declined'] });
     expect(chosen.json()).toMatchObject({ events: ['issue_created', 'declined'] });
-    expect((await owner.put(SMTP_SETTINGS_PATH, { ...SMTP, events: ['auto_approved'] })).statusCode).toBe(400);
+    expect((await owner.put(SMTP_SETTINGS_PATH, { ...SMTP, events: ['inconnu'] })).statusCode).toBe(400);
   });
 
   it('le mot de passe est chiffré, jamais renvoyé, gardé si le champ est vide', async () => {
@@ -85,7 +86,13 @@ describe('réglage SMTP', () => {
     const owner = await as('owner');
     expect((await owner.get(SMTP_SETTINGS_PATH)).statusCode).toBe(404);
     const saved = await owner.put(SMTP_SETTINGS_PATH, SMTP);
-    expect(saved.json()).toEqual({ ...SMTP, enabled: true, events: notificationKinds, password: { set: true } });
+    expect(saved.json()).toEqual({
+      ...SMTP,
+      enabled: true,
+      events: notificationKinds,
+      eventsVersion: AGENT_EVENTS_VERSION,
+      password: { set: true },
+    });
     expect((await owner.get(SMTP_SETTINGS_PATH)).body).not.toContain('mot-de-passe-smtp');
     const raw = data.db.select().from(settings).where(eq(settings.key, 'smtp')).get()?.value ?? '';
     expect(raw).not.toContain('mot-de-passe-smtp');

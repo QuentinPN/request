@@ -15,7 +15,7 @@ import { viewerOf } from '../plugins/auth.ts';
 import type { EmailService } from '../services/email.ts';
 import type { NotificationService } from '../services/notifications.ts';
 import type { PushService } from '../services/push.ts';
-import { setNotificationPreferences, type User } from '../services/users.ts';
+import { notificationTypesOf, setNotificationPreferences, type User } from '../services/users.ts';
 
 /**
  * Notifications du membre connecté (session et CSRF par le garde global de `/api`) : les siennes seulement, et ses
@@ -41,6 +41,7 @@ export function notificationsRoutes(
     email: user.email,
     emailNotifications: user.emailNotifications,
     pushNotifications: user.pushNotifications,
+    types: notificationTypesOf(user),
     emailAvailable: email.active() !== null,
     pushDevices: push.deviceCount(user.id),
   });
@@ -49,6 +50,6 @@ export function notificationsRoutes(
 
   app.put(NOTIFICATION_PREFERENCES_PATH, async (req) => {
     const preferences = parseRequest(notificationPreferencesSchema, req.body);
-    return preferencesOf(setNotificationPreferences(app.data.db, viewerOf(req).user.id, preferences));
+    return preferencesOf(setNotificationPreferences(app.data.db, viewerOf(req).user, preferences));
   });
 }

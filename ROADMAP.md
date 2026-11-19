@@ -86,6 +86,7 @@ Audit du 2026-11-18 fait sur le code de Seerr (branche `develop` : `server/lib/p
 - [x] **8.7** (P3) Découvrir personnalisable (ordre, masquage, rangées sur mesure), région et langue TMDB réglables au lieu de `fr-FR` codé en dur, région de streaming → Réglages › Découvrir (boutons monter/descendre, rangées sur mesure = type + filtres de Films/Séries, « Tout voir »), réglages `discoverLayout` et `tmdbLocale` sans migration ; tests de routes (validation, ordre, rangées sur mesure, langue et région dans les requêtes TMDB et la clé du cache)
 - [ ] **8.8** (P3) Membres : suppression d'un membre, demande « avancée » par le membre (serveur, profil, dossier ; après 8.4), modification d'une demande en attente, règles de surcharge par genre ou mot-clé (Seerr `OverrideRule`) (suppression de membre faite)
 - [ ] **8.9** (P3, à valider) Demande automatique depuis « Ma liste », vote sur les demandes
+- [x] **8.10** Notifications : types choisis par membre, « approuvée automatiquement » dans la cloche, le courriel et le push
 
 Parallélisme : 8.1, 8.2, 8.3, 8.5 et 8.6 touchent des fichiers disjoints et peuvent partir ensemble ; 8.4 seul, puis 8.8 et 8.9 qui en dépendent ; 8.7 après 8.6.
 

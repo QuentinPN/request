@@ -5,7 +5,7 @@ import { arrKinds } from '../../shared/arr-servers.ts';
 import { issueStatuses, issueTypes } from '../../shared/issues.ts';
 import { jobRunStatuses } from '../../shared/jobs.ts';
 import { mediaTypes } from '../../shared/media.ts';
-import { notificationKinds } from '../../shared/notifications.ts';
+import { type NotificationChoices, notificationChoicesSchema, notificationKinds } from '../../shared/notifications.ts';
 import {
   type PermissionOverrides,
   permissionOverridesSchema,
@@ -48,6 +48,11 @@ const permissionsJson = tolerantJson<PermissionOverrides>(
   'permissions illisibles en base : droits du rôle appliqués',
 );
 
+const notificationTypesJson = tolerantJson<NotificationChoices>(
+  notificationChoicesSchema,
+  'notification_types illisibles en base : types par défaut appliqués',
+);
+
 /** Réglages clé/valeur : `value` est du JSON validé par Zod, les champs secrets y sont chiffrés. */
 export const settings = sqliteTable('settings', {
   key: text().primaryKey(),
@@ -77,6 +82,10 @@ export const users = sqliteTable(
     emailNotifications: integer({ mode: 'boolean' }).notNull().default(true),
     pushNotifications: integer({ mode: 'boolean' }).notNull().default(true),
     permissions: permissionsJson(),
+    /** JSON `NotificationChoices` : types de notification reçus, écart aux valeurs par défaut (`null` = défauts). */
+    notificationTypes: notificationTypesJson(),
+    /** Option du membre pour la demande automatique depuis Ma liste (lot suivant) : pas encore exposée. */
+    watchlistAutoRequest: integer({ mode: 'boolean' }).notNull().default(false),
   },
   (table) => [
     enumCheck('users_role_check', table.role, roles),
@@ -84,6 +93,10 @@ export const users = sqliteTable(
     check(
       'users_permissions_json_check',
       sql`${table.permissions} IS NULL OR (json_valid(${table.permissions}) AND json_type(${table.permissions}) = 'object')`,
+    ),
+    check(
+      'users_notification_types_json_check',
+      sql`${table.notificationTypes} IS NULL OR (json_valid(${table.notificationTypes}) AND json_type(${table.notificationTypes}) = 'object')`,
     ),
   ],
 );

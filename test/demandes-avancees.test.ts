@@ -3,7 +3,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { type Db, openDataDir } from '../src/server/db/index.ts';
-import { media, notifications, requests } from '../src/server/db/schema.ts';
+import { media, notifications, requests, users } from '../src/server/db/schema.ts';
 import { type CreatedNotifications, onNotificationsCreated } from '../src/server/services/notifications.ts';
 import { quotaUsageQuery } from '../src/server/services/requests.ts';
 import { setSetting } from '../src/server/services/settings.ts';
@@ -165,6 +165,13 @@ describe('demande pour un autre membre', () => {
     expect(pending.json<RequestDetail>().status).toBe('pending');
 
     const auto = await as('auto_approve');
+    const watcher = await as('manager', 'gestionnaire-attentif');
+    // « Approuvée automatiquement » : désactivé d'office, ces deux-là l'activent.
+    for (const id of [owner.user.id, watcher.user.id])
+      db.update(users)
+        .set({ notificationTypes: { auto_approved: true } })
+        .where(eq(users.id, id))
+        .run();
     expect(sentTo()).toHaveLength(0);
     const sent = await owner.post('/api/requests', { type: 'movie', tmdbId: 700, forUserId: auto.user.id });
     expect(sent.statusCode).toBe(201);
@@ -172,6 +179,9 @@ describe('demande pour un autre membre', () => {
     expect(sentTo()).toHaveLength(1);
     // Approuvée au nom du membre : il n'est pas prévenu de « sa » propre approbation.
     expect(notificationsOf(db, auto.user.id).map((n) => n.kind)).toEqual(['requested_on_behalf']);
+    // Ni le gestionnaire qui a demandé à sa place (c'est lui qui agit), mais bien les autres qui suivent les demandes.
+    expect(notificationsOf(db, owner.user.id).map((n) => n.kind)).not.toContain('auto_approved');
+    expect(notificationsOf(db, watcher.user.id).map((n) => n.kind)).toContain('auto_approved');
   });
 
   it('applique le quota du membre ; « Hors quota » le saute sans le consommer', async () => {

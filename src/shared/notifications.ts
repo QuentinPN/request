@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { MediaKey, Paged } from './media.ts';
+import { capabilitiesOf, type Permission, type PermissionHolder } from './roles.ts';
 import { settingsPathOf } from './settings-path.ts';
 import type { RequestEventType } from './status.ts';
 
@@ -25,10 +26,12 @@ export type IssueNotificationKind = (typeof issueNotificationKinds)[number];
 
 /**
  * Toutes les notifications, seule liste (contrainte `CHECK` de `notifications.kind`) : celles des demandes,
+ * `auto_approved` (demande approuvée sans passer par un gestionnaire : prévient ceux qui suivent les demandes),
  * `requested_on_behalf` (un gestionnaire a demandé un titre à la place du membre) et celles des signalements.
  */
 export const notificationKinds = [
   ...requestNotificationKinds,
+  'auto_approved',
   'requested_on_behalf',
   ...issueNotificationKinds,
 ] as const;
@@ -36,8 +39,7 @@ export type NotificationKind = (typeof notificationKinds)[number];
 
 /**
  * Évènements que reçoivent les agents (Discord, ntfy, Telegram, webhook sortant) : ceux des demandes, plus
- * `auto_approved` (demande approuvée sans passer par un gestionnaire, pour prévenir ceux qui suivent les demandes). Ce
- * dernier n'est pas dans `notificationKinds` : il n'a pas de ligne dans la cloche (contrainte `CHECK` de la table).
+ * `auto_approved` (qui est aussi une notification de l'appli, `notificationKinds`, depuis le lot 8.10).
  */
 export const agentEventKinds = [...requestNotificationKinds, 'auto_approved'] as const;
 export type AgentEventKind = (typeof agentEventKinds)[number];
@@ -46,13 +48,142 @@ export type AgentEventKind = (typeof agentEventKinds)[number];
 export const AGENT_EVENTS_VERSION = 2;
 
 /**
- * Anciennes configurations d'agent (sans `eventsVersion`) : `approved` sans `auto_approved` (ajouté après) reçoit aussi
+ * Anciennes configurations d'agent ou SMTP (sans `eventsVersion`) : `approved` sans `auto_approved` (ajouté après) reçoit aussi
  * les approbations automatiques, comme avant. Une configuration enregistrée depuis est prise telle quelle.
  */
-export const withAutoApproved = <T extends { events: AgentEventKind[]; eventsVersion?: number }>(agent: T): T =>
+export const withAutoApproved = <T extends { events: NotificationKind[]; eventsVersion?: number }>(agent: T): T =>
   agent.eventsVersion === undefined && agent.events.includes('approved') && !agent.events.includes('auto_approved')
     ? { ...agent, events: [...agent.events, 'auto_approved'] }
     : agent;
+
+// --- Types choisis par membre (lot 8.10) ---
+
+/** Rubriques de la liste des types (Compte › Notifications). */
+export const notificationGroups = ['requests', 'issues', 'management'] as const;
+export type NotificationGroup = (typeof notificationGroups)[number];
+export const notificationGroupLabels: Record<NotificationGroup, string> = {
+  requests: 'Mes demandes',
+  issues: 'Mes signalements',
+  management: 'Gestion',
+};
+
+interface NotificationTypeInfo {
+  group: NotificationGroup;
+  /** Droit qu'il faut pour le recevoir ; `null` : tout membre (le demandeur, l'auteur, un participant). */
+  capability: Permission | null;
+  /** Explication sous le libellé (celui-ci : `eventLabels`, côté client). */
+  hint: string;
+  /** Reçu tant que le membre n'a pas choisi. */
+  defaultOn: boolean;
+}
+
+/**
+ * Seule source de ce que chaque type est pour un membre : sa rubrique, le droit qui en fait un destinataire « à
+ * traiter » (`notifyRequestEvent` : ceux qui ont ce droit), phrase d'explication de la liste du Compte, et son état
+ * par défaut (les libellés sont ceux de `eventLabels`). `auto_approved` est désactivé d'office : un gestionnaire existant ne reçoit rien de nouveau,
+ * par courriel ou en push, sans l'avoir activé.
+ */
+export const notificationTypes: Record<NotificationKind, NotificationTypeInfo> = {
+  approved: {
+    group: 'requests',
+    capability: null,
+    hint: 'Une de vos demandes a été approuvée.',
+    defaultOn: true,
+  },
+  declined: {
+    group: 'requests',
+    capability: null,
+    hint: 'Une de vos demandes a été refusée, avec le motif.',
+    defaultOn: true,
+  },
+  available: {
+    group: 'requests',
+    capability: null,
+    hint: 'Un titre que vous avez demandé est prêt à être regardé.',
+    defaultOn: true,
+  },
+  requested_on_behalf: {
+    group: 'requests',
+    capability: null,
+    hint: 'Un gestionnaire a demandé un titre à votre place.',
+    defaultOn: true,
+  },
+  issue_commented: {
+    group: 'issues',
+    capability: null,
+    hint: 'Un signalement auquel vous participez a été commenté.',
+    defaultOn: true,
+  },
+  issue_resolved: {
+    group: 'issues',
+    capability: null,
+    hint: 'Un signalement que vous avez ouvert a été résolu.',
+    defaultOn: true,
+  },
+  issue_reopened: {
+    group: 'issues',
+    capability: null,
+    hint: 'Un signalement que vous avez ouvert a été rouvert.',
+    defaultOn: true,
+  },
+  requested: {
+    group: 'management',
+    capability: 'canManageRequests',
+    hint: 'Un membre a fait une demande qui attend une approbation.',
+    defaultOn: true,
+  },
+  failed: {
+    group: 'management',
+    capability: 'canManageRequests',
+    hint: 'Une demande approuvée n’a pas pu partir : elle est à relancer.',
+    defaultOn: true,
+  },
+  auto_approved: {
+    group: 'management',
+    capability: 'canManageRequests',
+    hint: 'Une demande est partie sans validation, grâce aux droits de son auteur.',
+    defaultOn: false,
+  },
+  issue_created: {
+    group: 'management',
+    capability: 'canManageIssues',
+    hint: 'Un membre a signalé un problème sur un titre.',
+    defaultOn: true,
+  },
+};
+
+/** Types que ce membre peut recevoir, dans l'ordre de `notificationKinds` (ceux de gestion, s'il en a le droit). */
+export function receivableKinds(holder: PermissionHolder): NotificationKind[] {
+  const capabilities = capabilitiesOf(holder);
+  return notificationKinds.filter((kind) => {
+    const { capability } = notificationTypes[kind];
+    return capability === null || capabilities[capability];
+  });
+}
+
+/**
+ * Choix d'un membre (colonne `users.notification_types`) : type → reçu ou non, **seulement l'écart aux valeurs par
+ * défaut** (`chosenTypes`), `null` = tout par défaut. Un type inconnu est ignoré à la lecture.
+ */
+const notificationChoicesShape = Object.fromEntries(
+  notificationKinds.map((kind) => [kind, z.boolean().optional()]),
+) as Record<NotificationKind, z.ZodOptional<z.ZodBoolean>>;
+export const notificationChoicesSchema = z.object(notificationChoicesShape);
+export type NotificationChoices = z.output<typeof notificationChoicesSchema>;
+
+/** Le membre reçoit-il ce type ? Son choix, sinon la valeur par défaut du type. */
+export const notificationEnabled = (choices: NotificationChoices | null, kind: NotificationKind): boolean =>
+  choices?.[kind] ?? notificationTypes[kind].defaultOn;
+
+/** Écart aux valeurs par défaut, `null` si aucun : la seule forme enregistrée en base. */
+export function chosenTypes(choices: NotificationChoices): NotificationChoices | null {
+  const diff: NotificationChoices = {};
+  for (const kind of notificationKinds) {
+    const choice = choices[kind];
+    if (choice !== undefined && choice !== notificationTypes[kind].defaultOn) diff[kind] = choice;
+  }
+  return Object.keys(diff).length > 0 ? diff : null;
+}
 
 // --- Entrées ---
 
@@ -70,12 +201,14 @@ export type MarkNotificationsReadInput = z.input<typeof markNotificationsReadSch
 
 /**
  * Préférences d'un membre (colonnes de `users`) : rien ne part par courriel sans adresse (ni SMTP réglé), ni en push
- * sans appareil abonné.
+ * sans appareil abonné. `types` : ses choix par type, valables pour la cloche, le courriel et le push ; absent =
+ * inchangé, un type qu'il ne peut pas recevoir (`receivableKinds`) est refusé (403).
  */
 export const notificationPreferencesSchema = z.object({
   email: z.email('Adresse invalide').nullable(),
   emailNotifications: z.boolean(),
   pushNotifications: z.boolean(),
+  types: z.strictObject(notificationChoicesShape).optional(),
 });
 export type NotificationPreferences = z.output<typeof notificationPreferencesSchema>;
 
@@ -156,8 +289,12 @@ export interface NotificationsRead {
   unread: number;
 }
 
-/** Préférences, et ce qui les rend utiles : courriel réglé par le propriétaire, appareils abonnés au push. */
-export interface NotificationPreferencesView extends NotificationPreferences {
+/**
+ * Préférences, et ce qui les rend utiles : courriel réglé par le propriétaire, appareils abonnés au push. `types` :
+ * valeur effective de chaque type que le membre peut recevoir, et eux seuls.
+ */
+export interface NotificationPreferencesView extends Omit<NotificationPreferences, 'types'> {
+  types: Partial<Record<NotificationKind, boolean>>;
   emailAvailable: boolean;
   pushDevices: number;
 }
@@ -180,6 +317,7 @@ const toQueue: Record<NotificationKind, boolean> = {
   approved: false,
   declined: false,
   available: false,
+  auto_approved: false,
   requested_on_behalf: false,
   issue_created: false,
   issue_commented: false,

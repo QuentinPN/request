@@ -1,6 +1,12 @@
 import { asc, count, eq } from 'drizzle-orm';
 import { type Member, type MemberOption, memberRequestKeys, userPath, type Viewer } from '../../shared/auth.ts';
-import type { NotificationPreferences } from '../../shared/notifications.ts';
+import {
+  chosenTypes,
+  type NotificationPreferences,
+  type NotificationPreferencesView,
+  notificationEnabled,
+  receivableKinds,
+} from '../../shared/notifications.ts';
 import {
   type Capabilities,
   capabilitiesOf,
@@ -191,14 +197,29 @@ export function setQuotaOverride(
   return updateUser(db, id, { quotaOverride, updatedAt: now });
 }
 
-/** Adresse et canaux de notification du membre, déjà validés par `notificationPreferencesSchema`. */
+/** Valeur effective de chaque type de notification que ce membre peut recevoir (seuls ceux-là sont proposés). */
+export const notificationTypesOf = (user: User): NotificationPreferencesView['types'] =>
+  Object.fromEntries(receivableKinds(user).map((kind) => [kind, notificationEnabled(user.notificationTypes, kind)]));
+
+/**
+ * Adresse, canaux et types de notification du membre, déjà validés par `notificationPreferencesSchema`. Un type qu'il ne
+ * peut pas recevoir (droit de gestion qu'il n'a pas) est refusé (403) ; ses choix précédents, eux, sont gardés : seul
+ * l'écart aux valeurs par défaut est enregistré (`chosenTypes`).
+ */
 export function setNotificationPreferences(
   db: Db,
-  id: string,
-  preferences: NotificationPreferences,
+  user: User,
+  { types, ...channels }: NotificationPreferences,
   now = new Date(),
 ): User {
-  return updateUser(db, id, { ...preferences, updatedAt: now });
+  const allowed: readonly string[] = receivableKinds(user);
+  if (Object.keys(types ?? {}).some((kind) => !allowed.includes(kind)))
+    throw new HttpError(403, 'Vous ne pouvez pas recevoir ce type de notification');
+  return updateUser(db, user.id, {
+    ...channels,
+    ...(types && { notificationTypes: chosenTypes({ ...user.notificationTypes, ...types }) }),
+    updatedAt: now,
+  });
 }
 
 /** Rôle et droits demandés pour un membre ; absent = inchangé. */

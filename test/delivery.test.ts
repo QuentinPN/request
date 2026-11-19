@@ -10,6 +10,9 @@ import type { PushSender } from '../src/server/services/push.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
 import {
   NOTIFICATION_PREFERENCES_PATH,
+  NOTIFICATIONS_PATH,
+  type NotificationKind,
+  type NotificationPage,
   type NotificationPreferencesView,
   PUSH_ENDPOINT_MAX,
   PUSH_KEY_MAX,
@@ -19,6 +22,7 @@ import {
   PUSH_TEST_PATH,
   type PushSubscriptionCheck,
   type PushSubscriptionInput,
+  SMTP_SETTINGS_PATH,
 } from '../src/shared/notifications.ts';
 import type { Role } from '../src/shared/roles.ts';
 import type { SettingInput } from '../src/shared/settings.ts';
@@ -49,6 +53,17 @@ const matrix = {
   overview: 'Un pirate découvre la vérité.',
   poster_path: '/matrix.jpg',
   external_ids: { imdb_id: 'tt0133093', tvdb_id: null },
+};
+
+/** Types qu'un simple membre peut recevoir, tous reçus d'office. */
+const MEMBER_TYPES = {
+  approved: true,
+  declined: true,
+  available: true,
+  requested_on_behalf: true,
+  issue_commented: true,
+  issue_resolved: true,
+  issue_reopened: true,
 };
 
 const device = (n: number): PushSubscriptionInput => ({
@@ -292,6 +307,7 @@ describe('préférences du membre (Compte)', () => {
       email: null,
       emailNotifications: true,
       pushNotifications: true,
+      types: MEMBER_TYPES,
       emailAvailable: false,
       pushDevices: 0,
     });
@@ -316,6 +332,7 @@ describe('préférences du membre (Compte)', () => {
       email: 'membre@exemple.fr',
       emailNotifications: false,
       pushNotifications: true,
+      types: MEMBER_TYPES,
       emailAvailable: true,
       pushDevices: 1,
     });
@@ -455,5 +472,176 @@ describe('abonnements push', () => {
     ]);
     pushReplies.set(device(1).endpoint, 500);
     expect((await member.post(PUSH_TEST_PATH)).statusCode).toBe(422);
+  });
+});
+
+// Lot 8.10 : types de notification choisis par membre, « approuvée automatiquement » dans la cloche, le courriel, le push.
+describe('types de notification par membre', () => {
+  const preferences = async (member: Actor) =>
+    (await member.get(NOTIFICATION_PREFERENCES_PATH)).json<NotificationPreferencesView>();
+  /** Enregistre ses choix par type ; adresse et canaux restent ceux du membre. */
+  const choose = async (member: Actor, types: object) => {
+    const { email, emailNotifications, pushNotifications } = await preferences(member);
+    return member.put(NOTIFICATION_PREFERENCES_PATH, { email, emailNotifications, pushNotifications, types });
+  };
+  /** Types des notifications de sa cloche. */
+  const bell = async (member: Actor): Promise<NotificationKind[]> =>
+    (await member.get(NOTIFICATIONS_PATH)).json<NotificationPage>().results.map((n) => n.kind);
+  const storedTypes = (data: Awaited<ReturnType<typeof setup>>['data'], member: Actor) =>
+    data.db.select({ types: users.notificationTypes }).from(users).where(eq(users.id, member.user.id)).get()?.types;
+
+  it('chacun ne se voit proposer que les types qu’il peut recevoir, selon ses droits', async () => {
+    const { as } = await setup();
+    const member = await preferences(await as('member'));
+    const manager = await preferences(await as('manager'));
+    expect(member.types).toEqual(MEMBER_TYPES);
+    // Gestionnaire : « Gérer les demandes » et « Gérer les signalements ». « Approuvée automatiquement » : désactivé d'office.
+    expect(manager.types).toEqual({
+      ...MEMBER_TYPES,
+      requested: true,
+      failed: true,
+      auto_approved: false,
+      issue_created: true,
+    });
+  });
+
+  it('un droit retiré retire les types de gestion correspondants', async () => {
+    const { as, data } = await setup();
+    const manager = await as('manager');
+    data.db
+      .update(users)
+      .set({ permissions: { canManageIssues: false } })
+      .where(eq(users.id, manager.user.id))
+      .run();
+    const { types } = await preferences(manager);
+    expect(Object.keys(types)).toContain('requested');
+    expect(Object.keys(types)).not.toContain('issue_created');
+  });
+
+  it('enregistrés : seul l’écart aux valeurs par défaut est gardé, absents = inchangés', async () => {
+    const { as, data } = await setup();
+    const manager = await as('manager');
+    expect(storedTypes(data, manager)).toBeNull();
+    const saved = await choose(manager, { declined: false, auto_approved: true, requested: true });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json<NotificationPreferencesView>().types).toMatchObject({
+      declined: false,
+      auto_approved: true,
+      requested: true,
+    });
+    expect(storedTypes(data, manager)).toEqual({ declined: false, auto_approved: true });
+    // Les canaux seuls : les choix par type restent.
+    await manager.prefer({ pushNotifications: false });
+    expect(storedTypes(data, manager)).toEqual({ declined: false, auto_approved: true });
+    // Revenir aux valeurs par défaut efface l'écart.
+    await choose(manager, { declined: true, auto_approved: false });
+    expect(storedTypes(data, manager)).toBeNull();
+  });
+
+  it('un type qu’il ne peut pas recevoir est refusé (403), un type inconnu aussi (400), rien n’est enregistré', async () => {
+    const { as, data } = await setup();
+    const member = await as('member');
+    for (const types of [{ requested: false }, { auto_approved: true }, { issue_created: false }]) {
+      expect((await choose(member, types)).statusCode).toBe(403);
+    }
+    expect((await choose(member, { inconnu: false })).statusCode).toBe(400);
+    expect((await choose(member, { approved: 'non' })).statusCode).toBe(400);
+    // Un lot refusé n'enregistre aucun de ses types, même ceux qui sont permis.
+    expect((await choose(member, { approved: false, requested: false })).statusCode).toBe(403);
+    expect(storedTypes(data, member)).toBeNull();
+  });
+
+  it('un type désactivé : ni ligne dans la cloche, ni courriel, ni push ; les autres le reçoivent', async () => {
+    const { as, sent } = await setup({ smtp: {} });
+    const member = await as('member');
+    const quiet = await as('manager', 'gestionnaire-discret');
+    const loud = await as('manager', 'gestionnaire-attentif');
+    for (const [manager, n] of [
+      [quiet, 1],
+      [loud, 2],
+    ] as const) {
+      await manager.prefer({ email: `gestion${n}@exemple.fr` });
+      await manager.subscribe(n);
+    }
+    expect((await choose(quiet, { requested: false })).statusCode).toBe(200);
+
+    expect((await requestMovie(member)).statusCode).toBe(201);
+    const { mails, pushes } = await sent();
+    expect(await bell(quiet)).toEqual([]);
+    expect(await bell(loud)).toEqual(['requested']);
+    expect(mails.map((m) => m.to)).toEqual(['gestion2@exemple.fr']);
+    expect(pushes.map((p) => p.endpoint)).toEqual([device(2).endpoint]);
+  });
+
+  it('un membre qui désactive « refusée » ne reçoit plus les refus, mais ses autres notifications', async () => {
+    const { as, sent } = await setup({ smtp: {} });
+    const member = await as('member');
+    await member.prefer({ email: 'membre@exemple.fr' });
+    await member.subscribe(1);
+    const manager = await as('manager');
+    await choose(member, { declined: false });
+    const created = (await requestMovie(member)).json<{ id: number }>();
+    expect((await manager.post(`/api/requests/${created.id}/decline`, { reason: 'Déjà en VO' })).statusCode).toBe(200);
+    const { mails, pushes } = await sent();
+    expect(await bell(member)).toEqual([]);
+    expect(mails).toEqual([]);
+    expect(pushes).toEqual([]);
+  });
+
+  it('« approuvée automatiquement » : désactivée par défaut, reçue une fois activée (cloche, courriel, push)', async () => {
+    const { as, sent } = await setup({ smtp: {} });
+    const requester = await as('auto_approve');
+    const quiet = await as('manager', 'gestionnaire-defaut');
+    const watching = await as('manager', 'gestionnaire-actif');
+    for (const [manager, n] of [
+      [quiet, 1],
+      [watching, 2],
+    ] as const) {
+      await manager.prefer({ email: `gestion${n}@exemple.fr` });
+      await manager.subscribe(n);
+    }
+    await choose(watching, { auto_approved: true });
+
+    expect((await requestMovie(requester)).statusCode).toBe(201);
+    const { mails, pushes } = await sent();
+
+    expect(await bell(quiet)).not.toContain('auto_approved');
+    expect(await bell(watching)).toContain('auto_approved');
+    // Aucun courriel ni push de ce type pour le gestionnaire resté aux valeurs par défaut.
+    const title = 'Demande approuvée automatiquement';
+    expect(mails.filter((m) => m.subject === title).map((m) => m.to)).toEqual(['gestion2@exemple.fr']);
+    expect(pushes.filter((p) => (p.payload as { title: string }).title === title).map((p) => p.endpoint)).toEqual([
+      device(2).endpoint,
+    ]);
+    const mail = mails.find((m) => m.subject === title);
+    expect(mail?.text).toContain(
+      `${requester.user.name} a demandé « Matrix <1999> » : elle a été approuvée automatiquement.`,
+    );
+    // Le demandeur n'est jamais prévenu de sa propre approbation, ni par ce type.
+    expect(await bell(requester)).not.toContain('auto_approved');
+  });
+
+  describe('courriel « approuvée automatiquement » et SMTP', () => {
+    const title = 'Demande approuvée automatiquement';
+    /** Un gestionnaire qui a activé le type, puis une demande approuvée automatiquement ; objets des courriels reçus. */
+    const subjectsAfterAutoApproval = async (ctx: Awaited<ReturnType<typeof setup>>) => {
+      const manager = await ctx.as('manager');
+      await manager.prefer({ email: 'gestion@exemple.fr' });
+      await choose(manager, { auto_approved: true });
+      expect((await requestMovie(await ctx.as('auto_approve'))).statusCode).toBe(201);
+      return (await ctx.sent()).mails.map((m) => m.subject);
+    };
+
+    it('configuration ancienne (sans marqueur) : « approved » reçoit aussi le courriel', async () => {
+      const ctx = await setup({ smtp: { events: ['approved'] } });
+      expect(await subjectsAfterAutoApproval(ctx)).toContain(title);
+    });
+
+    it('enregistrée par le propriétaire avec « auto_approved » décoché : pas de courriel', async () => {
+      const ctx = await setup({ smtp: { events: ['approved'] } });
+      const owner = await ctx.as('owner');
+      expect((await owner.put(SMTP_SETTINGS_PATH, { ...SMTP, events: ['approved'] })).statusCode).toBe(200);
+      expect(await subjectsAfterAutoApproval(ctx)).not.toContain(title);
+    });
   });
 });

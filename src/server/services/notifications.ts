@@ -11,10 +11,11 @@ import {
   type NotificationPage,
   type NotificationsRead,
   type NotificationView,
+  notificationEnabled,
   type notificationListQuerySchema,
-  type RequestNotificationKind,
+  notificationTypes,
 } from '../../shared/notifications.ts';
-import { autoApproves, type Capabilities, capabilitiesOf } from '../../shared/roles.ts';
+import { autoApproves, capabilitiesOf } from '../../shared/roles.ts';
 import type { RequestEventType } from '../../shared/status.ts';
 import type { Data, Db } from '../db/index.ts';
 import { issueComments, issues, media, notifications, requests, users } from '../db/schema.ts';
@@ -73,6 +74,11 @@ export function notificationMessage(
         title: 'Échec de l’envoi',
         body: `L’envoi${ofTitle}${requesterName ? `, demandé par ${requesterName},` : ''} a échoué${detail ? ` : ${detail}` : '.'}`,
       };
+    case 'auto_approved':
+      return {
+        title: 'Demande approuvée automatiquement',
+        body: `${requesterName ?? 'Un membre'} a demandé ${quoted ?? 'un titre'} : elle a été approuvée automatiquement.`,
+      };
     case 'requested_on_behalf':
       return { title: 'Demande faite pour vous', body: `${quoted ?? 'Un titre'} a été demandé pour vous.` };
     case 'issue_created':
@@ -86,33 +92,28 @@ export function notificationMessage(
   }
 }
 
-/** Titre court d'un évènement d'agent : celui de la notification du membre, sauf l'approbation automatique. */
+/** Titre court d'un évènement d'agent : celui de la notification du membre. */
 export function agentEventTitle(kind: AgentEventKind, serverName: string): string {
-  if (kind === 'auto_approved') return 'Demande approuvée automatiquement';
   return notificationMessage(kind, { title: null, requesterName: null, detail: null, serverName }).title;
 }
 
 // --- Écriture (dans la transaction de l'évènement) ---
 
-/** Qui reçoit chaque notification. */
-const RECIPIENTS: Record<RequestNotificationKind, 'requester' | 'managers'> = {
-  requested: 'managers',
-  failed: 'managers',
-  approved: 'requester',
-  declined: 'requester',
-  available: 'requester',
-};
 /**
- * Membres qui ont ce droit (gérer les demandes ou les signalements) : destinataires des notifications « à traiter ».
- * Droits évalués membre par membre (rôle et remplacements) : la table des membres reste petite.
+ * Destinataires « à traiter » d'un type : les membres qui ont son droit (`notificationTypes`, gérer les demandes ou les
+ * signalements) ; `null` si le type n'en demande aucun (il va au demandeur, à l'auteur). Droits évalués membre par
+ * membre (rôle et remplacements) : la table des membres reste petite.
  */
-const memberIdsWith = (tx: Pick<Db, 'select'>, capability: keyof Capabilities) =>
-  tx
+const holdersOf = (tx: Pick<Db, 'select'>, kind: NotificationKind): string[] | null => {
+  const { capability } = notificationTypes[kind];
+  if (!capability) return null;
+  return tx
     .select({ id: users.id, role: users.role, permissions: users.permissions })
     .from(users)
     .all()
     .filter((u) => capabilitiesOf(u)[capability])
     .map((u) => u.id);
+};
 
 /** Une notification de l'appli, pour chacun de ses destinataires. */
 export interface NotificationFact {
@@ -149,11 +150,20 @@ export function onNotificationsCreated(listener: CreatedListener): () => void {
 /**
  * Seul point d'entrée des notifications : une ligne par destinataire, dans la transaction de l'évènement (annulée avec
  * elle), puis distribution aux autres canaux après validation selon les préférences de chacun (`services/delivery.ts`).
- * Tout type de `notificationKinds` passe par ici : rien à ajouter pour qu'il parte aussi par courriel et en push.
+ * Tout type de `notificationKinds` passe par ici : rien à ajouter pour qu'il parte aussi par courriel et en push. Un
+ * membre qui a désactivé ce type (`users.notification_types`, défaut du type sinon) n'a ni ligne, ni courriel, ni push.
  */
-export function notify(tx: Pick<Db, 'insert'>, fact: NotificationFact) {
+export function notify(tx: Pick<Db, 'select' | 'insert'>, fact: NotificationFact) {
   const { kind, actorId, detail, at } = fact;
-  const recipients = [...new Set(fact.recipients)].filter((id) => id !== actorId);
+  const candidates = [...new Set(fact.recipients)].filter((id) => id !== actorId);
+  if (candidates.length === 0) return;
+  const recipients = tx
+    .select({ id: users.id, choices: users.notificationTypes })
+    .from(users)
+    .where(inArray(users.id, candidates))
+    .all()
+    .filter((u) => notificationEnabled(u.choices, kind))
+    .map((u) => u.id);
   if (recipients.length === 0) return;
   const rows = tx
     .insert(notifications)
@@ -203,7 +213,8 @@ export function onRequestEvent(listener: RequestEventListener): () => void {
  * idempotente), un webhook rejoué n'en crée pas de nouvelles. Le membre qui agit n'est jamais prévenu de sa propre
  * action (approbation automatique, refus par un gestionnaire de sa propre demande). Une nouvelle demande ne prévient
  * les gestionnaires que si elle attend une approbation : pas pour une demande approuvée automatiquement
- * (`autoApproves`), ni pour des saisons ajoutées à une demande déjà en attente (évènement `requested` avec détail). Les agents (Discord, ntfy, Telegram, webhook) sont
+ * (`autoApproves`), ni pour des saisons ajoutées à une demande déjà en attente (évènement `requested` avec détail) ;
+ * l'approbation automatique, elle, est l'évènement `auto_approved`. Les agents (Discord, ntfy, Telegram, webhook) sont
  * prévenus de ces mêmes évènements, sans l'exclusion de l'acteur : un salon n'est pas un destinataire.
  */
 export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: RequestEventFact) {
@@ -216,6 +227,7 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
       permissions: users.permissions,
       type: media.type,
       is4k: requests.is4k,
+      createdBy: requests.createdBy,
     })
     .from(requests)
     .innerJoin(users, eq(users.id, requests.userId))
@@ -227,8 +239,13 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
   if (kind === 'requested' && (detail !== null || autoApproves(capabilitiesOf(request), request))) return;
   const agentEvent = { ...event, kind: auto ? ('auto_approved' as const) : kind };
   for (const listener of requestEventListeners) listener(agentEvent);
-  const recipients = RECIPIENTS[kind] === 'requester' ? [request.userId] : memberIdsWith(tx, 'canManageRequests');
-  notify(tx, { kind, recipients, actorId, requestId, detail, at });
+  notify(tx, { kind, recipients: holdersOf(tx, kind) ?? [request.userId], actorId, requestId, detail, at });
+  // Approbation automatique : ceux qui suivent les demandes en sont prévenus (désactivé par défaut, `notificationTypes`),
+  // sauf le gestionnaire qui a demandé à la place du membre : c'est lui qui agit.
+  if (auto) {
+    const recipients = (holdersOf(tx, 'auto_approved') ?? []).filter((id) => id !== request.createdBy);
+    notify(tx, { kind: 'auto_approved', recipients, actorId, requestId, detail, at });
+  }
 }
 
 /**
@@ -236,7 +253,7 @@ export function notifyRequestEvent(tx: Pick<Db, 'select' | 'insert'>, event: Req
  * transaction de la demande, puis par courriel et push selon ses préférences (`notify`).
  */
 export function notifyRequestedOnBehalf(
-  tx: Pick<Db, 'insert'>,
+  tx: Pick<Db, 'select' | 'insert'>,
   { requestId, userId, actorId, at }: { requestId: number; userId: string; actorId: string; at: Date },
 ) {
   notify(tx, { kind: 'requested_on_behalf', recipients: [userId], actorId, requestId, detail: null, at });
@@ -258,7 +275,7 @@ export interface IssueEventFact {
 export function notifyIssueEvent(tx: Pick<Db, 'select' | 'insert'>, { issueId, kind, actorId, at }: IssueEventFact) {
   const issue = tx.select({ userId: issues.userId }).from(issues).where(eq(issues.id, issueId)).get();
   if (!issue) return;
-  const managers = memberIdsWith(tx, 'canManageIssues');
+  const managers = holdersOf(tx, 'issue_created') ?? [];
   let to: string[];
   if (kind === 'issue_created') to = managers;
   else if (kind === 'issue_commented') {
