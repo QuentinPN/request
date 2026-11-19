@@ -20,7 +20,25 @@ const PROVIDER_COUNT = 40;
 const RATINGS = [5, 6, 7, 8, 9];
 const MIN_RUNTIMES = [60, 90, 120, 150];
 const MAX_RUNTIMES = [90, 120, 150, 180, 240];
-const LANGUAGES = ['fr', 'en', 'ja', 'ko', 'es', 'de', 'it', 'pt', 'zh', 'hi', 'ru', 'tr', 'sv', 'da', 'nl', 'pl'];
+/** Langues originales proposées (Découvrir, règles de surcharge), codes ISO 639-1. */
+export const LANGUAGES = [
+  'fr',
+  'en',
+  'ja',
+  'ko',
+  'es',
+  'de',
+  'it',
+  'pt',
+  'zh',
+  'hi',
+  'ru',
+  'tr',
+  'sv',
+  'da',
+  'nl',
+  'pl',
+];
 const FIRST_YEAR = 1920;
 const SORT_LABELS: Record<BrowseSort, string> = {
   popularity: 'Popularité',
@@ -30,7 +48,7 @@ const SORT_LABELS: Record<BrowseSort, string> = {
 };
 
 const names = new Intl.DisplayNames(['fr'], { type: 'language' });
-const languageLabel = (code: string) => {
+export const languageLabel = (code: string) => {
   const name = names.of(code) ?? code;
   return name.charAt(0).toLocaleUpperCase('fr') + name.slice(1);
 };

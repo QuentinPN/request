@@ -1,12 +1,14 @@
 import { arrLabel, hasAnimeRoute } from '../../shared/arr-servers.ts';
 import { isAnime, type MediaType } from '../../shared/media.ts';
-import type { SendChoiceInput, SendOptions } from '../../shared/requests.ts';
+import { type OverrideRule, type OverrideRuleValues, ruleLayer, rulesOnServer } from '../../shared/override-rules.ts';
+import { resolveSendChoice, type SendChoiceInput, type SendOptions } from '../../shared/requests.ts';
 import { DEFAULT_SERIES_TYPE, type SeriesType } from '../../shared/settings.ts';
 import type { Data } from '../db/index.ts';
-import { arrKindOf, findOrCreateMemberTag, listArrOptions, mergeTags } from '../integrations/arr.ts';
+import { arrKindOf, findOrCreateMemberTag, mergeTags } from '../integrations/arr.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { HttpError, NotConfiguredError } from '../lib/api-errors.ts';
-import { type ArrServerConfig, listArrServers, serversOf } from './arr-servers.ts';
+import { type ArrServerConfig, arrOptionsOf, getArrServer, listArrServers, serversOf } from './arr-servers.ts';
+import { matchingRules } from './override-rules.ts';
 import { loadDetails } from './tmdb.ts';
 
 type Sources = Pick<Data, 'db' | 'cryptoKey'>;
@@ -76,20 +78,26 @@ export async function isAnimeTitle(
 export const isAnimeTitleOrDefault = (...args: Parameters<typeof isAnimeTitle>) =>
   isAnimeTitle(...args).catch(() => false);
 
-/** Étiquettes envoyées avec un titre : celles de la destination, plus celle du membre si le serveur le demande. */
+/**
+ * Étiquettes envoyées avec un titre : celles de la destination, celles des règles de surcharge qui jouent sur ce serveur,
+ * plus celle du membre si le serveur le demande ; sans doublon.
+ */
 export async function tagsToSend(
   server: ArrServerConfig,
   destination: Destination,
   member: { id: string; name: string } | null,
+  rules: readonly Pick<OverrideRule, 'serverId' | 'tags'>[] = [],
 ): Promise<number[]> {
-  if (!server.tagRequester || !member) return destination.tags;
-  return mergeTags(destination.tags, [await findOrCreateMemberTag(server.type, server, member)]);
+  const tags = mergeTags(destination.tags, ...rulesOnServer(rules, server.id).map((rule) => rule.tags));
+  if (!server.tagRequester || !member) return tags;
+  return mergeTags(tags, [await findOrCreateMemberTag(server.type, server, member)]);
 }
 
 /**
- * Serveurs du type et de la qualité, puis profils et dossiers de l'un d'eux (le serveur par défaut sauf `serverId`) et
- * ses valeurs par défaut pour le titre `tmdbId` (réglages anime d'une série d'animation). Ni clé ni adresse de
- * connexion dans la réponse, seulement l'adresse externe.
+ * Serveurs du type et de la qualité, puis profils et dossiers de l'un d'eux et ses valeurs par défaut pour le titre
+ * `tmdbId` : règles de surcharge qui valent pour lui, puis réglages anime d'une série d'animation. Serveur : `serverId`,
+ * sinon celui de la première règle, sinon le serveur par défaut (`resolveSendChoice`). Ni clé ni adresse de connexion
+ * dans la réponse, seulement l'adresse externe.
  */
 export async function sendOptions(
   data: Sources,
@@ -98,10 +106,13 @@ export async function sendOptions(
   { is4k = false, serverId, tmdbId }: { is4k?: boolean; serverId?: number; tmdbId?: number } = {},
 ): Promise<SendOptions> {
   const kind = arrKindOf(type);
-  const server = sendServer(data, type, is4k, serverId);
+  const rules = tmdbId === undefined ? [] : await matchingRules(data, tmdb, type, is4k, tmdbId);
+  const levels = { approver: { serverId }, rules: rules.map(ruleLayer) };
+  const server = sendServer(data, type, is4k, resolveSendChoice(levels).serverId);
   const anime = tmdbId !== undefined && (await isAnimeTitleOrDefault(tmdb, server, type, tmdbId));
   const destination = destinationOf(server, anime);
-  const options = await listArrOptions(kind, server);
+  const shown = resolveSendChoice({ ...levels, defaults: destination }, server.id);
+  const options = await arrOptionsOf(data.db, server);
   return {
     servers: serversOf(listArrServers(data), kind, is4k).map(({ id, name, isDefault, externalUrl }) => ({
       id,
@@ -112,22 +123,49 @@ export async function sendOptions(
     })),
     serverId: server.id,
     ...options,
-    defaultProfileId: destination.qualityProfileId,
-    defaultFolder: destination.rootFolderPath,
-    defaultSeriesType: type === 'tv' ? (destination.seriesType ?? DEFAULT_SERIES_TYPE) : null,
+    defaultProfileId: shown.qualityProfileId ?? destination.qualityProfileId,
+    defaultFolder: shown.rootFolderPath ?? destination.rootFolderPath,
+    defaultSeriesType: type === 'tv' ? (shown.seriesType ?? DEFAULT_SERIES_TYPE) : null,
     anime: anime && hasAnimeRoute(server),
+    rules: rulesOnServer(rules, server.id).map(({ id, name }) => ({ id, name })),
   };
 }
 
 /**
  * Profil et dossier choisis (approbateur, demande avancée) : ils doivent exister sur le serveur d'envoi, sinon 400 et
  * rien n'est enregistré ni envoyé. Sans choix (valeurs du serveur, lots, approbation automatique), aucun appel.
+ * Listes lues en cache (`arrOptionsOf`), relues du serveur si le cache est vide.
  */
-export async function assertSendChoice(server: ArrServerConfig, { qualityProfileId, rootFolderPath }: SendChoiceInput) {
+export async function assertSendChoice(
+  data: Sources,
+  server: ArrServerConfig,
+  { qualityProfileId, rootFolderPath }: SendChoiceInput,
+) {
   if (qualityProfileId === undefined && rootFolderPath === undefined) return;
-  const options = await listArrOptions(server.type, server);
+  const options = await arrOptionsOf(data.db, server);
   if (qualityProfileId !== undefined && !options.qualityProfiles.some((p) => p.id === qualityProfileId))
     throw new HttpError(400, `Profil de qualité inconnu de ${server.name}`);
   if (rootFolderPath !== undefined && !options.rootFolders.some((f) => f.path === rootFolderPath))
     throw new HttpError(400, `Dossier racine inconnu de ${server.name}`);
+}
+
+/**
+ * Cible d'une règle de surcharge : serveur du type de la règle (sinon 400), profil et dossier existant sur ce serveur
+ * (`assertSendChoice`, comme la demande avancée). Inchangés depuis `stored` : pas revalidés, le serveur peut être en
+ * panne (activer, renommer, réordonner).
+ */
+export async function assertRuleTarget(data: Sources, values: OverrideRuleValues, stored?: OverrideRule | null) {
+  const server = getArrServer(data, values.serverId);
+  if (!server || server.type !== arrKindOf(values.type))
+    throw new HttpError(400, 'Serveur inconnu ou d’un autre type que la règle');
+  if (
+    stored?.serverId === values.serverId &&
+    stored.qualityProfileId === values.qualityProfileId &&
+    stored.rootFolderPath === values.rootFolderPath
+  )
+    return;
+  await assertSendChoice(data, server, {
+    qualityProfileId: values.qualityProfileId ?? undefined,
+    rootFolderPath: values.rootFolderPath ?? undefined,
+  });
 }

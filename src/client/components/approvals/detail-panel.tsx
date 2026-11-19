@@ -52,7 +52,7 @@ function SendTo({
     <SendChoiceFields
       service={arrName(request.type, request.is4k)}
       options={options}
-      value={shownSendChoice(options, [choice, requestSendChoice(request)])}
+      value={shownSendChoice(options, { approver: choice, stored: requestSendChoice(request) })}
       onChoice={onChoice}
       disabled={disabled}
     />

@@ -12,3 +12,9 @@ export function logError(message: string, detail?: unknown) {
   if (!appLog) return console.error(message, detail);
   appLog.error(detail instanceof Error ? { err: detail } : { detail }, message);
 }
+
+/** Journalise un avertissement (repli dégradé, l'action continue) ; sans logger posé, repli sur la console. */
+export function logWarn(message: string, detail?: unknown) {
+  if (!appLog) return console.warn(message, detail);
+  appLog.warn(detail instanceof Error ? { err: detail } : { detail }, message);
+}

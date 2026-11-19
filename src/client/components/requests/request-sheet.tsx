@@ -606,7 +606,7 @@ function AdvancedOptions({
     type: media.type,
     is4k,
     serverId: choice.serverId,
-    tmdbId: media.type === 'tv' ? media.tmdbId : undefined,
+    tmdbId: media.tmdbId,
   };
   const options = useQuery({ ...sendOptionsQuery(target), enabled: open });
   const arr = arrName(media.type, is4k);
@@ -616,7 +616,7 @@ function AdvancedOptions({
       <SendChoiceFields
         service={arr}
         options={options.data}
-        value={shownSendChoice(options.data, [choice])}
+        value={shownSendChoice(options.data, { approver: choice })}
         onChoice={onChoice}
         disabled={disabled || options.isPlaceholderData}
       />

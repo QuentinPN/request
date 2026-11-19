@@ -129,6 +129,7 @@ const rawVideo = z.object({ key: z.string(), site: optionalString, type: optiona
 const rawKeyword = z.object({ id: z.number().int(), name: z.string() });
 
 const rawDetails = rawMedia.extend({
+  original_language: optionalString,
   genres: z.array(genreSchema).nullish(),
   runtime: z.number().nullish(),
   seasons: z
@@ -300,6 +301,7 @@ function toDetails(raw: RawDetails, type: MediaType, { language, region }: Local
     similar: (raw.similar?.results ?? []).map((r) => toSummary(r, type)),
     externalIds: { imdb: raw.external_ids?.imdb_id || null, tvdb: raw.external_ids?.tvdb_id ?? null },
     keywords: (type === 'movie' ? raw.keywords?.keywords : raw.keywords?.results) ?? [],
+    originalLanguage: raw.original_language || null,
     ...(raw.last_episode_to_air && {
       lastAired: {
         seasonNumber: raw.last_episode_to_air.season_number,

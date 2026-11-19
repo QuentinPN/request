@@ -128,6 +128,8 @@ export const mediaDetailsSchema = mediaSummarySchema.extend({
   fourK: fourKSchema,
   /** Mots-clés TMDB (blocage par mot-clé) ; usage serveur. */
   keywords: z.array(genreSchema).optional(),
+  /** Langue originale TMDB (ISO 639-1) : règles de surcharge ; usage serveur. */
+  originalLanguage: z.string().nullish(),
   /** Série : dernier épisode diffusé (TMDB), pour compter les épisodes attendus d'une saison en cours ; usage serveur. */
   lastAired: z.object({ seasonNumber: z.number().int(), episodeNumber: z.number().int() }).nullish(),
 });

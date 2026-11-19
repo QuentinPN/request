@@ -19,6 +19,7 @@ import {
 import type { z } from 'zod';
 import { arrLabel } from '../../shared/arr-servers.ts';
 import { keyOf, type MediaDetails, type MediaType } from '../../shared/media.ts';
+import { ruleLayer } from '../../shared/override-rules.ts';
 import {
   type ApproveRequestInput,
   type BatchResult,
@@ -70,11 +71,12 @@ import { logError } from '../lib/logger.ts';
 import { one } from '../lib/sql.ts';
 import { DAY_MS } from '../lib/time.ts';
 import type { SessionViewer } from '../plugins/auth.ts';
-import { hasArrServer } from './arr-servers.ts';
+import { forgetArrOptions, hasArrServer } from './arr-servers.ts';
 import type { AvailabilityService } from './availability.ts';
 import { assertNotBlocked, assertTitleNotBlocked } from './blocklist.ts';
 import { mediaServerName } from './media-server.ts';
 import { notifyRequestEvent, notifyRequestedOnBehalf } from './notifications.ts';
+import { matchingRules } from './override-rules.ts';
 import {
   assertSendChoice,
   destinationOf,
@@ -509,20 +511,33 @@ export function createRequests(
   }
 
   /**
-   * Choix d'envoi prêt à enregistrer sur la demande : serveur du type et de la qualité (sinon 400 ; à défaut le serveur
-   * par défaut, gardé avec le choix), profil et dossier existant sur ce serveur (sinon 400). `null` : aucun choix.
+   * Choix d'envoi prêt à enregistrer sur la demande : serveur du type et de la qualité (sinon 400 ; à défaut celui de la
+   * première règle de surcharge, sinon le serveur par défaut, gardé avec le choix : les listes montrées étaient les
+   * siennes), profil et dossier existant sur ce serveur (sinon 400). `null` : aucun choix.
    * Égal à `stored` (choix déjà enregistré) : pas revalidé, le serveur peut être en panne ou le dossier disparu.
    */
-  async function storableChoice(type: MediaType, is4k: boolean, input: SendChoiceInput, stored?: StoredChoice) {
+  async function storableChoice(
+    title: { type: MediaType; tmdbId: number },
+    is4k: boolean,
+    input: SendChoiceInput,
+    stored?: StoredChoice,
+  ) {
     if (!hasSendChoice(input)) return null;
-    const server = sendServer(data, type, is4k, input.serverId);
+    const { type } = title;
+    const rules = input.serverId === undefined ? await matchingRules(data, deps.tmdb, type, is4k, title.tmdbId) : [];
+    const server = sendServer(
+      data,
+      type,
+      is4k,
+      resolveSendChoice({ approver: input, rules: rules.map(ruleLayer) }).serverId,
+    );
     const choice = {
       serverId: server.id,
       qualityProfileId: input.qualityProfileId ?? null,
       rootFolder: input.rootFolderPath ?? null,
       seriesType: type === 'tv' ? (input.seriesType ?? null) : null,
     };
-    if (!stored || !sameChoice(choice, stored)) await assertSendChoice(server, input);
+    if (!stored || !sameChoice(choice, stored)) await assertSendChoice(data, server, input);
     return choice;
   }
 
@@ -677,11 +692,14 @@ export function createRequests(
     try {
       const server = sendServer(data, row.type, row.is4k, row.serverId);
       const destination = destinationOf(server, await isAnimeTitle(deps.tmdb, server, row.type, row.tmdbId));
+      // Profil, dossier et type de série des règles sont déjà sur la demande (approbation) ; leurs étiquettes, comme
+      // celles du serveur, sont relues à chaque envoi.
+      const rules = await matchingRules(data, deps.tmdb, row.type, row.is4k, row.tmdbId);
       const target = {
         qualityProfileId: row.qualityProfileId ?? destination.qualityProfileId,
         rootFolderPath: row.rootFolder ?? destination.rootFolderPath,
         search: server.searchOnAdd,
-        tags: await tagsToSend(server, destination, getUser(db, row.userId)),
+        tags: await tagsToSend(server, destination, getUser(db, row.userId), rules),
       };
       if (row.type === 'movie') {
         const { radarrId } = await addMovie(server, {
@@ -716,6 +734,8 @@ export function createRequests(
   async function send(id: number, actor: User) {
     const row = requireRow(id);
     const outcome = await deliver(row, seasonsByRequest([id]).get(id) ?? []);
+    // Échec (profil ou dossier disparu, entre autres) : les listes du serveur sont relues au prochain choix.
+    if (!outcome.ok && row.serverId !== null) forgetArrOptions(db, row.serverId);
     db.transaction((tx) => {
       const at = new Date(now());
       const updated = tx
@@ -761,15 +781,15 @@ export function createRequests(
   ): Promise<RequestDetail> {
     const row = requireRow(id);
     const seasons = seasonsByRequest([id]).get(id) ?? [];
-    // Ordre de priorité (`resolveSendChoice`) : choix de l'approbateur, puis celui enregistré sur la demande (demande
-    // avancée, import Seerr), puis les valeurs par défaut du serveur. Serveur choisi du mauvais type ou de la mauvaise
-    // qualité : 400. Aucun serveur : l'envoi échouera avec un message clair.
-    const layers = [choice, storedSendChoice(row)];
-    const server = serverFor(row, resolveSendChoice(layers).serverId);
-    if (server) await assertSendChoice(server, choice);
+    // Ordre de priorité : `resolveSendChoice` (approbateur, demande, règles de surcharge, valeurs du serveur). Serveur
+    // choisi du mauvais type ou de la mauvaise qualité : 400. Aucun serveur : l'envoi échouera avec un message clair.
+    const rules = await matchingRules(data, deps.tmdb, row.type, row.is4k, row.tmdbId);
+    const levels = { approver: choice, stored: storedSendChoice(row), rules: rules.map(ruleLayer) };
+    const server = serverFor(row, resolveSendChoice(levels).serverId);
+    if (server) await assertSendChoice(data, server, choice);
     const destination =
       server && destinationOf(server, await isAnimeTitleOrDefault(deps.tmdb, server, row.type, row.tmdbId));
-    const sent = resolveSendChoice(destination ? [...layers, destination] : layers, server?.id);
+    const sent = resolveSendChoice({ ...levels, defaults: destination }, server?.id);
     // Valeurs envoyées gardées sur la demande (une relance les reprend).
     db.transaction((tx) => {
       // Choix d'envoi ou saisons modifiés pendant les appels ci-dessus : le gestionnaire ne les a pas vus.
@@ -838,7 +858,7 @@ export function createRequests(
       const details = await deps.availability.withDetailsStatus(await loadDetails(deps.tmdb(), 'tv', row.tmdbId));
       validated = wantedSeasons(details, asked, isoDay(now()), row.is4k, data);
     }
-    const choice = await storableChoice(row.type, row.is4k, input, row);
+    const choice = await storableChoice(row, row.is4k, input, row);
     db.transaction(
       (tx) => {
         const at = new Date(now());
@@ -916,7 +936,7 @@ export function createRequests(
       if (!hasArrServer(db, arrKindOf(input.type), true))
         throw new HttpError(409, `Aucun serveur ${arrLabel(arrKindOf(input.type), true)} n’est configuré`);
     }
-    const choice = await storableChoice(input.type, is4k, input);
+    const choice = await storableChoice(input, is4k, input);
     const details = await deps.availability.withDetailsStatus(await loadDetails(deps.tmdb(), input.type, input.tmdbId));
     assertNotBlocked(data, details);
     let wanted: number[] = [];

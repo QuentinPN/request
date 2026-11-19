@@ -27,6 +27,7 @@ import { issuesRoutes } from './routes/issues.ts';
 import { maintenanceRoutes } from './routes/maintenance.ts';
 import { mediaServerRoutes } from './routes/media-server.ts';
 import { notificationsRoutes } from './routes/notifications.ts';
+import { overrideRulesRoutes } from './routes/override-rules.ts';
 import { pushRoutes } from './routes/push.ts';
 import { requestsRoutes } from './routes/requests.ts';
 import { setupRoutes } from './routes/setup.ts';
@@ -225,6 +226,7 @@ export async function buildApp({
   discoverSettingsRoutes(app);
   generalRoutes(app);
   aboutRoutes(app);
+  overrideRulesRoutes(app);
   await app.register(catalogueRoutes);
   await app.register(mediaServerRoutes);
   const images = createImageCache({

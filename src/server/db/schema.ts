@@ -1,7 +1,8 @@
-import { sql } from 'drizzle-orm';
+import { type AnyColumn, sql } from 'drizzle-orm';
 import { check, customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { z } from 'zod';
 import { arrKinds } from '../../shared/arr-servers.ts';
+import type { BlockedKeyword } from '../../shared/blocklist.ts';
 import { issueStatuses, issueTypes } from '../../shared/issues.ts';
 import { jobRunStatuses } from '../../shared/jobs.ts';
 import { mediaTypes } from '../../shared/media.ts';
@@ -544,5 +545,49 @@ export const apiKeys = sqliteTable(
     // Authentification d'une requête `X-Api-Key` : recherche par hash.
     uniqueIndex('api_keys_key_hash_unique').on(table.keyHash),
     index('api_keys_created_by_idx').on(table.createdBy),
+  ],
+);
+
+/** `CHECK (json_valid(colonne) AND json_type(colonne) = 'array')` : liste JSON (conditions et étiquettes des règles). */
+const jsonArrayCheck = (name: string, column: AnyColumn) =>
+  check(name, sql`json_valid(${column}) AND json_type(${column}) = 'array'`);
+
+/**
+ * Règles de surcharge (lot 8.8, Seerr `OverrideRule`). Conditions en listes JSON (genres et mots-clés TMDB, langues
+ * originales) : toujours lues en entier avec la règle, jamais filtrées en SQL. Effets `NULL` = inchangés ; `tags` : ids
+ * d'étiquettes ajoutées. `position` : la première règle qui correspond l'emporte (sans `UNIQUE`, le réordonnancement
+ * réécrit toutes les positions). Supprimer le serveur supprime ses règles.
+ */
+export const overrideRules = sqliteTable(
+  'override_rules',
+  {
+    id: integer().primaryKey(),
+    name: text().notNull(),
+    type: text({ enum: mediaTypes }).notNull(),
+    serverId: integer()
+      .notNull()
+      .references(() => arrServers.id, { onDelete: 'cascade' }),
+    genres: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
+    languages: text({ mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+    keywords: text({ mode: 'json' }).$type<BlockedKeyword[]>().notNull().default(sql`'[]'`),
+    qualityProfileId: integer(),
+    rootFolderPath: text(),
+    seriesType: text({ enum: seriesTypes }),
+    tags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
+    position: integer().notNull(),
+    enabled: integer({ mode: 'boolean' }).notNull().default(true),
+    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  },
+  (table) => [
+    enumCheck('override_rules_type_check', table.type, mediaTypes),
+    enumCheck('override_rules_series_type_check', table.seriesType, seriesTypes),
+    check('override_rules_movie_series_type_check', sql`${table.type} = 'tv' OR ${table.seriesType} IS NULL`),
+    jsonArrayCheck('override_rules_genres_json_check', table.genres),
+    jsonArrayCheck('override_rules_languages_json_check', table.languages),
+    jsonArrayCheck('override_rules_keywords_json_check', table.keywords),
+    jsonArrayCheck('override_rules_tags_json_check', table.tags),
+    // Suppression d'un serveur : la cascade cherche ses règles par cet index.
+    index('override_rules_server_id_idx').on(table.serverId),
   ],
 );

@@ -91,7 +91,8 @@ export function ApprobationsPage() {
     const options = optionsOf(request);
     const id =
       request.status === 'pending'
-        ? shownSendChoice(options, [choices[request.id] ?? {}, requestSendChoice(request)]).qualityProfileId
+        ? shownSendChoice(options, { approver: choices[request.id], stored: requestSendChoice(request) })
+            .qualityProfileId
         : request.qualityProfileId;
     return profileName(options, id);
   };

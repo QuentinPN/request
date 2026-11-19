@@ -9,7 +9,7 @@ type Arr = TestResults['sonarr'];
 type Change = (patch: Partial<Values>) => void;
 
 /** Cases à cocher des étiquettes lues chez Radarr/Sonarr ; `selected` peut contenir des ids que le serveur n'a plus. */
-function TagPicker({
+export function TagPicker({
   legend,
   hint,
   tags,

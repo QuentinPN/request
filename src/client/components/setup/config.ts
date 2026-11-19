@@ -48,7 +48,8 @@ export type SectionId =
   | 'logs'
   | 'general'
   | 'about'
-  | 'discover';
+  | 'discover'
+  | 'overrideRules';
 export const settingsSectionOrder = [
   ...sectionOrder,
   'members',
@@ -68,6 +69,7 @@ export const settingsSectionOrder = [
   'general',
   'about',
   'discover',
+  'overrideRules',
 ] as const satisfies readonly SectionId[];
 
 /**
@@ -117,6 +119,10 @@ export const sectionText: Record<SectionId, { title: string; description: string
   logs: { title: 'Journaux', description: 'Dernières entrées du serveur, filtrables, sans secret' },
   general: { title: 'Général', description: 'Titre de l’application, affiché dans l’onglet et les messages' },
   about: { title: 'À propos', description: 'Version, environnement et compteurs, en lecture seule' },
+  overrideRules: {
+    title: 'Règles de surcharge',
+    description: 'Serveur, profil, dossier et étiquettes selon le genre, la langue ou les mots-clés d’un titre',
+  },
 };
 
 /** Service qui se teste à la connexion : une intégration (réglage) ou un serveur Radarr/Sonarr. */

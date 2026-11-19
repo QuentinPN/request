@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ArrServerSummary } from './arr-servers.ts';
 import { type MediaSummary, type MediaType, mediaTypeSchema, type Paged, type Season } from './media.ts';
+import type { AppliedRule } from './override-rules.ts';
 import type { Capabilities } from './roles.ts';
 import { profileId, rootFolderPath, type SeriesType, seriesTypes } from './settings.ts';
 import type { ArrTestResult } from './setup.ts';
@@ -198,13 +199,29 @@ export const storedSendChoice = (request: {
   seriesType: request.seriesType,
 });
 
+/** Niveaux de choix d'envoi, nommés : leur ordre n'est écrit que dans `resolveSendChoice`. */
+export interface SendChoiceLevels {
+  /** Choix du gestionnaire à l'approbation (ou serveur déjà choisi pour lire les listes). */
+  approver?: SendChoiceLayer | undefined;
+  /** Choix enregistré sur la demande (demande avancée, import Seerr). */
+  stored?: SendChoiceLayer | undefined;
+  /** Règles de surcharge qui valent pour le titre (`ruleLayer`), dans leur ordre. */
+  rules?: readonly SendChoiceLayer[] | undefined;
+  /** Valeurs par défaut du serveur pour le titre (réglages anime compris). */
+  defaults?: SendChoiceLayer | null | undefined;
+}
+
 /**
- * Ordre de priorité des choix d'envoi, le seul endroit où il est défini (voir DECISIONS.md) : niveaux du plus fort au
- * plus faible, d'ordinaire 1. choix du gestionnaire à l'approbation, 2. choix enregistré sur la demande, 3. valeurs par
- * défaut du serveur. Le serveur retenu est le premier donné (sinon `fallbackServerId`, le serveur par défaut) ; chaque
- * autre champ prend la première valeur d'un niveau qui vaut pour ce serveur.
+ * Ordre de priorité des choix d'envoi, le seul endroit où il est défini (voir DECISIONS.md) : 1. choix du gestionnaire
+ * à l'approbation, 2. choix enregistré sur la demande, 3. règles de surcharge, la première l'emportant champ par champ,
+ * 4. valeurs par défaut du serveur. Le serveur retenu est le premier donné (sinon `fallbackServerId`, le serveur par
+ * défaut) ; chaque autre champ prend la première valeur d'un niveau qui vaut pour ce serveur.
  */
-export function resolveSendChoice(layers: readonly SendChoiceLayer[], fallbackServerId?: number) {
+export function resolveSendChoice(
+  { approver, stored, rules = [], defaults }: SendChoiceLevels,
+  fallbackServerId?: number,
+) {
+  const layers = [approver, stored, ...rules, defaults].filter((layer) => layer != null);
   const serverId = layers.find((layer) => layer.serverId != null)?.serverId ?? fallbackServerId;
   const applies = layers.filter((layer) => layer.serverId == null || layer.serverId === serverId);
   const pick = <K extends keyof SendChoiceLayer>(key: K) =>
@@ -346,6 +363,11 @@ export interface SendOptions {
   defaultSeriesType: SeriesType | null;
   /** Série d'animation d'un serveur qui route les animes : ses valeurs par défaut sont celles de l'anime. */
   anime: boolean;
+  /**
+   * Règles de surcharge qui jouent sur ce serveur pour le titre (`tmdbId`), dans l'ordre : déjà fondues dans le serveur
+   * retenu (sans `serverId` demandé) et les valeurs par défaut ci-dessus.
+   */
+  rules: AppliedRule[];
 }
 
 /** `?userId=` : quota d'un autre membre (droit « Demander pour un autre »), pour la feuille de demande. */

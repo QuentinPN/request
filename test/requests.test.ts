@@ -841,6 +841,7 @@ describe('approbation et envoi', () => {
       defaultFolder: '/series',
       defaultSeriesType: 'standard',
       anime: false,
+      rules: [],
     };
     for (const role of ['owner', 'manager'] as const) {
       const res = await (await as(role, role)).get('/api/requests/send-options/tv');

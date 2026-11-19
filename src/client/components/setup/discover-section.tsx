@@ -140,7 +140,7 @@ function CustomRowForm({
 
 // --- Liste des rangées ---
 
-function IconButton({
+export function IconButton({
   label,
   onClick,
   disabled,

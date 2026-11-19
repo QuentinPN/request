@@ -22,6 +22,7 @@ import { LogsSection } from './logs-section';
 import { MembersSection } from './members-section';
 import { NtfySection } from './ntfy-section';
 import { OutgoingWebhookSection } from './outgoing-webhook-section';
+import { OverrideRulesSection } from './override-rules-section';
 import { arrServersQuery, settingQuery } from './queries';
 import { RulesSection } from './rules-section';
 import { SectionFrame, type SectionFrameProps, SectionLoadError } from './section-frame';
@@ -95,6 +96,11 @@ export function SetupSections({ wizard }: { wizard: boolean }) {
           <LogsSection section="logs" open={open === 'logs'} onToggle={() => toggle('logs')} />
           <GeneralSection section="general" open={open === 'general'} onToggle={() => toggle('general')} />
           <AboutSection section="about" open={open === 'about'} onToggle={() => toggle('about')} />
+          <OverrideRulesSection
+            section="overrideRules"
+            open={open === 'overrideRules'}
+            onToggle={() => toggle('overrideRules')}
+          />
         </>
       )}
     </div>

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { openDataDir } from '../src/server/db/index.ts';
 import { requestSeasons, requests, users } from '../src/server/db/schema.ts';
+import { forgetArrOptions } from '../src/server/services/arr-servers.ts';
 import { setSetting } from '../src/server/services/settings.ts';
 import { setQuotaOverride } from '../src/server/services/users.ts';
 import { type RequestDetail, resolveSendChoice } from '../src/shared/requests.ts';
@@ -124,14 +125,16 @@ describe('ordre de priorité des choix d’envoi (resolveSendChoice)', () => {
   it('approbateur, puis choix enregistré, puis valeurs du serveur ; un choix d’un autre serveur ne vaut pas', () => {
     const stored = { serverId: 2, qualityProfileId: 7, rootFolderPath: '/a', seriesType: 'anime' as const };
     const defaults = { qualityProfileId: 1, rootFolderPath: '/defaut', seriesType: 'standard' as const };
-    expect(resolveSendChoice([{}, stored, defaults], 1)).toEqual(stored);
-    expect(resolveSendChoice([{ qualityProfileId: 9 }, stored, defaults], 1)).toEqual({
+    expect(resolveSendChoice({ approver: {}, stored, defaults }, 1)).toEqual(stored);
+    expect(resolveSendChoice({ approver: { qualityProfileId: 9 }, stored, defaults }, 1)).toEqual({
       ...stored,
       qualityProfileId: 9,
     });
     // L'approbateur change de serveur : profil, dossier et type enregistrés pour le serveur 2 n'y existent pas.
-    expect(resolveSendChoice([{ serverId: 3 }, stored, defaults], 1)).toEqual({ serverId: 3, ...defaults });
-    expect(resolveSendChoice([{}, { serverId: null, qualityProfileId: null }, defaults], 1)).toEqual({
+    expect(resolveSendChoice({ approver: { serverId: 3 }, stored, defaults }, 1)).toEqual({ serverId: 3, ...defaults });
+    expect(
+      resolveSendChoice({ approver: {}, stored: { serverId: null, qualityProfileId: null }, defaults }, 1),
+    ).toEqual({
       serverId: 1,
       ...defaults,
     });
@@ -349,6 +352,8 @@ describe('PATCH /api/requests/:id : modifier une demande en attente', () => {
       await member.post('/api/requests', { type: 'movie', tmdbId: 603, rootFolderPath: '/films' })
     ).json<RequestDetail>();
     editNow = () => db.update(requests).set({ rootFolder: '/anime' }).where(eq(requests.id, id)).run();
+    // Profils mis en cache par la demande : oubliés pour que l'approbation relise Radarr.
+    forgetArrOptions(db, db.select().from(requests).where(eq(requests.id, id)).get()?.serverId ?? 0);
     const res = await (await as('owner', 'proprietaire')).post(`/api/requests/${id}/approve`, { qualityProfileId: 2 });
     expect(res.statusCode).toBe(409);
     expect(db.select().from(requests).where(eq(requests.id, id)).get()).toMatchObject({ status: 'pending' });
