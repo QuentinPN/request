@@ -614,6 +614,45 @@ describe('statuts dans les réponses du catalogue', () => {
     expect(body.similar[0]).not.toHaveProperty('status');
   });
 
+  it('fiche : l’id du serveur multimédia est toujours présent, `null` si le titre n’y est pas disponible', async () => {
+    const { get } = await setupApp({
+      ...library,
+      tmdb: {
+        'GET /movie/101': { id: 101, title: 'Dans Emby' },
+        'GET /movie/102': { id: 102, title: 'En téléchargement' },
+        'GET /movie/999': { id: 999, title: 'Inconnu' },
+      },
+    });
+
+    expect((await get('/api/media/movie/101')).json().embyItemId).toBe('e101');
+    expect((await get('/api/media/movie/102')).json().embyItemId).toBeNull();
+    expect((await get('/api/media/movie/999')).json().embyItemId).toBeNull();
+  });
+
+  it('fiche : sans serveur multimédia configuré, l’id est `null`', async () => {
+    const { get } = await setupApp({ tmdb: { 'GET /movie/101': { id: 101, title: 'Dans Emby' } } });
+
+    expect((await get('/api/media/movie/101')).json()).toHaveProperty('embyItemId', null);
+  });
+
+  it('fiche : une série partielle déjà demandée garde son id, alors que le statut affiché est « Demandé »', async () => {
+    const { app, get } = await setupApp({
+      emby: embyRoutes({ series: [{ id: 'e7', tmdb: 7 }] }),
+      sonarr: sonarrRoutes([{ id: 7, tvdbId: 97, tmdbId: 7, seasons: [[1, 3, 10]] }]),
+      tmdb: { 'GET /tv/7': { id: 7, name: 'Partielle', seasons: [{ season_number: 1, episode_count: 10 }] } },
+    });
+    expect((await get('/api/media/tv/7')).json()).toMatchObject({ status: 'partial', embyItemId: 'e7' });
+
+    const user = upsertFromEmby(app.data.db, { id: 'u1', name: 'Alice', avatar: null, isEmbyAdmin: false });
+    const row = selectCached(app.data.db, [tv(7)]).get();
+    app.data.db
+      .insert(requests)
+      .values({ mediaId: row?.id ?? 0, userId: user.id, status: 'sent' })
+      .run();
+
+    expect((await get('/api/media/tv/7')).json()).toMatchObject({ status: 'requested', embyItemId: 'e7' });
+  });
+
   it('fiche : épisodes attendus d’une saison en cours = ceux déjà diffusés (dernier épisode diffusé de TMDB)', async () => {
     const { get } = await setupApp({
       emby: embyRoutes({ series: [{ id: 'e60', tvdb: 6, episodes: { 1: 8, 2: 4 } }] }),

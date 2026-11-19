@@ -12,13 +12,13 @@ export const watchLinkQuery = queryOptions({
 });
 
 /**
- * Adresse « Regarder dans… » d'un titre (`embyItemId` : champ du contrat, id de l'élément sur le serveur), ou
+ * Adresse « Regarder dans… » d'un titre (`embyItemId` : champ du contrat, id de l'élément sur le serveur ; `null` sur une fiche hors bibliothèque), ou
  * `undefined` : titre absent du serveur, pas d'adresse publique réglée (Emby, Jellyfin), ou serveur injoignable.
  * N'interroge le serveur que pour un titre qui y est.
  */
-export function useWatchUrl(embyItemId: string | undefined): string | undefined {
-  const link = useQuery({ ...watchLinkQuery, enabled: embyItemId !== undefined }).data?.link;
-  return embyItemId !== undefined && link ? watchUrl(link, embyItemId) : undefined;
+export function useWatchUrl(embyItemId: string | null | undefined): string | undefined {
+  const link = useQuery({ ...watchLinkQuery, enabled: !!embyItemId }).data?.link;
+  return embyItemId && link ? watchUrl(link, embyItemId) : undefined;
 }
 
 /** Type du serveur multimédia choisi (état public de l'installation, déjà chargé par le garde), `null` sans réglage. */

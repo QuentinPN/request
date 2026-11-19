@@ -83,10 +83,14 @@ export const availabilitySchema = z.object({
 export type Availability = z.infer<typeof availabilitySchema>;
 
 /**
- * Statut d'un titre (affiche, fiche) : celui d'une saison, plus l'id Emby du titre quand il est dans la bibliothèque
- * (disponible ou partiel) : le navigateur en tire le lien « Regarder dans Emby » (`shared/emby.ts`).
+ * Statut d'un titre (affiche, fiche) : celui d'une saison, plus `embyItemId`, l'id de l'élément sur le serveur
+ * multimédia quand le titre est dans la bibliothèque (disponible ou partiel, même s'il est aussi demandé). Le nom est
+ * conservé pour Emby, Jellyfin et Plex : c'est l'id de l'élément chez chacun. Le navigateur en tire le lien « Regarder
+ * dans Emby » (`shared/emby.ts`), un client natif le bouton « Lire ». Les listes (recherche, Découvrir) l'omettent
+ * quand il n'existe pas ; la fiche (`GET /api/media/{type}/{tmdbId}`) l'envoie toujours, `null` si le titre n'est pas
+ * disponible.
  */
-export const titleAvailabilitySchema = availabilitySchema.extend({ embyItemId: z.string().optional() });
+export const titleAvailabilitySchema = availabilitySchema.extend({ embyItemId: z.string().nullish() });
 export type TitleAvailability = z.infer<typeof titleAvailabilitySchema>;
 
 /** Un titre ou une saison se demande tant qu'il n'est ni complet, ni en cours d'arrivée, ni déjà demandé. */

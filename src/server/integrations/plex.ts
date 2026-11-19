@@ -270,6 +270,7 @@ export function plexServer(config: Setting<'mediaServer'>, options: PlexOptions)
       if (friends.some((f) => f.id === account.id)) return toUser(account, false);
       throw new IntegrationError('unauthorized', SERVICE, 'Ce compte Plex n’a pas accès à ce serveur', { status: 403 });
     },
+    verifyUserToken: () => refuseCredentials('plex'),
     listUsers: async (): Promise<MediaServerListedUser[]> => {
       const [owner, friends] = await Promise.all([
         ownerAccount(),

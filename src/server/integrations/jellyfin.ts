@@ -16,6 +16,7 @@ import {
   toEmbyItem,
   toEmbyListedUser,
   userSchema,
+  verifyUserTokenWith,
 } from './emby.ts';
 import { createClient } from './http.ts';
 import { type MediaServer, type MediaServerItem, refuseCredentials, toServerItem } from './media-server.ts';
@@ -74,6 +75,12 @@ export function jellyfinServer(config: Setting<'mediaServer'>): MediaServer {
             credentials.password,
           )
         : refuseCredentials('jellyfin'),
+    // Le jeton seul, sans les champs d'appareil d'Request : Jellyfin ne doit rien rattacher à l'appareil du membre.
+    verifyUserToken: (token, userId) =>
+      verifyUserTokenWith(
+        { service: SERVICE, baseUrl: config.url, headers: { Authorization: `MediaBrowser Token="${token}"` } },
+        userId,
+      ),
     listUsers: async () => (await client.get('/Users', z.array(userSchema))).map(toEmbyListedUser),
     listLibraries: async () => librariesOf(await client.get('/Library/VirtualFolders', z.array(librarySchema))),
     lookup: { mode: 'scan', list: (query) => scanJellyfinItems(client, query) },

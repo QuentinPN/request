@@ -834,6 +834,8 @@ export function createAvailability(
     }
     return {
       ...withStatus(statuses, details),
+      // Règle de `statusesFor` (bibliothèque disponible ou partielle) ; `null` plutôt qu'absent sur la fiche.
+      embyItemId: statuses.get(keyOf(details))?.embyItemId ?? null,
       ...(fourK && { fourK }),
       seasons: seasonList,
       recommendations: details.recommendations.map((item) => withStatus(statuses, item)),

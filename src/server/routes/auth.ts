@@ -1,6 +1,18 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { LOGIN_PATH, LOGOUT_PATH, loginSchema, VIEWER_PATH } from '../../shared/auth.ts';
+import {
+  AUTH_SESSIONS_PATH,
+  type AuthSessions,
+  authSessionParamsSchema,
+  authSessionPath,
+  EMBY_TOKEN_PATH,
+  type EmbyTokenSession,
+  embyTokenLoginSchema,
+  LOGIN_PATH,
+  LOGOUT_PATH,
+  loginSchema,
+  VIEWER_PATH,
+} from '../../shared/auth.ts';
 import {
   loginMethodOf,
   PLEX_PIN_CHECK_PATH,
@@ -8,13 +20,27 @@ import {
   type PlexPinCreated,
   type PlexPinState,
 } from '../../shared/media-server.ts';
+import { tokenRefused } from '../integrations/emby.ts';
 import { IntegrationError } from '../integrations/http.ts';
-import { labelOf, type MediaServer, type MemberCredentials } from '../integrations/media-server.ts';
+import {
+  labelOf,
+  type MediaServer,
+  type MediaServerUser,
+  type MemberCredentials,
+} from '../integrations/media-server.ts';
 import { checkPlexPin, createPlexPin, type PlexPin, plexAuthUrl } from '../integrations/plex.ts';
 import { HttpError, parseRequest } from '../lib/api-errors.ts';
 import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
-import { endSession, refreshSessionCookie, startSession, viewerOf } from '../plugins/auth.ts';
-import { memberDefaultsOf, toViewer, upsertFromEmby } from '../services/users.ts';
+import {
+  currentSessionToken,
+  endSession,
+  forbidApiKey,
+  refreshSessionCookie,
+  startSession,
+  viewerOf,
+} from '../plugins/auth.ts';
+import { createSession, listUserSessions, revokeUserSession } from '../services/sessions.ts';
+import { memberDefaultsOf, toViewer, type User, upsertFromEmby } from '../services/users.ts';
 
 export const LOGIN_LIMIT = { limit: 10, windowMs: 5 * 60_000 };
 /** Codes PIN Plex en attente gardés au plus (les plus anciens oubliés d'abord) : la mémoire reste bornée. */
@@ -61,6 +87,19 @@ export function authRoutes(app: FastifyInstance) {
     return server;
   }
 
+  /**
+   * Membre reconnu par le serveur multimédia (mot de passe, code PIN Plex ou jeton) : son compte est créé ou rafraîchi
+   * selon les règles de `upsertFromEmby` (premier administrateur propriétaire, droits par défaut des nouveaux).
+   */
+  function admit(member: MediaServerUser): User {
+    return upsertFromEmby(
+      app.data.db,
+      { id: member.id, name: member.name, avatar: member.avatarUrl, isEmbyAdmin: member.isAdmin },
+      new Date(),
+      memberDefaultsOf(app.data),
+    );
+  }
+
   /** Authentifie le membre auprès du serveur, crée ou rafraîchit son compte et ouvre la session. */
   async function signIn(req: FastifyRequest, reply: FastifyReply, server: MediaServer, credentials: MemberCredentials) {
     const member = await server.authenticate(credentials).catch((error: unknown) => {
@@ -68,12 +107,7 @@ export function authRoutes(app: FastifyInstance) {
         throw new HttpError(credentials.method === 'plex' && error.status === 403 ? 403 : 401, error.message);
       throw error;
     });
-    const user = upsertFromEmby(
-      app.data.db,
-      { id: member.id, name: member.name, avatar: member.avatarUrl, isEmbyAdmin: member.isAdmin },
-      new Date(),
-      memberDefaultsOf(app.data),
-    );
+    const user = admit(member);
     startSession(req, reply, user.id);
     return toViewer(user);
   }
@@ -83,6 +117,45 @@ export function authRoutes(app: FastifyInstance) {
     const { username, password } = parseRequest(loginSchema, req.body);
     const server = serverFor('password');
     return { viewer: await signIn(req, reply, server, { method: 'password', username, password }) };
+  });
+
+  /**
+   * Connexion d'un client natif (Viewer) par le jeton d'accès Emby ou Jellyfin d'un membre : le serveur multimédia
+   * dit si le jeton vaut pour `userId` (`verifyUserToken` : `/Users/Me` chez Jellyfin, session de l'appareil de
+   * vérification chez Emby). Échec fermé : jeton refusé, autre compte, appel ou compte inconnu du serveur → 401 ;
+   * serveur injoignable → 502 comme `/login`. Le jeton n'est ni conservé ni journalisé. La session, nommée par
+   * `deviceName`, revient dans le corps : aucun cookie.
+   * Corps validé avant la limite (même compteur que `/login`) : un appel malformé, par exemple un formulaire d'un autre
+   * site (route sans CSRF), ne consomme pas les essais de l'adresse ; la limite passe avant tout appel au serveur.
+   */
+  app.post(EMBY_TOKEN_PATH, async (req, reply): Promise<EmbyTokenSession> => {
+    const { userId, accessToken, deviceName } = parseRequest(embyTokenLoginSchema, req.body);
+    limit(req, reply);
+    const server = app.mediaServers.current();
+    if (!server || server.kind === 'plex')
+      throw new HttpError(400, 'La connexion par jeton ne s’applique qu’à un serveur Emby ou Jellyfin');
+    const member = await server.verifyUserToken(accessToken, userId).catch((error: unknown) => {
+      if (!(error instanceof IntegrationError)) throw error;
+      if (error.kind === 'unauthorized') throw new HttpError(401, error.message);
+      if (error.kind === 'not_found') {
+        req.log.warn(
+          { service: error.service, status: error.status, url: error.url },
+          'Connexion par jeton refusée : appel ou compte inconnu du serveur multimédia',
+        );
+        // Même refus qu'un jeton inconnu : rien à apprendre pour qui essaie.
+        throw new HttpError(401, tokenRefused(error.service));
+      }
+      throw error;
+    });
+    const user = admit(member);
+    const { token, expiresAt } = createSession(
+      app.data.db,
+      user.id,
+      req.headers['user-agent'] ?? null,
+      new Date(),
+      deviceName,
+    );
+    return { token, expiresAt: expiresAt.toISOString(), viewer: toViewer(user) };
   });
 
   /** Connexion Plex, étape 1 : un code PIN plex.tv, à valider dans la fenêtre app.plex.tv que le navigateur ouvre. */
@@ -153,8 +226,30 @@ export function authRoutes(app: FastifyInstance) {
     }
   });
 
+  // En Bearer, révoque la session du jeton ; sinon celle du cookie, qui est effacé.
   app.post(LOGOUT_PATH, async (req, reply) => {
     endSession(req, reply);
+    return reply.code(204).send();
+  });
+
+  /**
+   * Sessions du membre connecté, par cookie ou par Bearer, quel que soit son rôle. Pas avec une clé d'API (403, comme la
+   * gestion des clés) : une clé n'a pas de session, et une liste vide ferait croire que son créateur n'en a aucune.
+   */
+  const ownSessions = { preHandler: forbidApiKey };
+
+  app.get(
+    AUTH_SESSIONS_PATH,
+    ownSessions,
+    async (req): Promise<AuthSessions> => ({
+      sessions: listUserSessions(app.data, viewerOf(req).user.id, currentSessionToken(req)),
+    }),
+  );
+
+  /** Révoque une session du membre (la courante comprise) ; 404 si l'identifiant n'est pas celui d'une des siennes. */
+  app.delete(authSessionPath(':id'), ownSessions, async (req, reply) => {
+    const { id } = parseRequest(authSessionParamsSchema, req.params);
+    if (!revokeUserSession(app.data, viewerOf(req).user.id, id)) throw new HttpError(404, 'Session introuvable');
     return reply.code(204).send();
   });
 

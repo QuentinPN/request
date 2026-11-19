@@ -45,12 +45,15 @@ export const autoRequestSettingSchema = z.object({ enabled: z.boolean() });
 export type AutoRequestSetting = z.output<typeof autoRequestSettingSchema>;
 
 /** Sort de la demande lancée par un ajout : faite, ou sautée (l'ajout à la liste, lui, a toujours réussi) avec son motif. */
-export type AutoRequestOutcome = { status: 'requested' } | { status: 'skipped'; reason: string };
+export const autoRequestOutcomeSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('requested') }),
+  z.object({ status: z.literal('skipped'), reason: z.string() }),
+]);
+export type AutoRequestOutcome = z.output<typeof autoRequestOutcomeSchema>;
 
 /** Réponse de l'ajout : `autoRequest` n'est présent que si l'option du membre était active. */
-export interface AddedToWatchlist extends InWatchlist {
-  autoRequest?: AutoRequestOutcome;
-}
+export const addedToWatchlistSchema = inWatchlistSchema.extend({ autoRequest: autoRequestOutcomeSchema.optional() });
+export type AddedToWatchlist = z.output<typeof addedToWatchlistSchema>;
 
 /** Message discret après un ajout (« Ajouté à Ma liste et demandé »), `null` quand rien n'est à dire. */
 export function addedMessage(outcome: AutoRequestOutcome | undefined): string | null {

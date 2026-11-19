@@ -1,1 +1,3 @@
 * text=auto eol=lf
+# Généré par `npm run openapi` : fins de ligne LF, comparé tel quel par test/openapi.test.ts.
+docs/openapi.json text eol=lf

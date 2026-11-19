@@ -5,10 +5,8 @@ export const mediaTypes = ['movie', 'tv'] as const;
 export const mediaTypeSchema = z.enum(mediaTypes);
 export type MediaType = z.infer<typeof mediaTypeSchema>;
 
-export interface MediaKey {
-  type: MediaType;
-  tmdbId: number;
-}
+export const mediaKeySchema = z.object({ type: mediaTypeSchema, tmdbId: z.number().int() });
+export type MediaKey = z.infer<typeof mediaKeySchema>;
 /** Clé unique d'un média (`movie:123`), partagée par les intégrations et les services. */
 export const keyOf = ({ type, tmdbId }: MediaKey) => `${type}:${tmdbId}`;
 

@@ -22,7 +22,7 @@ describe('migrations', () => {
 
     const again = openDataDir(dir);
     const applied = again.db.$client.prepare('select count(*) as n from __drizzle_migrations').get() as { n: number };
-    expect(applied.n).toBe(16);
+    expect(applied.n).toBe(17);
     expect(again.db.$client.pragma('journal_mode', { simple: true })).toBe('wal');
     again.db.$client.close();
   });

@@ -8,7 +8,7 @@ import {
   apiKeyPath,
 } from '../../shared/api-keys.ts';
 import { parseRequest } from '../lib/api-errors.ts';
-import { forbidApiKey, requireCapability, viewerOf } from '../plugins/auth.ts';
+import { forbidHeaderCredentials, requireCapability, viewerOf } from '../plugins/auth.ts';
 import { createApiKey, listApiKeys, revokeApiKey } from '../services/api-keys.ts';
 
 /**
@@ -17,7 +17,7 @@ import { createApiKey, listApiKeys, revokeApiKey } from '../services/api-keys.ts
  */
 export function apiKeysRoutes(app: FastifyInstance) {
   const { db } = app.data;
-  const sessionOwner = { preHandler: [forbidApiKey, requireCapability('isOwner')] };
+  const sessionOwner = { preHandler: [forbidHeaderCredentials, requireCapability('isOwner')] };
 
   app.get(API_KEYS_PATH, sessionOwner, async (): Promise<ApiKey[]> => listApiKeys(db));
 

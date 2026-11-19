@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { MediaKey, Paged } from './media.ts';
+import { type MediaKey, mediaKeySchema, pagedSchema } from './media.ts';
 import { capabilitiesOf, type Permission, type PermissionHolder } from './roles.ts';
 import { settingsPathOf } from './settings-path.ts';
 import type { RequestEventType } from './status.ts';
@@ -265,39 +265,39 @@ export const SMTP_TEST_PATH = `${SMTP_SETTINGS_PATH}/test`;
 
 // --- Réponses ---
 
-export interface NotificationView {
-  id: number;
-  kind: NotificationKind;
+export const notificationViewSchema = z.object({
+  id: z.number().int(),
+  kind: z.enum(notificationKinds),
   /** Titre court (« Demande approuvée ») et phrase, rendus par le serveur à la lecture. */
-  title: string;
-  body: string;
-  read: boolean;
-  createdAt: string;
-  requestId: number | null;
+  title: z.string(),
+  body: z.string(),
+  read: z.boolean(),
+  createdAt: z.string(),
+  requestId: z.number().int().nullable(),
   /** Signalement concerné (notifications `issue_*`) ; `null` si le signalement n'existe plus. */
-  issueId: number | null;
+  issueId: z.number().int().nullable(),
   /** Titre concerné (lien vers sa fiche) ; `null` si la demande ou le signalement n'existe plus. */
-  media: MediaKey | null;
-}
+  media: mediaKeySchema.nullable(),
+});
+export type NotificationView = z.output<typeof notificationViewSchema>;
 
 /** Une page de notifications du membre, et son nombre total de non lues (pastille de la cloche). */
-export interface NotificationPage extends Paged<NotificationView> {
-  unread: number;
-}
+export const notificationPageSchema = pagedSchema(notificationViewSchema).extend({ unread: z.number().int() });
+export type NotificationPage = z.output<typeof notificationPageSchema>;
 
-export interface NotificationsRead {
-  unread: number;
-}
+export const notificationsReadSchema = z.object({ unread: z.number().int() });
+export type NotificationsRead = z.output<typeof notificationsReadSchema>;
 
 /**
  * Préférences, et ce qui les rend utiles : courriel réglé par le propriétaire, appareils abonnés au push. `types` :
  * valeur effective de chaque type que le membre peut recevoir, et eux seuls.
  */
-export interface NotificationPreferencesView extends Omit<NotificationPreferences, 'types'> {
-  types: Partial<Record<NotificationKind, boolean>>;
-  emailAvailable: boolean;
-  pushDevices: number;
-}
+export const notificationPreferencesViewSchema = notificationPreferencesSchema.omit({ types: true }).extend({
+  types: notificationChoicesSchema,
+  emailAvailable: z.boolean(),
+  pushDevices: z.number().int(),
+});
+export type NotificationPreferencesView = z.output<typeof notificationPreferencesViewSchema>;
 
 export interface PushPublicKey {
   publicKey: string;

@@ -37,7 +37,7 @@ import {
 const AVATAR_TIMEOUT_MS = 8000;
 const AVATAR_MAX_AGE_S = 24 * 3600;
 /** Images matricielles seulement : jamais de SVG (scripts possibles) ni d'autre type relayé depuis Emby. */
-const AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+export const AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
 type IdParams = { Params: { id: string } };
 

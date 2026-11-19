@@ -25,7 +25,7 @@ export function parseImageCacheMaxBytes(env: string | undefined): number {
   return (valid ? mb : DEFAULT_IMAGE_CACHE_MAX_MB) * MIB;
 }
 
-const CONTENT_TYPES: Record<string, string> = {
+export const CONTENT_TYPES: Record<string, string> = {
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   png: 'image/png',
