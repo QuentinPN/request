@@ -45,6 +45,8 @@ curl -H "X-Api-Key: ur_…" https://requetes.exemple.fr/api/auth/me
 
 Le **statut** d'un titre (`status` dans la fiche et dans les résultats de recherche) dit s'il est disponible dans Emby, demandé, en attente d'approbation, etc. ; un titre absent de la bibliothèque et jamais demandé n'a pas de `status`.
 
+La fiche porte aussi `embyItemId` : l'id de l'élément sur le serveur multimédia (Emby, Jellyfin ou Plex) quand le titre y est disponible ou partiel (même s'il est aussi demandé), `null` sinon. Un client natif s'en sert pour proposer « Lire ». Les listes (recherche, Découvrir) ne l'envoient que lorsqu'il existe.
+
 Avec une clé, ces routes voient ce que voit son créateur (un propriétaire : toutes les demandes). Les autres routes de l'application (`/api/*`) acceptent aussi la clé ; les formats exacts sont les contrats Zod de `src/shared`.
 
 ## Webhook sortant (Réglages › Webhook sortant)
