@@ -882,7 +882,7 @@ export function createRequests(
   // --- Création ---
 
   /**
-   * Crée la demande (`created: true`), ou renvoie celle déjà en cours du membre (double clic, `created: false`).
+   * Crée la demande (`created: true`), ou renvoie celle déjà en cours du membre (double clic, `created: false`). `changed` : créée, ou des saisons ajoutées à la demande en cours.
    * Droit de demander ce type (et la 4K) du membre à qui elle sera, sinon 403 (`requestRefusal`). Vérification du quota
    * et insertion dans la même transaction. Approbation automatique de son type (4K : approbation automatique 4K,
    * `autoApproves`) → approuvée et envoyée aussitôt. Une demande 4K suppose le droit et un serveur 4K du type ; elle
@@ -899,7 +899,7 @@ export function createRequests(
   async function create(
     viewer: SessionViewer,
     input: CreateInput,
-  ): Promise<{ request: RequestDetail; created: boolean }> {
+  ): Promise<{ request: RequestDetail; created: boolean; changed: boolean }> {
     if (input.quotaExempt && !viewer.capabilities.canRequestQuotaExempt)
       throw new HttpError(403, 'Vous ne pouvez pas mettre une demande hors quota');
     assertCanChooseSend(viewer, input);
@@ -1013,21 +1013,31 @@ export function createRequests(
           .run();
         addEvent(tx, own.id, 'requested', author.id, at, `${SEASONS_ADDED} : ${missing.join(', ')}`);
         if (onBehalf) notifyRequestedOnBehalf(tx, { requestId: own.id, userId: user.id, actorId: author.id, at });
-        return { id: own.id, created: false };
+        return { id: own.id, created: false, merged: true };
       },
       { behavior: 'immediate' },
     );
 
+    const changed = outcome.created || !!outcome.merged;
+
     // Approbation automatique d'après les droits du membre, en son nom : il n'est pas prévenu de « sa » approbation.
     if (autoApproves(capabilities, input) && rowOf(outcome.id)?.status === 'pending') {
       try {
-        return { request: await approve(outcome.id, user, {}, true), created: outcome.created };
+        return {
+          request: await approve(outcome.id, user, {}, true),
+          created: outcome.created,
+          changed,
+        };
       } catch (error) {
         // Double clic : un appel concurrent l'a déjà approuvée ou envoyée, on renvoie son état actuel.
         if (!(error instanceof HttpError && error.statusCode === 409)) throw error;
       }
     }
-    return { request: await detailOf(outcome.id), created: outcome.created };
+    return {
+      request: await detailOf(outcome.id),
+      created: outcome.created,
+      changed,
+    };
   }
 
   // --- Listes et compteurs ---

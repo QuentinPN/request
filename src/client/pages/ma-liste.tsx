@@ -7,6 +7,7 @@ import { PosterGrid } from '@/components/media/poster-grid';
 import { Notice } from '@/components/notice';
 import { Page } from '@/components/page';
 import { Button } from '@/components/ui/button';
+import { AutoRequestOption } from '@/components/watchlist/auto-request-option';
 import { ImportDialog } from '@/components/watchlist/import-dialog';
 import { errorMessage } from '@/lib/http';
 import { useSetInWatchlist, watchlistQuery } from '@/lib/watchlist';
@@ -50,6 +51,7 @@ export function MaListePage() {
           Importer une liste
         </Button>
       </div>
+      <AutoRequestOption />
       {removeError && (
         <Notice tone="error" role="alert">
           {removeError}

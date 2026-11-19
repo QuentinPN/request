@@ -2,13 +2,17 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { pageQuerySchema, typeIdParamsSchema } from '../../shared/catalogue.ts';
 import { type MaskedSetting, settingSchemas } from '../../shared/settings.ts';
 import {
+  type AddedToWatchlist,
+  type AutoRequestSetting,
   addWatchlistSchema,
+  autoRequestSettingSchema,
   type InWatchlist,
   importPath,
   importQuerySchema,
   letterboxdImportSchema,
   TRAKT_SETTINGS_PATH,
   traktImportSchema,
+  WATCHLIST_AUTO_REQUEST_PATH,
   WATCHLIST_ITEM_ROUTE,
   WATCHLIST_PATH,
   type WatchlistImportResult,
@@ -17,9 +21,12 @@ import {
 import { testTrakt } from '../integrations/trakt.ts';
 import { asTestResult, HttpError, parseRequest } from '../lib/api-errors.ts';
 import { createRateLimiter, setRetryAfter } from '../lib/rate-limit.ts';
-import { ownerOnly, viewerOf } from '../plugins/auth.ts';
+import { ownerOnly, requireCapability, viewerOf } from '../plugins/auth.ts';
+import { createRequests } from '../services/requests.ts';
 import { getSetting, maskSetting, setSetting, withStoredSecrets } from '../services/settings.ts';
+import { setWatchlistAutoRequest } from '../services/users.ts';
 import { createWatchlist } from '../services/watchlist.ts';
+import { createAutoRequester } from '../services/watchlist-auto-request.ts';
 import { createWatchlistImport } from '../services/watchlist-import.ts';
 
 /**
@@ -31,6 +38,10 @@ export const IMPORT_LIMIT = { limit: 10, windowMs: 10 * 60_000 };
 export function watchlistRoutes(app: FastifyInstance, upstreams: { traktUrl?: string } = {}) {
   const { db, cryptoKey } = app.data;
   const service = createWatchlist(db, { tmdb: app.tmdb, availability: app.availability });
+  const autoRequest = createAutoRequester({
+    create: createRequests(app.data, { tmdb: app.tmdb, availability: app.availability }).create,
+    onUnexpectedError: (error) => app.log.warn({ err: error }, 'Demande automatique depuis Ma liste impossible'),
+  });
   const importer = createWatchlistImport(app.data, {
     tmdb: app.tmdb,
     ...(upstreams.traktUrl && { traktUrl: upstreams.traktUrl }),
@@ -52,10 +63,25 @@ export function watchlistRoutes(app: FastifyInstance, upstreams: { traktUrl?: st
     return service.list(userOf(req), page);
   });
 
-  app.post(WATCHLIST_PATH, async (req): Promise<InWatchlist> => {
+  // Seul l'ajout à la main demande (jamais l'import) ; l'ajout réussit même si la demande est refusée.
+  app.post(WATCHLIST_PATH, async (req): Promise<AddedToWatchlist> => {
     const { type, tmdbId } = parseRequest(addWatchlistSchema, req.body);
-    await service.add(userOf(req), type, tmdbId);
-    return { inList: true };
+    const viewer = viewerOf(req);
+    await service.add(viewer.user.id, type, tmdbId);
+    const outcome = await autoRequest(viewer, type, tmdbId);
+    return { inList: true, ...(outcome && { autoRequest: outcome }) };
+  });
+
+  // Option du membre ; sans le droit (retiré ou jamais accordé), lecture et écriture sont refusées (403).
+  const canAutoRequest = { preHandler: requireCapability('canAutoRequestWatchlist') };
+  app.get(
+    WATCHLIST_AUTO_REQUEST_PATH,
+    canAutoRequest,
+    async (req): Promise<AutoRequestSetting> => ({ enabled: viewerOf(req).user.watchlistAutoRequest }),
+  );
+  app.put(WATCHLIST_AUTO_REQUEST_PATH, canAutoRequest, async (req): Promise<AutoRequestSetting> => {
+    const { enabled } = parseRequest(autoRequestSettingSchema, req.body);
+    return { enabled: setWatchlistAutoRequest(db, userOf(req), enabled).watchlistAutoRequest };
   });
 
   app.get(WATCHLIST_ITEM_ROUTE, async (req): Promise<InWatchlist> => {

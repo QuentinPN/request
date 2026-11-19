@@ -1,9 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { Bookmark, BookmarkCheck, Plus } from 'lucide-react';
-import { Fragment, type ReactNode, useId } from 'react';
+import { Fragment, type ReactNode, useId, useState } from 'react';
 import { imageUrl, type MediaDetails, type MediaSummary } from '../../../shared/media.ts';
+import { addedMessage } from '../../../shared/watchlist.ts';
 import { errorMessage } from '../../lib/http.ts';
+import { invalidateAfterRequest } from '../../lib/requests.ts';
 import { inWatchlistQuery, useSetInWatchlist } from '../../lib/watchlist.ts';
 import { Notice } from '../notice.tsx';
 import {
@@ -113,14 +115,26 @@ export function Request4kButton({ media, className }: { media: MediaDetails; cla
 
 /**
  * « Ajouter à ma liste » / « Dans ma liste » de la fiche : un clic ajoute ou retire le titre de la liste de souhaits du
- * membre. Une erreur du serveur s'affiche sous les boutons (la ligne d'actions passe à la ligne).
+ * membre ; avec l'option « demander automatiquement », l'ajout dit aussi si le titre a été demandé. Une erreur du
+ * serveur ou ce message s'affiche sous les boutons (la ligne d'actions passe à la ligne).
  */
 export function WatchlistButton({ media, className }: { media: MediaSummary; className?: string }) {
   const item = { type: media.type, tmdbId: media.tmdbId };
   const query = useQuery(inWatchlistQuery(item));
   const set = useSetInWatchlist(item);
+  const client = useQueryClient();
+  const [added, setAdded] = useState<string | null>(null);
   const inList = query.data?.inList ?? false;
   const Icon = inList ? BookmarkCheck : Bookmark;
+  const toggle = () => {
+    setAdded(null);
+    set.mutate(!inList, {
+      onSuccess: (result) => {
+        setAdded(addedMessage(result.autoRequest));
+        if (result.autoRequest?.status === 'requested') invalidateAfterRequest(client);
+      },
+    });
+  };
   return (
     <>
       <Button
@@ -128,13 +142,18 @@ export function WatchlistButton({ media, className }: { media: MediaSummary; cla
         size="lg"
         className={cn('border-input', className)}
         disabled={query.isPending || set.isPending}
-        onClick={() => set.mutate(!inList)}
+        onClick={toggle}
       >
         <Icon data-icon="inline-start" />
         {inList ? 'Dans ma liste' : 'Ajouter à ma liste'}
       </Button>
+      {added && (
+        <p role="status" className="order-last basis-full text-sm text-muted-foreground">
+          {added}
+        </p>
+      )}
       {set.isError && (
-        <p role="alert" className="basis-full text-sm text-(--text-danger)">
+        <p role="alert" className="order-last basis-full text-sm text-(--text-danger)">
           {errorMessage(set.error, 'La liste n’a pas pu être modifiée.')}
         </p>
       )}

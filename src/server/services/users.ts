@@ -197,6 +197,11 @@ export function setQuotaOverride(
   return updateUser(db, id, { quotaOverride, updatedAt: now });
 }
 
+/** Active ou désactive la demande automatique des titres ajoutés à « Ma liste » (le droit se vérifie à l'appelant). */
+export function setWatchlistAutoRequest(db: Pick<Db, 'update'>, id: string, enabled: boolean, now = new Date()): User {
+  return updateUser(db, id, { watchlistAutoRequest: enabled, updatedAt: now });
+}
+
 /** Valeur effective de chaque type de notification que ce membre peut recevoir (seuls ceux-là sont proposés). */
 export const notificationTypesOf = (user: User): NotificationPreferencesView['types'] =>
   Object.fromEntries(receivableKinds(user).map((kind) => [kind, notificationEnabled(user.notificationTypes, kind)]));
