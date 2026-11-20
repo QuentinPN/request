@@ -28,6 +28,7 @@ Before each dispatch, split the work into independent pieces: launch them **in t
 - Independent = no shared files, no order dependency, each piece understandable without the others' result. Typical cases: several `explorer` questions, `coder` passes on separate modules/files, a `checker` per finished `coder`, failures with different root causes (one `fixer` each).
 - Sequential when pieces touch the same files, one needs another's output, or the cause is still unknown (explore first, then split).
 - One brief per agent: its scope (files it may touch, files it must not), the goal, the expected summary. Never "fix everything".
+- Run `node .claude/hooks/setup-worktree.mjs` once before launching parallel agents in a fresh worktree: the test hook never installs.
 - A parallel `coder` may see test failures from another agent's area (the edit hook runs the whole suite): it reports them and leaves them alone.
 - When all return: check that no two agents edited the same file (`git diff --stat`), run the full suite, then a single `checker` on the combined diff if the pieces interact.
 
@@ -56,16 +57,17 @@ Code MUST be DRY. Do not duplicate definitions or logic. When the same constant,
 - Commits and PR titles: Conventional Commits, same `<type>` as the branch, optional scope (`feat(auth): add Discord login`). Short PR title and description.
 - "full send" or "full auto": skill `full-send`, the task is taken end to end up to a merged PR into the integration branch, never the production branch.
 - "semi auto": same skill, stopped at local commits: no push, no PR; the user reviews and ships.
+- Worktrees get neither dependencies nor gitignored files (`.env`...) from the main checkout. The SessionStart hook provisions them; for a worktree created mid-session, or when the test hook says dependencies are missing, run `node .claude/hooks/setup-worktree.mjs` from the worktree root before testing. Never symlink `node_modules` to the main checkout. List extra gitignored files to copy in a root `.worktreeinclude` (one path per line).
 
 ## Slash commands
 
-| Command            | Purpose                                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `/state-machines`  | Document explicit/implicit state machines in `docs/STATE_MACHINES.md`, find reachable invalid states, fix with regression tests |
-| `/dead-code`       | Separate branch: remove every `src/` function/file without a caller                                                             |
-| `/dedupe`          | Separate branch: merge duplicated logic in `src/` into single functions                                                         |
-| `/unused-deps`     | Separate branch: remove unused `package.json` dependencies one by one                                                           |
-| `/clean-worktrees` | Remove worktrees whose branch is already merged, log them in `MENAGE.md`                                                        |
+| Command           | Purpose                                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `/state-machines` | Document explicit/implicit state machines in `docs/STATE_MACHINES.md`, find reachable invalid states, fix with regression tests |
+| `/dead-code`      | Separate branch: remove every `src/` function/file without a caller                                                             |
+| `/dedupe`         | Separate branch: merge duplicated logic in `src/` into single functions                                                         |
+| `/unused-deps`    | Separate branch: remove unused `package.json` dependencies one by one                                                           |
+| `/clean-all`      | Remove worktrees, local and remote branches already merged                                                                      |
 
 ## Behavioral guidelines
 
