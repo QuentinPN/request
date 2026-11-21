@@ -6,7 +6,7 @@ Mis à jour à la fin de chaque session. Point d'entrée pour reprendre le trava
 
 - **Phase 8 (parité Seerr) terminée sur `dev`** (PR #60 à #74 : droits fins, suppression de membre, demande avancée, modification d’une demande en attente, règles de surcharge, demande automatique depuis Ma liste, notifications par membre ; vote écarté). Fusion `dev` → `main` des phases 7 et 8 accordée le 2026-11-19.
 - **MVP et phase 7 fonctionnellement complets sur `dev`** : phases 0 à 5 et 7 faites ; la phase 6 attend le propriétaire et les vraies instances (voir « Prochaines actions »). La phase 7 (PR #38 à #47) a livré les 15 fonctions de « Plus tard », voir ROADMAP.md.
-- **Dépôt** : `github.com/QuentinPN/Request` (privé). `main` = production (le MVP y a été fusionné, #31 puis #36 ; la phase 7 reste sur `dev` jusqu'à l'accord du propriétaire), `dev` = intégration ; une PR par lot, CI `npm run verify` + construction de l'image Docker.
+- **Dépôt** : `git.example.com/QuentinPN/Request` (Gitea, CI sur le runner du serveur ; `github.com/QuentinPN/Request` reste en sauvegarde). `main` = production (le MVP y a été fusionné, #31 puis #36 ; la phase 7 reste sur `dev` jusqu'à l'accord du propriétaire), `dev` = intégration ; une PR par lot, CI `npm run verify` + construction de l'image Docker.
 - **Méthode** : lots indépendants en parallèle (un worktree par agent), `checker` sur chaque PR, correctifs avant fusion.
 
 ## Ce qui existe réellement
