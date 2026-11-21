@@ -7,4 +7,4 @@
 - Thème : tokens d'Hub, correspondance shadcn dans DESIGN.md (`--accent` shadcn ≠ accent de marque `--brand`).
 - Interface : trois maquettes avant toute nouvelle page, contrôle visuel à 1440 et 390 px avant commit (captures dans `docs/captures/` seulement pour une nouvelle page, une refonte ou sur demande), raccourcis Windows uniquement.
 - Le serveur fait autorité sur droits, quotas et statuts ; secrets chiffrés en base, jamais envoyés au client.
-- Commandes (à créer en phase 1) : `npm run dev`, `npm run lint`, `npm run check`, `npm test`, `npm run verify`.
+- Commandes (à créer en phase 1) : `bun install`, `bun run dev`, `bun run lint`, `bun run check`, `bun run test`, `bun run verify` (Bun installe et lance les scripts ; l’appli tourne sous Node 26).

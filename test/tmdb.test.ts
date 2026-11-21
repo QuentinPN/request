@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTmdb, imageUrl, testTmdb } from '../src/server/integrations/tmdb.ts';
 import { TtlLru } from '../src/server/lib/lru.ts';
-import { delay, type FakeHandler, startFakeServer, status } from './fake-server.ts';
+import { closedPortUrl, delay, type FakeHandler, startFakeServer, status } from './fake-server.ts';
 
 const fixture = (name: string): Record<string, unknown> =>
   JSON.parse(readFileSync(new URL(`./fixtures/tmdb/${name}.json`, import.meta.url), 'utf8'));
@@ -337,9 +337,7 @@ describe('authentification', () => {
   });
 
   it('testTmdb lève une erreur lisible quand TMDB est injoignable', async () => {
-    const server = await startFakeServer();
-    await server.close();
-    await expect(testTmdb({ apiKey: V3_KEY, baseUrl: server.url })).rejects.toMatchObject({
+    await expect(testTmdb({ apiKey: V3_KEY, baseUrl: await closedPortUrl() })).rejects.toMatchObject({
       name: 'IntegrationError',
       message: 'TMDB injoignable',
     });

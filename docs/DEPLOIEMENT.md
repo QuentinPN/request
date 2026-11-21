@@ -101,7 +101,7 @@ Si un Caddy tourne déjà sur l'hôte (ports 80/443 pris), ne démarrez pas le s
 La base est sauvegardée **à chaud** (API de sauvegarde de SQLite, cohérente même pendant des écritures) dans `/data/backups/request-AAAAMMJJ-HHMMSS.db` (UTC) :
 
 - automatiquement une fois par jour (la dernière a plus de 24 h), en gardant les `BACKUP_KEEP` dernières ;
-- à la demande : `docker compose exec request node scripts/backup.ts` (en local, hors Docker : `npm run backup`).
+- à la demande : `docker compose exec request node scripts/backup.ts` (en local, hors Docker : `bun run backup`).
 
 Une copie dans le même volume ne protège pas d'un disque perdu : copiez régulièrement `backups/` **et** `secret.key` ailleurs.
 
