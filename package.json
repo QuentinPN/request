@@ -14,7 +14,7 @@
     "format": "biome check --write .",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run lint && npm run check && npm test && npm run build",
+    "verify": "bun run lint && bun run check && bun run test && bun run build",
     "backup": "node scripts/backup.ts",
     "openapi": "node scripts/openapi.ts",
     "db:generate": "drizzle-kit generate"

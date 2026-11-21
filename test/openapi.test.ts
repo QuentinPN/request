@@ -49,7 +49,7 @@ const inCoveredZone = (route: string) => {
 describe('document OpenAPI', () => {
   it('docs/openapi.json est à jour', () => {
     const committed = readFileSync(OPENAPI_FILE, 'utf8').replace(/\r\n/g, '\n');
-    expect(committed === openApiJson(), 'docs/openapi.json n’est plus à jour : lancer npm run openapi').toBe(true);
+    expect(committed === openApiJson(), 'docs/openapi.json n’est plus à jour : lancer bun run openapi').toBe(true);
   });
 
   it('chaque opération documentée existe dans Fastify', async () => {

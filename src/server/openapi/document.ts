@@ -222,7 +222,7 @@ export function buildOpenApi(): Json {
   };
 }
 
-/** Fichier commité du document, réécrit par `npm run openapi`. */
+/** Fichier commité du document, réécrit par `bun run openapi`. */
 export const OPENAPI_FILE = resolve(import.meta.dirname, '../../../docs/openapi.json');
 
 /** Le document tel qu'il est écrit dans `OPENAPI_FILE` : indenté, fin de ligne finale. */
