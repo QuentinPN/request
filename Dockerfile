@@ -2,26 +2,31 @@
 # Image linux/amd64 : une étape de build (client Vite), une étape de dépendances de production (better-sqlite3 est
 # compilé ici, avec les outils de build) et une image finale sans outils, qui tourne sans privilèges.
 ARG NODE_VERSION=26
+ARG BUN_VERSION=1.4.5
+
+FROM oven/bun:${BUN_VERSION} AS bun
 
 FROM node:${NODE_VERSION}-slim AS tools
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
+# Bun installe les dépendances (bun.lock) ; Node reste le runtime de l'appli et de Vite.
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
 # Dépendances de production seules, binaire natif compilé puis vérifié (un binaire absent échoue ici, pas au démarrage).
 FROM tools AS prod-deps
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts \
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production --ignore-scripts \
   && npm rebuild better-sqlite3 --foreground-scripts \
   && node -e "new (require('better-sqlite3'))(':memory:')"
 
 # Client : toutes les dépendances, `vite build` écrit dist/client.
 FROM tools AS build
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --ignore-scripts
 COPY . .
-RUN npm run build
+RUN bun run build
 
 FROM node:${NODE_VERSION}-slim AS runtime
 ENV NODE_ENV=production \

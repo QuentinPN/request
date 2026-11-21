@@ -1,4 +1,4 @@
-// Sauvegarde en ligne de la base SQLite dans <DATA_DIR>/backups, sans arrêter l'appli : `npm run backup`, ou dans le
+// Sauvegarde en ligne de la base SQLite dans <DATA_DIR>/backups, sans arrêter l'appli : `bun run backup`, ou dans le
 // conteneur `docker compose exec request node scripts/backup.ts`. Variables : DATA_DIR, BACKUP_KEEP.
 import { join } from 'node:path';
 import Database from 'better-sqlite3';

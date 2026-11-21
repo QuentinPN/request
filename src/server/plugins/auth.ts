@@ -453,7 +453,7 @@ export async function registerAuth(app: FastifyInstance, { setupToken }: { setup
 const SETUP_TOKEN_REFUSED =
   'Jeton d’installation manquant ou invalide. Il est écrit dans les journaux du serveur à son démarrage (docker compose logs request), ou fixé par la variable SETUP_TOKEN.';
 
-/** Démarrage sans propriétaire : le jeton d'installation, sur une ligne des journaux (serveur et `npm run dev`), sauf s'il vient de `SETUP_TOKEN` (déjà connu de l'administrateur, à ne pas copier dans les journaux). */
+/** Démarrage sans propriétaire : le jeton d'installation, sur une ligne des journaux (serveur et `bun run dev`), sauf s'il vient de `SETUP_TOKEN` (déjà connu de l'administrateur, à ne pas copier dans les journaux). */
 export function announceSetupToken(app: FastifyInstance): void {
   if (hasOwner(app.data.db)) return;
   const shown = process.env.SETUP_TOKEN?.trim() ? 'celui de la variable SETUP_TOKEN.' : app.setupToken;
