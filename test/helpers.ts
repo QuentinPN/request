@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { afterEach } from 'vitest';
+import { afterAll, afterEach } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { type Data, type Db, migrationsFolder, openDataDir } from '../src/server/db/index.ts';
 import { users } from '../src/server/db/schema.ts';
@@ -24,10 +24,14 @@ export function setRole(db: Pick<Db, 'update'>, id: string, role: Role): User {
   return user;
 }
 
-/** Crée des dossiers temporaires, supprimés après chaque test du fichier appelant. */
+/**
+ * Crée des dossiers temporaires, supprimés à la fin du fichier (ou du `describe`) appelant : après tous les afterEach,
+ * donc après la fermeture des apps et des bases qui les ouvrent, quel que soit l'ordre des afterEach du lanceur
+ * (inverse sous Vitest, ordre de déclaration sous Bun).
+ */
 export function trackTempDirs() {
   const dirs: string[] = [];
-  afterEach(() => {
+  afterAll(() => {
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
   return () => {
@@ -41,7 +45,6 @@ export function trackTempDirs() {
 export function trackApps() {
   const tempDir = trackTempDirs();
   const apps: FastifyInstance[] = [];
-  // Déclaré après trackTempDirs : vitest exécute les afterEach en ordre inverse, les apps ferment avant rmSync.
   afterEach(async () => {
     for (const app of apps.splice(0)) await app.close();
   });
