@@ -7,7 +7,7 @@ Request tourne dans un seul conteneur Docker (`linux/amd64`, Node 26), derrière
 Prérequis : Docker avec Compose v2, un nom de domaine qui pointe vers l'hôte, les ports 80 et 443 joignables depuis Internet (Caddy en a besoin pour obtenir le certificat).
 
 ```sh
-git clone https://github.com/QuentinPN/Request.git && cd Request
+git clone http://git.example.com/QuentinPN/Request.git && cd Request
 cp .env.example .env        # renseigner DOMAIN
 docker compose up -d --build
 docker compose ps           # request doit passer « healthy »
@@ -74,11 +74,11 @@ Si Radarr ou Sonarr ne parvient pas à joindre le domaine public depuis l'hôte 
 
 Le push et l'installation de l'appli (PWA) exigent le HTTPS. `compose.local.yml` l'obtient sans rien exposer sur Internet : Caddy (image construite avec le module `caddy-dns/cloudflare`, voir `caddy/`) prouve la possession du domaine par un enregistrement DNS créé chez Cloudflare (défi DNS-01), et le domaine pointe vers l'IP locale du mini-PC.
 
-Le fichier est autonome : il n'utilise que des images publiées sur GHCR (`ghcr.io/quentinpn/request` et `request-caddy`) par `.github/workflows/images.yml` à chaque push sur `main` (donc à chaque mise en production), étiquetées `latest` et `sha-<commit>`. `REQUEST_TAG` (défaut `latest`) choisit l'étiquette, par exemple `sha-<commit>` pour revenir à une version précédente. Il reprend le durcissement et les variables de `compose.yml` : modifier l'un, c'est vérifier l'autre.
+Le fichier est autonome : il n'utilise que des images publiées sur le registre Gitea de l'hôte (`git.example.com/quentinpn/request` et `request-caddy`) par le job `images` de `.gitea/workflows/release.yml` à chaque release sur `main` (donc à chaque mise en production), étiquetées `latest`, `X.Y.Z`, `X.Y`, `X` et `sha-<commit>`. `REQUEST_TAG` (défaut `latest`) choisit l'étiquette, par exemple `sha-<commit>` pour revenir à une version précédente. Il reprend le durcissement et les variables de `compose.yml` : modifier l'un, c'est vérifier l'autre.
 
 1. **Cloudflare › DNS** : enregistrement `A` `demandes` → IP locale du mini-PC (ex. `192.0.2.14`), **nuage gris (DNS only)** : le proxy Cloudflare ne joint pas une IP privée. Fixez cette IP (bail DHCP réservé dans la box).
 2. **Cloudflare › Mon profil › Jetons d'API** : modèle « Modifier la zone DNS », zone `example.com` seule. C'est `CLOUDFLARE_API_TOKEN`.
-3. **GHCR** : les paquets sont privés comme le dépôt. Sur l'hôte (ou dans les registres de Dockhand), connectez-vous à `ghcr.io` avec un jeton GitHub classique limité à `read:packages` : `docker login ghcr.io -u <utilisateur>`.
+3. **Registre Gitea** : les paquets sont publics comme le dépôt (Gitea n'est joignable que depuis le réseau local ou Tailscale) : aucune connexion n'est nécessaire pour les tirer. `git.example.com` désigne le Gitea de l'hôte, que Docker admet en HTTP.
 4. Variables : `DOMAIN=demandes.example.com`, `CLOUDFLARE_API_TOKEN=…`, `REQUEST_BIND=<IP locale de l'hôte>` (Caddy n'est publié que sur elle), `TZ` (défaut `Europe/Paris`), plus celles du tableau ci-dessus si besoin. `HTTPS_PORT` (défaut `8445`, le 443 de l'hôte étant laissé au Caddy public) fixe le port publié ; l'adresse est `https://<DOMAIN>:<port>`, reprise dans `PUBLIC_URL`.
 5. `docker compose -f compose.local.yml up -d`, puis ouvrez `https://demandes.example.com:8445` depuis le réseau local. Le premier certificat prend une à deux minutes (journaux du service `caddy`).
 

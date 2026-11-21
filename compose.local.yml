@@ -1,13 +1,13 @@
 # Request sur le réseau local, en HTTPS (certificat Let's Encrypt par défi DNS Cloudflare), sans rien exposer
 # sur Internet. Voir docs/DEPLOIEMENT.md (« Réseau local seul »).
-# Autonome : images publiées sur GHCR par .github/workflows/images.yml, à coller tel quel dans Dockhand.
+# Autonome : images publiées sur le registre Gitea par .gitea/workflows/release.yml (job `images`), à coller tel quel dans Dockhand.
 #   Variables : DOMAIN (ex. demandes.example.com), CLOUDFLARE_API_TOKEN, REQUEST_BIND (IP locale de l'hôte)
 #   Puis https://<DOMAIN>:8445 (HTTPS_PORT)
 name: request
 
 services:
   request:
-    image: ghcr.io/quentinpn/request:${REQUEST_TAG:-latest}
+    image: git.example.com/quentinpn/request:${REQUEST_TAG:-latest}
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
@@ -33,7 +33,7 @@ services:
     networks: [proxy, media]
 
   caddy:
-    image: ghcr.io/quentinpn/request-caddy:${REQUEST_TAG:-latest}
+    image: git.example.com/quentinpn/request-caddy:${REQUEST_TAG:-latest}
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
