@@ -2,6 +2,7 @@
 .git
 .claude
 .github
+.gitea
 node_modules
 dist
 data
