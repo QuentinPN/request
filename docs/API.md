@@ -39,7 +39,7 @@ Le propriétaire choisit la portée d'une clé à sa création (`POST /api/setti
 
 ## Routes utiles
 
-Les routes d’un membre (connexion et sessions, catalogue, images et photos des membres, ses demandes, Ma liste, notifications) sont décrites en OpenAPI 3.1 dans [`docs/openapi.json`](openapi.json), généré depuis les schémas Zod par `npm run openapi` ; un test échoue s’il n’est plus à jour.
+Les routes d’un membre (connexion et sessions, catalogue, images et photos des membres, ses demandes, Ma liste, notifications) sont décrites en OpenAPI 3.1 dans [`docs/openapi.json`](openapi.json), généré depuis les schémas Zod par `bun run openapi` ; un test échoue s’il n’est plus à jour.
 
 | Besoin                     | Appel                                                                                           | Droit requis                                                                                                                                                                                                                                                                       |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
