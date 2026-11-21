@@ -11,20 +11,23 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
-# Bun installe les dépendances (bun.lock) ; Node reste le runtime de l'appli et de Vite.
+# Bun installe les dépendances (bun.lock) ; Node reste le runtime de l'appli et de Vite. Le cache de paquets de Bun est
+# un cache BuildKit (copié, pas lié, dans node_modules) : un bun.lock modifié ne retélécharge que ce qui a changé.
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
 # Dépendances de production seules, binaire natif compilé puis vérifié (un binaire absent échoue ici, pas au démarrage).
 FROM tools AS prod-deps
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production --ignore-scripts \
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+  bun install --frozen-lockfile --production --ignore-scripts --backend=copyfile \
   && npm rebuild better-sqlite3 --foreground-scripts \
   && node -e "new (require('better-sqlite3'))(':memory:')"
 
 # Client : toutes les dépendances, `vite build` écrit dist/client.
 FROM tools AS build
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --ignore-scripts
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+  bun install --frozen-lockfile --ignore-scripts --backend=copyfile
 COPY . .
 RUN bun run build
 
