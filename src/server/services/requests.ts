@@ -947,7 +947,8 @@ export function createRequests(
     }
 
     const outcome = db.transaction(
-      (tx) => {
+      // `merged` : saisons ajoutées à sa demande en cours, absent sinon.
+      (tx): { id: number; created: boolean; merged?: boolean } => {
         const at = new Date(now());
         const mediaId = upsertMedia(tx, {
           type: details.type,
