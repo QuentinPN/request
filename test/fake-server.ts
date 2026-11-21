@@ -88,9 +88,11 @@ export async function startFakeServer(routes: FakeRoutes = {}) {
   return { url, requests, close };
 }
 
-/** Adresse où rien n'écoute (port fraîchement libéré) : simule un service injoignable. */
+/**
+ * Adresse où rien n'écoute : simule un service injoignable. Port 9 (discard) : les faux serveurs n'écoutent que sur des
+ * ports éphémères (listen(0)), aucun ne le prend. Un port fraîchement libéré pouvait être repris par le faux serveur d'un
+ * autre fichier de test lancé en parallèle, et la connexion aboutissait.
+ */
 export async function closedPortUrl(): Promise<string> {
-  const server = await startFakeServer();
-  await server.close();
-  return server.url;
+  return 'http://127.0.0.1:9';
 }
