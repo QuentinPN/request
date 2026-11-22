@@ -509,7 +509,9 @@ describe('demandes 4K', () => {
 
   it('série 4K : saisons envoyées au Sonarr 4K, sans toucher au Sonarr normal', async () => {
     const { as, servers } = await setup({ sonarr4k: sonarrRoutes() });
-    const res = await (await as('auto_approve')).post('/api/requests', {
+    const res = await (
+      await as('auto_approve')
+    ).post('/api/requests', {
       type: 'tv',
       tmdbId: 1396,
       seasons: [1],

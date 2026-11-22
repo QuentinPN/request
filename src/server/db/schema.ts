@@ -59,7 +59,9 @@ const notificationTypesJson = tolerantJson<NotificationChoices>(
 export const settings = sqliteTable('settings', {
   key: text().primaryKey(),
   value: text().notNull(),
-  updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer({ mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 });
 
 /**
@@ -77,8 +79,12 @@ export const users = sqliteTable(
     avatar: text(),
     role: text({ enum: roles }).notNull().default('member'),
     quotaOverride: quotaOverrideJson(),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
     lastLoginAt: integer({ mode: 'timestamp' }),
     email: text(),
     emailNotifications: integer({ mode: 'boolean' }).notNull().default(true),
@@ -111,9 +117,13 @@ export const sessions = sqliteTable(
     userId: text()
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
     expiresAt: integer({ mode: 'timestamp' }).notNull(),
-    lastSeenAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    lastSeenAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
     userAgent: text(),
     /** Nom de l'appareil d'un client natif (`POST /api/auth/emby-token`) ; `NULL` pour une session de navigateur. */
     deviceName: text(),
@@ -145,7 +155,9 @@ export const media = sqliteTable(
     statusUpdatedAt: integer({ mode: 'timestamp' }).notNull(),
     /** Dernier calcul des saisons (série) ; `NULL` = jamais calculées, la fiche les calcule alors à la prochaine visite. */
     seasonsComputedAt: integer({ mode: 'timestamp' }),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     enumCheck('media_type_check', table.type, mediaTypes),
@@ -154,11 +166,21 @@ export const media = sqliteTable(
     // Badge de chaque affiche : lecture par lot `WHERE (type, tmdb_id) IN (VALUES …)`.
     uniqueIndex('media_type_tmdb_id_unique').on(table.type, table.tmdbId),
     // Webhooks Radarr/Sonarr (tâche 5.1). Partiels : la plupart des titres n'ont aucun de ces ids.
-    index('media_tvdb_id_idx').on(table.tvdbId).where(sql`${table.tvdbId} IS NOT NULL`),
-    index('media_radarr_id_idx').on(table.radarrId).where(sql`${table.radarrId} IS NOT NULL`),
-    index('media_sonarr_id_idx').on(table.sonarrId).where(sql`${table.sonarrId} IS NOT NULL`),
-    index('media_radarr_4k_id_idx').on(table.radarr4kId).where(sql`${table.radarr4kId} IS NOT NULL`),
-    index('media_sonarr_4k_id_idx').on(table.sonarr4kId).where(sql`${table.sonarr4kId} IS NOT NULL`),
+    index('media_tvdb_id_idx')
+      .on(table.tvdbId)
+      .where(sql`${table.tvdbId} IS NOT NULL`),
+    index('media_radarr_id_idx')
+      .on(table.radarrId)
+      .where(sql`${table.radarrId} IS NOT NULL`),
+    index('media_sonarr_id_idx')
+      .on(table.sonarrId)
+      .where(sql`${table.sonarrId} IS NOT NULL`),
+    index('media_radarr_4k_id_idx')
+      .on(table.radarr4kId)
+      .where(sql`${table.radarr4kId} IS NOT NULL`),
+    index('media_sonarr_4k_id_idx')
+      .on(table.sonarr4kId)
+      .where(sql`${table.sonarr4kId} IS NOT NULL`),
   ],
 );
 
@@ -216,14 +238,18 @@ export const jobRuns = sqliteTable(
     id: integer().primaryKey(),
     job: text().notNull(),
     status: text({ enum: jobRunStatuses }).notNull(),
-    startedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    startedAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
     finishedAt: integer({ mode: 'timestamp' }),
     detail: text(),
   },
   (table) => [
     enumCheck('job_runs_status_check', table.status, jobRunStatuses),
     // Littéral (pas de paramètre lié dans le DDL d'un index partiel).
-    uniqueIndex('job_runs_running').on(table.job).where(sql`${table.status} = 'running'`),
+    uniqueIndex('job_runs_running')
+      .on(table.job)
+      .where(sql`${table.status} = 'running'`),
     // « Dernier balayage » d'une tâche (`ORDER BY started_at DESC` parcourt l'index à rebours).
     index('job_runs_job_started_at_idx').on(table.job, table.startedAt),
   ],
@@ -250,7 +276,10 @@ export const arrServers = sqliteTable(
     minimumAvailability: text({ enum: minimumAvailabilities }),
     seriesType: text({ enum: seriesTypes }),
     languageProfileId: integer(),
-    tags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
+    tags: text({ mode: 'json' })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
     tagRequester: integer({ mode: 'boolean' }).notNull().default(false),
     searchOnAdd: integer({ mode: 'boolean' }).notNull().default(true),
     externalUrl: text(),
@@ -258,9 +287,16 @@ export const arrServers = sqliteTable(
     animeRootFolderPath: text(),
     animeSeriesType: text({ enum: seriesTypes }),
     animeLanguageProfileId: integer(),
-    animeTags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    animeTags: text({ mode: 'json' })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     enumCheck('arr_servers_type_check', table.type, arrKinds),
@@ -273,7 +309,9 @@ export const arrServers = sqliteTable(
       sql`json_valid(${table.animeTags}) AND json_type(${table.animeTags}) = 'array'`,
     ),
     // Serveur par défaut de chaque couple (type, 4K) : en changer = retirer l'ancien et poser le nouveau, même transaction.
-    uniqueIndex('arr_servers_default_unique').on(table.type, table.is4k).where(sql`${table.isDefault} = 1`),
+    uniqueIndex('arr_servers_default_unique')
+      .on(table.type, table.is4k)
+      .where(sql`${table.isDefault} = 1`),
   ],
 );
 
@@ -307,8 +345,12 @@ export const requests = sqliteTable(
     serverId: integer().references(() => arrServers.id, { onDelete: 'set null' }),
     quotaExempt: integer({ mode: 'boolean' }).notNull().default(false),
     createdBy: text().references(() => users.id, { onDelete: 'set null' }),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     enumCheck('requests_status_check', table.status, requestStatuses),
@@ -323,14 +365,20 @@ export const requests = sqliteTable(
     index('requests_status_created_at_idx').on(table.status, table.createdAt),
     // Statut affiché d'un titre (demandes par média) ; sert aussi la clé étrangère.
     index('requests_media_id_status_idx').on(table.mediaId, table.status),
-    index('requests_decided_by_idx').on(table.decidedBy).where(sql`${table.decidedBy} IS NOT NULL`),
+    index('requests_decided_by_idx')
+      .on(table.decidedBy)
+      .where(sql`${table.decidedBy} IS NOT NULL`),
     // Import idempotent (6.2) : une demande importée ne l'est qu'une fois (SQLite tient les `NULL` pour distincts).
     uniqueIndex('requests_external_ref_unique').on(table.externalRef),
     // Statistiques : demandes par mois sur les 12 derniers (plage sur `created_at`, index couvrant).
     index('requests_created_at_idx').on(table.createdAt),
     // Clés étrangères (`SET NULL` à la suppression d'un serveur ou d'un membre) ; partiels, la plupart sont `NULL`.
-    index('requests_server_id_idx').on(table.serverId).where(sql`${table.serverId} IS NOT NULL`),
-    index('requests_created_by_idx').on(table.createdBy).where(sql`${table.createdBy} IS NOT NULL`),
+    index('requests_server_id_idx')
+      .on(table.serverId)
+      .where(sql`${table.serverId} IS NOT NULL`),
+    index('requests_created_by_idx')
+      .on(table.createdBy)
+      .where(sql`${table.createdBy} IS NOT NULL`),
   ],
 );
 
@@ -343,7 +391,9 @@ export const requestSeasons = sqliteTable(
       .references(() => requests.id, { onDelete: 'cascade' }),
     seasonNumber: integer().notNull(),
     /** Date d'ajout de la saison à la demande : le quota (fenêtre glissante) compte chaque saison à sa date. */
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [primaryKey({ columns: [table.requestId, table.seasonNumber] })],
 );
@@ -360,12 +410,16 @@ export const requestEvents = sqliteTable(
     actorId: text().references(() => users.id, { onDelete: 'set null' }),
     /** Message lisible (échec d'envoi, motif de refus, id Radarr/Sonarr). */
     detail: text(),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     enumCheck('request_events_type_check', table.type, requestEventTypes),
     index('request_events_request_id_created_at_idx').on(table.requestId, table.createdAt),
-    index('request_events_actor_id_idx').on(table.actorId).where(sql`${table.actorId} IS NOT NULL`),
+    index('request_events_actor_id_idx')
+      .on(table.actorId)
+      .where(sql`${table.actorId} IS NOT NULL`),
   ],
 );
 
@@ -385,7 +439,9 @@ export const notifications = sqliteTable(
     /** Signalement concerné (notifications `issue_*`). */
     issueId: integer().references(() => issues.id, { onDelete: 'set null' }),
     detail: text(),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
     /** `NULL` = non lue. */
     readAt: integer({ mode: 'timestamp' }),
   },
@@ -394,10 +450,16 @@ export const notifications = sqliteTable(
     // Liste du membre, de la plus récente à la plus ancienne (le rowid termine l'index : `id DESC` départage).
     index('notifications_user_id_created_at_idx').on(table.userId, table.createdAt),
     // Pastille des non lues : compte sur l'index partiel, sans lire les notifications déjà lues.
-    index('notifications_unread_idx').on(table.userId).where(sql`${table.readAt} IS NULL`),
+    index('notifications_unread_idx')
+      .on(table.userId)
+      .where(sql`${table.readAt} IS NULL`),
     // Clé étrangère (`SET NULL` à la suppression d'une demande).
-    index('notifications_request_id_idx').on(table.requestId).where(sql`${table.requestId} IS NOT NULL`),
-    index('notifications_issue_id_idx').on(table.issueId).where(sql`${table.issueId} IS NOT NULL`),
+    index('notifications_request_id_idx')
+      .on(table.requestId)
+      .where(sql`${table.requestId} IS NOT NULL`),
+    index('notifications_issue_id_idx')
+      .on(table.issueId)
+      .where(sql`${table.issueId} IS NOT NULL`),
   ],
 );
 
@@ -422,8 +484,12 @@ export const issues = sqliteTable(
     status: text({ enum: issueStatuses }).notNull().default('open'),
     resolvedBy: text().references(() => users.id, { onDelete: 'set null' }),
     resolvedAt: integer({ mode: 'timestamp' }),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     enumCheck('issues_type_check', table.type, issueTypes),
@@ -436,7 +502,9 @@ export const issues = sqliteTable(
     index('issues_user_id_created_at_idx').on(table.userId, table.createdAt),
     // Signalements d'un titre (fiche) ; sert la clé étrangère et la purge des titres oubliés.
     index('issues_media_id_status_idx').on(table.mediaId, table.status),
-    index('issues_resolved_by_idx').on(table.resolvedBy).where(sql`${table.resolvedBy} IS NOT NULL`),
+    index('issues_resolved_by_idx')
+      .on(table.resolvedBy)
+      .where(sql`${table.resolvedBy} IS NOT NULL`),
   ],
 );
 
@@ -450,11 +518,15 @@ export const issueComments = sqliteTable(
       .references(() => issues.id, { onDelete: 'cascade' }),
     userId: text().references(() => users.id, { onDelete: 'set null' }),
     message: text().notNull(),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     index('issue_comments_issue_id_created_at_idx').on(table.issueId, table.createdAt),
-    index('issue_comments_user_id_idx').on(table.userId).where(sql`${table.userId} IS NOT NULL`),
+    index('issue_comments_user_id_idx')
+      .on(table.userId)
+      .where(sql`${table.userId} IS NOT NULL`),
   ],
 );
 
@@ -475,7 +547,9 @@ export const watchlist = sqliteTable(
     year: integer(),
     posterPath: text(),
     source: text({ enum: watchlistSources }).notNull().default('manual'),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     enumCheck('watchlist_media_type_check', table.mediaType, mediaTypes),
@@ -497,8 +571,12 @@ export const pushSubscriptions = sqliteTable(
     p256dh: text().notNull(),
     auth: text().notNull(),
     userAgent: text(),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     // Réabonnement d'un appareil (`onConflictDoUpdate`) et suppression sur réponse 404/410 du service push.
@@ -516,13 +594,17 @@ export const blockedTitles = sqliteTable(
     tmdbId: integer().notNull(),
     title: text().notNull(),
     blockedBy: text().references(() => users.id, { onDelete: 'set null' }),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     enumCheck('blocked_titles_media_type_check', table.mediaType, mediaTypes),
     // Refus d'une demande et filtrage par lot `WHERE (media_type, tmdb_id) IN (VALUES …)`.
     uniqueIndex('blocked_titles_media_type_tmdb_id_unique').on(table.mediaType, table.tmdbId),
-    index('blocked_titles_blocked_by_idx').on(table.blockedBy).where(sql`${table.blockedBy} IS NOT NULL`),
+    index('blocked_titles_blocked_by_idx')
+      .on(table.blockedBy)
+      .where(sql`${table.blockedBy} IS NOT NULL`),
   ],
 );
 
@@ -542,7 +624,9 @@ export const apiKeys = sqliteTable(
     createdBy: text()
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
     lastUsedAt: integer({ mode: 'timestamp' }),
     revokedAt: integer({ mode: 'timestamp' }),
   },
@@ -573,17 +657,33 @@ export const overrideRules = sqliteTable(
     serverId: integer()
       .notNull()
       .references(() => arrServers.id, { onDelete: 'cascade' }),
-    genres: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
-    languages: text({ mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
-    keywords: text({ mode: 'json' }).$type<BlockedKeyword[]>().notNull().default(sql`'[]'`),
+    genres: text({ mode: 'json' })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    languages: text({ mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    keywords: text({ mode: 'json' })
+      .$type<BlockedKeyword[]>()
+      .notNull()
+      .default(sql`'[]'`),
     qualityProfileId: integer(),
     rootFolderPath: text(),
     seriesType: text({ enum: seriesTypes }),
-    tags: text({ mode: 'json' }).$type<number[]>().notNull().default(sql`'[]'`),
+    tags: text({ mode: 'json' })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
     position: integer().notNull(),
     enabled: integer({ mode: 'boolean' }).notNull().default(true),
-    createdAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+    createdAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => [
     enumCheck('override_rules_type_check', table.type, mediaTypes),

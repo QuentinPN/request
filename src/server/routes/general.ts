@@ -11,10 +11,7 @@ export function generalRoutes(app: FastifyInstance) {
 
   app.get(GENERAL_SETTINGS_PATH, ownerOnly, async (): Promise<Setting<'general'>> => getGeneral(db, cryptoKey));
 
-  app.put(
-    GENERAL_SETTINGS_PATH,
-    ownerOnly,
-    async (req): Promise<Setting<'general'>> =>
-      setSetting(db, cryptoKey, 'general', parseRequest(settingSchemas.general, req.body)),
+  app.put(GENERAL_SETTINGS_PATH, ownerOnly, async (req): Promise<Setting<'general'>> =>
+    setSetting(db, cryptoKey, 'general', parseRequest(settingSchemas.general, req.body)),
   );
 }

@@ -38,11 +38,8 @@ export function overrideRulesRoutes(app: FastifyInstance) {
     return createOverrideRule(db, values);
   });
 
-  app.put(
-    OVERRIDE_RULES_ORDER_PATH,
-    ownerOnly,
-    async (req): Promise<OverrideRule[]> =>
-      reorderOverrideRules(db, parseRequest(overrideRulesOrderSchema, req.body).ids),
+  app.put(OVERRIDE_RULES_ORDER_PATH, ownerOnly, async (req): Promise<OverrideRule[]> =>
+    reorderOverrideRules(db, parseRequest(overrideRulesOrderSchema, req.body).ids),
   );
 
   app.put(overrideRulePath(':id'), ownerOnly, async (req): Promise<OverrideRule> => {

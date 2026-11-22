@@ -27,10 +27,10 @@ services:
       - data:/data
     # Aucun port publié : seul Caddy joint l'appli, par le réseau `proxy`.
     expose:
-      - "3000"
+      - '3000'
     # Joindre Radarr, Sonarr et Emby publiés sur l'hôte : http://host.docker.internal:<port> dans l'assistant.
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     networks:
       - proxy
 
@@ -47,9 +47,9 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?Renseigner DOMAIN dans .env (ex. demandes.example.com)}
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data # certificats : à conserver

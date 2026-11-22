@@ -403,38 +403,42 @@ describe('PUT /api/users/:id : droits et garde', { timeout: 20_000 }, () => {
   });
 });
 
-describe('garde contre l’escalade : quotas et rôle Gestionnaire réservés aux membres hors quota', {
-  timeout: 20_000,
-}, () => {
-  it('un gestionnaire des membres hors quota règle les quotas et attribue Gestionnaire', async () => {
-    const { as } = await setup();
-    const exempt = await as('manager', 'hors-quota', { canManageUsers: true });
-    const member = await as('member');
-    const url = `/api/users/${member.user.id}`;
-    expect(
-      (await exempt.put(url, { quotaOverride: { movies: null, seasons: null, unlimited: true } })).statusCode,
-    ).toBe(200);
-    expect((await exempt.put(url, { role: 'manager' })).statusCode).toBe(200);
-  });
-
-  it('refuse Gestionnaire, seul ou en masse, à qui a tous les droits mais est soumis aux quotas', async () => {
-    const { as } = await setup();
-    const owner = await as('owner', 'proprietaire');
-    // Tous les droits d'un gestionnaire par remplacements, mais rôle « membre » : soumis aux quotas.
-    const quotaBound = await as('member', 'soumis', {
-      ...rolePermissions('manager'),
-      canManageUsers: true,
+describe(
+  'garde contre l’escalade : quotas et rôle Gestionnaire réservés aux membres hors quota',
+  {
+    timeout: 20_000,
+  },
+  () => {
+    it('un gestionnaire des membres hors quota règle les quotas et attribue Gestionnaire', async () => {
+      const { as } = await setup();
+      const exempt = await as('manager', 'hors-quota', { canManageUsers: true });
+      const member = await as('member');
+      const url = `/api/users/${member.user.id}`;
+      expect(
+        (await exempt.put(url, { quotaOverride: { movies: null, seasons: null, unlimited: true } })).statusCode,
+      ).toBe(200);
+      expect((await exempt.put(url, { role: 'manager' })).statusCode).toBe(200);
     });
-    const member = await as('member');
-    const single = await quotaBound.put(`/api/users/${member.user.id}`, { role: 'manager' });
-    expect(single.statusCode).toBe(403);
-    expect(single.json().error).toMatch(/hors quota/);
-    const bulk = await quotaBound.post('/api/users/bulk', { ids: [member.user.id], role: 'manager' });
-    expect(bulk.statusCode).toBe(403);
-    expect(bulk.json().error).toMatch(/hors quota/);
-    expect((await owner.put(`/api/users/${member.user.id}`, { role: 'manager' })).statusCode).toBe(200);
-  });
-});
+
+    it('refuse Gestionnaire, seul ou en masse, à qui a tous les droits mais est soumis aux quotas', async () => {
+      const { as } = await setup();
+      const owner = await as('owner', 'proprietaire');
+      // Tous les droits d'un gestionnaire par remplacements, mais rôle « membre » : soumis aux quotas.
+      const quotaBound = await as('member', 'soumis', {
+        ...rolePermissions('manager'),
+        canManageUsers: true,
+      });
+      const member = await as('member');
+      const single = await quotaBound.put(`/api/users/${member.user.id}`, { role: 'manager' });
+      expect(single.statusCode).toBe(403);
+      expect(single.json().error).toMatch(/hors quota/);
+      const bulk = await quotaBound.post('/api/users/bulk', { ids: [member.user.id], role: 'manager' });
+      expect(bulk.statusCode).toBe(403);
+      expect(bulk.json().error).toMatch(/hors quota/);
+      expect((await owner.put(`/api/users/${member.user.id}`, { role: 'manager' })).statusCode).toBe(200);
+    });
+  },
+);
 
 describe('POST /api/users/bulk', { timeout: 20_000 }, () => {
   it('rôle et droits pour plusieurs membres, en une transaction', async () => {

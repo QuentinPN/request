@@ -49,55 +49,39 @@ export function requestsRoutes(app: FastifyInstance) {
     return request;
   });
 
-  app.get(
-    REQUESTS_PATH,
-    canRequest,
-    async (req): Promise<RequestPage> => service.list(viewerOf(req), parseRequest(requestListQuerySchema, req.query)),
+  app.get(REQUESTS_PATH, canRequest, async (req): Promise<RequestPage> =>
+    service.list(viewerOf(req), parseRequest(requestListQuerySchema, req.query)),
   );
 
   // `?userId=` : quota d'un autre membre (feuille de demande pour autrui), droit « Demander pour un autre » sinon 403.
-  app.get(
-    REQUEST_QUOTA_PATH,
-    canRequest,
-    async (req): Promise<RequestQuota> =>
-      service.quota(viewerOf(req), parseRequest(quotaQuerySchema, req.query).userId),
+  app.get(REQUEST_QUOTA_PATH, canRequest, async (req): Promise<RequestQuota> =>
+    service.quota(viewerOf(req), parseRequest(quotaQuerySchema, req.query).userId),
   );
 
   app.get(REQUEST_COUNTS_PATH, canRequest, async (req): Promise<RequestCounts> => service.counts(viewerOf(req)));
 
   // Listes de l'approbation et de la demande avancée (serveurs, profils, dossiers) : ni adresse ni clé ; aucun
   // serveur → 503.
-  app.get(
-    sendOptionsPath(':type'),
-    canChooseSend,
-    async (req): Promise<SendOptions> =>
-      sendOptions(
-        app.data,
-        app.tmdb,
-        parseRequest(sendOptionsParamsSchema, req.params).type,
-        parseRequest(sendOptionsQuerySchema, req.query),
-      ),
+  app.get(sendOptionsPath(':type'), canChooseSend, async (req): Promise<SendOptions> =>
+    sendOptions(
+      app.data,
+      app.tmdb,
+      parseRequest(sendOptionsParamsSchema, req.params).type,
+      parseRequest(sendOptionsQuerySchema, req.query),
+    ),
   );
 
-  app.get(
-    requestPath(':id'),
-    canRequest,
-    async (req): Promise<RequestDetail> => service.get(viewerOf(req), idOf(req.params)),
+  app.get(requestPath(':id'), canRequest, async (req): Promise<RequestDetail> =>
+    service.get(viewerOf(req), idOf(req.params)),
   );
 
   // Modification d'une demande en attente : le demandeur, ou un gestionnaire (contrôlé par le service).
-  app.patch(
-    requestPath(':id'),
-    canRequest,
-    async (req): Promise<RequestDetail> =>
-      service.update(viewerOf(req), idOf(req.params), parseRequest(updateRequestSchema, req.body ?? {})),
+  app.patch(requestPath(':id'), canRequest, async (req): Promise<RequestDetail> =>
+    service.update(viewerOf(req), idOf(req.params), parseRequest(updateRequestSchema, req.body ?? {})),
   );
 
-  app.post(
-    requestPath(':id', 'approve'),
-    canManage,
-    async (req): Promise<RequestDetail> =>
-      service.approve(idOf(req.params), viewerOf(req).user, parseRequest(approveRequestSchema, req.body ?? {})),
+  app.post(requestPath(':id', 'approve'), canManage, async (req): Promise<RequestDetail> =>
+    service.approve(idOf(req.params), viewerOf(req).user, parseRequest(approveRequestSchema, req.body ?? {})),
   );
 
   app.post(requestPath(':id', 'decline'), canManage, async (req): Promise<RequestDetail> => {
@@ -105,21 +89,15 @@ export function requestsRoutes(app: FastifyInstance) {
     return service.decline(idOf(req.params), viewerOf(req).user, reason);
   });
 
-  app.post(
-    requestPath(':id', 'retry'),
-    canManage,
-    async (req): Promise<RequestDetail> => service.retry(idOf(req.params), viewerOf(req).user),
+  app.post(requestPath(':id', 'retry'), canManage, async (req): Promise<RequestDetail> =>
+    service.retry(idOf(req.params), viewerOf(req).user),
   );
 
-  app.post(
-    requestPath(':id', 'cancel'),
-    canRequest,
-    async (req): Promise<RequestDetail> => service.cancel(idOf(req.params), viewerOf(req)),
+  app.post(requestPath(':id', 'cancel'), canRequest, async (req): Promise<RequestDetail> =>
+    service.cancel(idOf(req.params), viewerOf(req)),
   );
 
-  app.post(
-    REQUEST_BATCH_PATH,
-    canManage,
-    async (req): Promise<BatchResult> => service.batch(viewerOf(req).user, parseRequest(batchRequestSchema, req.body)),
+  app.post(REQUEST_BATCH_PATH, canManage, async (req): Promise<BatchResult> =>
+    service.batch(viewerOf(req).user, parseRequest(batchRequestSchema, req.body)),
   );
 }

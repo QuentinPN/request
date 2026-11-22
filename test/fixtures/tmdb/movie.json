@@ -6,7 +6,10 @@
   "poster_path": "/poster603.jpg",
   "backdrop_path": "/backdrop603.jpg",
   "runtime": 136,
-  "genres": [{ "id": 28, "name": "Action" }, { "id": 878, "name": "Science-Fiction" }],
+  "genres": [
+    { "id": 28, "name": "Action" },
+    { "id": 878, "name": "Science-Fiction" }
+  ],
   "credits": {
     "cast": [
       { "id": 6384, "name": "Keanu Reeves", "character": "Neo", "profile_path": "/keanu.jpg" },

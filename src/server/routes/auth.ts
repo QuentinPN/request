@@ -239,13 +239,9 @@ export function authRoutes(app: FastifyInstance) {
    */
   const ownSessions = { preHandler: forbidApiKey };
 
-  app.get(
-    AUTH_SESSIONS_PATH,
-    ownSessions,
-    async (req): Promise<AuthSessions> => ({
-      sessions: listUserSessions(app.data, viewerOf(req).user.id, currentSessionToken(req)),
-    }),
-  );
+  app.get(AUTH_SESSIONS_PATH, ownSessions, async (req): Promise<AuthSessions> => ({
+    sessions: listUserSessions(app.data, viewerOf(req).user.id, currentSessionToken(req)),
+  }));
 
   /** Révoque une session du membre (la courante comprise) ; 404 si l'identifiant n'est pas celui d'une des siennes. */
   app.delete(authSessionPath(':id'), ownSessions, async (req, reply) => {

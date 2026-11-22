@@ -48,8 +48,7 @@ export interface MediaItemQuery {
 
 /** Justificatif d'un membre : identifiant et mot de passe (Emby, Jellyfin), ou jeton plex.tv issu du code PIN (Plex). */
 export type MemberCredentials =
-  | { method: 'password'; username: string; password: string }
-  | { method: 'plex'; token: string };
+  { method: 'password'; username: string; password: string } | { method: 'plex'; token: string };
 
 /**
  * Recherche de titres : ciblée par ids (Emby, `AnyProviderIdEquals`), ou balayage complet des bibliothèques (Jellyfin,

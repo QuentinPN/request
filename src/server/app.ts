@@ -214,10 +214,10 @@ export async function buildApp({
     return { status: 'ok', version };
   });
   // Version du contrat d'API et capacités, publiques : les clients natifs y détectent un serveur trop ancien.
-  app.get(
-    API_VERSION_PATH,
-    async (): Promise<ApiVersion> => ({ apiVersion: API_VERSION, features: [...API_FEATURES] }),
-  );
+  app.get(API_VERSION_PATH, async (): Promise<ApiVersion> => ({
+    apiVersion: API_VERSION,
+    features: [...API_FEATURES],
+  }));
   authRoutes(app);
   setupRoutes(app);
   arrServersRoutes(app);

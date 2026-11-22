@@ -15,7 +15,7 @@ La stack de départ (Vite avec Rolldown et deux entrées client, React SSR en st
 | Deux entrées client (connecté / déconnecté) | **Retirer**                  | Une seule SPA avec chargement différé par route suffit.                                                                                                             |
 | Platformatic Watt (workers)                 | **Retirer**                  | Un seul processus Node tient largement la charge ; Watt ajoute une couche à configurer et à déboguer.                                                               |
 | Relay + GraphQL                             | **Retirer**                  | Schéma, compilateur Relay et résolveurs pour une API d'une vingtaine de routes. Remplacé par une API REST typée de bout en bout.                                    |
-| Type-check via tsrs                         | **Facultatif**               | `tsc --noEmit` suffit à cette taille ; à reprendre si le check devient lent.                                                                                        |
+| Type-check via tsrs                         | **Facultatif**               | `bun check` (TypeScript 7) vérifie tout le projet en moins d'une seconde.                                                                                           |
 
 ## Stack retenue
 
@@ -25,7 +25,7 @@ La stack de départ (Vite avec Rolldown et deux entrées client, React SSR en st
 - **Base** : **SQLite** (un fichier, `better-sqlite3`) via **Drizzle ORM** et ses migrations. Raison : un seul conteneur, une seule sauvegarde, zéro configuration, comme Seerr. Drizzle permet de passer à PostgreSQL plus tard si besoin.
 - **Tâches planifiées** : dans le même processus (`setInterval`, sans dépendance, `services/sync.ts`), avec verrou en base (`job_runs`) pour ne jamais lancer deux balayages en parallèle ; arrêtées à la fermeture de l'appli, désactivées dans les tests. Fréquence des balayages réglable (réglage `jobs`, `services/job-center.ts`) et « Lancer maintenant » (202, 409 si le verrou est pris) ; journal en mémoire de 1 000 entrées (pino → `lib/log-buffer.ts`, secrets expurgés avant d'être gardés), lu par Réglages › Journaux (propriétaire).
 - **Secrets** (clés Radarr, Sonarr, Emby ou Jellyfin, jeton Plex du propriétaire, TMDB) : stockés chiffrés en base avec une clé générée au premier lancement dans le dossier de données.
-- **Qualité** : Biome (lint et format), Vitest (unitaires et routes Fastify avec `inject`), MSW ou faux serveurs pour Emby, Radarr, Sonarr et TMDB.
+- **Qualité** : Biome (lint et tri des imports), `bun fmt` (format), `bun check` (types, TypeScript 7), Vitest (unitaires et routes Fastify avec `inject`), MSW ou faux serveurs pour Emby, Radarr, Sonarr et TMDB.
 
 ## Organisation du dépôt
 
