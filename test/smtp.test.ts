@@ -186,7 +186,7 @@ describe('réglage SMTP', () => {
       expect(outcome).toMatchObject({ statusCode: 422, message: 'Le serveur SMTP n’a pas répondu à temps' });
     } finally {
       vi.useRealTimers();
-      data.db.$client.close();
+      data.db.$client.close(true);
     }
   });
 });

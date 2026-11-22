@@ -1,6 +1,6 @@
 # Modèle de données
 
-SQLite (better-sqlite3 + Drizzle, `casing: 'snake_case'`), un seul processus, WAL, quelques dizaines de membres, quelques milliers de médias. Pas de réglage serveur ni de partitionnement : des tables simples, des index justifiés par un écran ou un job.
+SQLite (`bun:sqlite` + Drizzle, `casing: 'snake_case'`), un seul processus, WAL, quelques dizaines de membres, quelques milliers de médias. Pas de réglage serveur ni de partitionnement : des tables simples, des index justifiés par un écran ou un job.
 
 ## 1. Revue de l'existant (`settings`, `users`, `sessions`)
 
@@ -55,7 +55,7 @@ WHERE r.user_id = ? AND r.status NOT IN ('declined','cancelled') AND s.created_a
 
 Films servis par `requests(user_id, created_at)`, saisons par `requests(user_id, created_at)` (sur `user_id`) puis la clé de `request_seasons` : aucun index ajouté. **Quotas propres à un membre** : `users.quota_override` (JSON `{ movies, seasons, unlimited? }`, `null` = quotas par défaut des réglages). `movies` / `seasons` : règle `{ limit, days }` ou `null` (défaut pour ce type). `unlimited: true` : « Sans quota », le membre est hors quotas comme un gestionnaire sans en changer de rôle (`isQuotaExempt`, `src/shared/roles.ts`, lu par `assertQuota` et `GET /api/requests/quota`). Clé facultative : le JSON stocké avant elle reste valide, **aucune migration** (la colonne est du texte relu par `quotaOverrideSchema`). Écriture par `PUT /api/users/:id` (propriétaire seulement ; le propriétaire lui-même n'est pas modifiable, et le rôle `owner` n'est pas attribuable). Le rôle et les quotas sont relus en base à chaque requête (`validateSession` joint `users`) : un changement vaut dès la requête suivante du membre.
 
-Vérification et insertion dans **la même transaction** (`db.transaction`, synchrone avec better-sqlite3 : aucune course possible dans un seul processus).
+Vérification et insertion dans **la même transaction** (`db.transaction`, synchrone avec `bun:sqlite` : aucune course possible dans un seul processus).
 
 ### Double clic
 
@@ -78,7 +78,7 @@ Vérification et insertion dans **la même transaction** (`db.transaction`, sync
 - Migrations : `drizzle-kit generate` uniquement, une par tâche, nom parlant (`0002_media_demandes.sql`), jamais modifiée une fois fusionnée ; appliquées au démarrage par `migrate()`. Vérifier le SQL généré (les `CHECK` et index partiels s'écrivent dans le schéma via `check()` / `.where()`).
 - Attention, recréation de table : ajouter un `CHECK` à une table existante (ex. `users.role`) fait recréer la table par drizzle-kit. `migrate()` s'exécute en transaction, où `PRAGMA foreign_keys=OFF` est sans effet : le `DROP TABLE users` supprime en cascade toutes les `sessions`. Accepté pour la tâche 1.7 (avant toute mise en production : simple déconnexion) ; après la mise en production, éditer la migration à la main pour préserver les données.
 - PRAGMA dans `openDb` : `journal_mode = WAL`, `foreign_keys = ON`, `busy_timeout = 5000` (déjà là), plus `synchronous = NORMAL` et `journal_size_limit`. `PRAGMA optimize` à la fermeture.
-- Sauvegarde : ne **pas** copier `request.db` seul pendant que le serveur tourne (le `-wal` contient les dernières écritures). Utiliser `sqlite.backup(path)` (API de sauvegarde de better-sqlite3, à chaud) ou `VACUUM INTO '/data/backups/…'` dans un job quotidien, en gardant 7 copies. Sauvegarder aussi `secret.key`, sans quoi les secrets sont illisibles.
+- Sauvegarde : ne **pas** copier `request.db` seul pendant que le serveur tourne (le `-wal` contient les dernières écritures). Utiliser `VACUUM INTO '/data/backups/…'` (copie cohérente à chaud ; `bun:sqlite` n'a pas l'API de sauvegarde) dans un job quotidien, en gardant 7 copies. Sauvegarder aussi `secret.key`, sans quoi les secrets sont illisibles.
 - Purges (job quotidien, enregistré dans `job_runs`) : sessions expirées ; notifications lues depuis plus de 90 jours (`read_at`) ou non lues créées depuis plus de 365 jours (`created_at`) (`purgeOldNotifications`, au début du balayage complet `scan:full`, sans index dédié : parcours quotidien de la table) ; `job_runs` de plus de 30 jours. Les demandes et leurs évènements sont conservés.
 
 ```mermaid

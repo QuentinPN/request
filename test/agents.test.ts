@@ -430,7 +430,7 @@ describe.each(['ntfy', 'telegram', 'outgoingWebhook'] as const)('réglages %s', 
     const message = { ntfy: result.ntfy, telegram: result.telegram, outgoingWebhook: result.webhook }[key];
     expect(message).toHaveLength(1);
     expect(JSON.stringify(message[0]?.body)).toContain('Test de Request');
-    expect(data.db.$client.prepare('SELECT 1 FROM settings WHERE key = ?').get(key)).toBeUndefined();
+    expect(data.db.$client.prepare('SELECT 1 FROM settings WHERE key = ?').get(key)).toBeNull();
   });
 
   it('Tester réutilise les secrets enregistrés quand le champ est vide', async () => {

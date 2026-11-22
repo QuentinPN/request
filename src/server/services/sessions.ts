@@ -2,7 +2,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, inArray, lte } from 'drizzle-orm';
 import type { AuthSession } from '../../shared/auth.ts';
 import { sha256Hex } from '../crypto.ts';
-import type { Data, Db } from '../db/index.ts';
+import { changes, type Data, type Db } from '../db/index.ts';
 import { sessions, users } from '../db/schema.ts';
 import type { User } from './users.ts';
 
@@ -205,5 +205,5 @@ export function revokeDepartedMembers(
 
 /** Supprime les sessions expirées ; renvoie leur nombre. */
 export function purgeExpired(db: Db, now = new Date()): number {
-  return db.delete(sessions).where(lte(sessions.expiresAt, now)).run().changes;
+  return changes(db.delete(sessions).where(lte(sessions.expiresAt, now)).run());
 }

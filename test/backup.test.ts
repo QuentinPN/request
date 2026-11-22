@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { Database } from 'bun:sqlite';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
 import { describe, expect, it, vi } from 'vitest';
 import { openDataDir } from '../src/server/db/index.ts';
 import { DAY_MS } from '../src/server/lib/time.ts';
@@ -13,7 +13,7 @@ import {
 } from '../src/server/services/backup.ts';
 import { lastRun } from '../src/server/services/jobs.ts';
 import { JOB } from '../src/shared/jobs.ts';
-import { trackTempDirs } from './helpers.ts';
+import { pragma, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 
@@ -32,9 +32,23 @@ describe('backupDatabase', () => {
     expect(file).toBe(join(dir, 'request-20260102-030405.db'));
     const copy = new Database(file, { readonly: true });
     expect(copy.prepare('select v from probe').all()).toEqual([{ v: 'avant' }]);
-    expect(copy.pragma('integrity_check', { simple: true })).toBe('ok');
-    copy.close();
-    sqlite.close();
+    expect(pragma(copy, 'integrity_check', { simple: true })).toBe('ok');
+    copy.close(true);
+    sqlite.close(true);
+  });
+
+  it("réussit malgré un fichier temporaire resté d'une copie interrompue", async () => {
+    const { sqlite, dir } = openWithRow();
+    mkdirSync(dir, { recursive: true });
+    const stale = join(dir, 'request-20260102-030405.db.tmp');
+    writeFileSync(stale, 'reste_dun_crash');
+    const file = await backupDatabase(sqlite, dir, { now: () => Date.UTC(2026, 0, 2, 3, 4, 5) });
+
+    expect(existsSync(stale)).toBe(false);
+    const copy = new Database(file, { readonly: true });
+    expect(copy.prepare('select v from probe').all()).toEqual([{ v: 'avant' }]);
+    copy.close(true);
+    sqlite.close(true);
   });
 
   it('ne garde que les N copies les plus récentes, sans toucher aux autres fichiers', async () => {
@@ -43,7 +57,7 @@ describe('backupDatabase', () => {
       await backupDatabase(sqlite, dir, { keep: 2, now: () => Date.UTC(2026, 0, day, 12) });
 
     expect(readdirSync(dir).sort()).toEqual(['request-20260103-120000.db', 'request-20260104-120000.db']);
-    sqlite.close();
+    sqlite.close(true);
   });
 
   it("n'efface jamais un fichier étranger du dossier", async () => {
@@ -56,7 +70,7 @@ describe('backupDatabase', () => {
 
     expect(existsSync(foreign)).toBe(true);
     expect(readdirSync(dir).filter((name) => name.endsWith('.db'))).toHaveLength(1);
-    sqlite.close();
+    sqlite.close(true);
   });
 });
 
@@ -82,7 +96,7 @@ describe('createBackups', () => {
     expect(backups.enabled).toBe(false);
     expect(backups.launch()).toBeNull();
     expect(existsSync(backupsDir(data.dir))).toBe(false);
-    sqlite.close();
+    sqlite.close(true);
   });
 
   it('lancement manuel : une copie, une ligne dans job_runs, et pas de seconde copie pendant la première', async () => {
@@ -94,7 +108,7 @@ describe('createBackups', () => {
     await first;
     expect(readdirSync(dir)).toHaveLength(1);
     expect(lastRun(data.db, JOB.backup)).toMatchObject({ status: 'success', detail: expect.stringContaining('Copie') });
-    sqlite.close();
+    sqlite.close(true);
   });
 
   it('fait une sauvegarde au premier tour puis attend un jour', async () => {
@@ -120,7 +134,7 @@ describe('createBackups', () => {
       expect(readdirSync(dir)).toHaveLength(2);
     } finally {
       vi.useRealTimers();
-      sqlite.close();
+      sqlite.close(true);
     }
   });
 });

@@ -1,3 +1,4 @@
+import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -155,9 +156,17 @@ export const addArrServer = (
 /** Plan d'exécution d'une requête Drizzle (même SQL et mêmes paramètres que ceux envoyés à SQLite). */
 export function queryPlan(db: Db, query: { toSQL: () => { sql: string; params: unknown[] } }): string {
   const { sql, params } = query.toSQL();
-  return (db.$client.prepare(`explain query plan ${sql}`).all(...params) as Array<{ detail: string }>)
+  return (
+    db.$client.prepare(`explain query plan ${sql}`).all(...(params as SQLQueryBindings[])) as Array<{ detail: string }>
+  )
     .map((step) => step.detail)
     .join(' | ');
+}
+
+/** `PRAGMA` sur une base bun:sqlite : ses lignes, ou avec `simple` la première valeur de la première ligne. */
+export function pragma(sqlite: Database, source: string, { simple = false } = {}): unknown {
+  const rows = sqlite.query(`PRAGMA ${source}`).all() as Array<Record<string, unknown>>;
+  return simple ? Object.values(rows[0] ?? {})[0] : rows;
 }
 
 /** Copie des migrations tronquée aux `count` premières, dans `parent` : la base telle qu'elle était avant les suivantes. */

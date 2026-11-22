@@ -1,4 +1,4 @@
-// Préchargé par `bun test` (bunfig.toml), jamais par Vitest. Les tests importent `vitest` ; Bun leur donne son propre
+// Préchargé par `bun test` (bunfig.toml). Les tests importent `vitest` ; Bun leur donne son propre
 // `vi`, auquel manquent des fonctions de Vitest 5 (advanceTimersByTimeAsync, waitFor, stubEnv, stubGlobal,
 // setSystemTime) et dont les faux minuteurs ignorent `toFake`. On les remplace par le code de Vitest 5.1.0
 // (FakeTimers, waitFor, stubs), sur @sinonjs/fake-timers 15.4.0, la version que Vitest 5.1.0 embarque.

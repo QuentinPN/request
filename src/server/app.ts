@@ -187,7 +187,7 @@ export async function buildApp({
     await backupTimer?.stop();
     await jobs.idle();
     await afterCommit.idle();
-    data.db.$client.close();
+    data.db.$client.close(true);
   });
   app.setErrorHandler(apiErrorHandler);
   // Journal : une ligne par réponse refusée ou en échec (le 404 d'une adresse inconnue et le 401 d'une lecture sans session, bruit
@@ -207,7 +207,7 @@ export async function buildApp({
   // Santé : le processus répond et la base aussi (requête triviale), pour le HEALTHCHECK de l'image.
   app.get(HEALTH_PATH, async (): Promise<Health> => {
     try {
-      data.db.$client.prepare('select 1').get();
+      data.db.$client.query('select 1').get();
     } catch {
       throw new HttpError(503, 'Base de données indisponible');
     }

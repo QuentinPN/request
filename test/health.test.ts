@@ -18,7 +18,7 @@ describe('GET /api/health', () => {
   it('répond 503 sans session quand la base ne répond plus', async () => {
     const data = openDataDir(tempDir());
     const app = await buildApp({ data });
-    data.db.$client.close();
+    data.db.$client.close(true);
     const res = await app.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: 'Base de données indisponible' });

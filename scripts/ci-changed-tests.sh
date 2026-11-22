@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Job `tests-changed` de la CI : les tests que le diff de la PR peut atteindre, via `bun run test:bun --changed=<merge-base>`
+# Job `tests-changed` de la CI : les tests que le diff de la PR peut atteindre, via `bun run test --changed=<merge-base>`
 # (graphe d'imports de Bun). Tout fichier que ce graphe ne voit pas relance la suite complète : la liste ci-dessous
 # (dépendances, configs, aides de test, workflows), et tout ce qui n'est pas un module TS de src/ ou un fichier de test
 # (fixtures, migrations SQL, package.json lu par build-info, docs/openapi.json, public/… sont lus par fs, pas importés).
@@ -30,7 +30,7 @@ echo "Base : $1 ($base)"
 git diff --name-status "$base" HEAD
 if [ -n "$reason" ]; then
   echo "Suite complète : $reason"
-  exec bun run test:bun
+  exec bun run test
 fi
 echo "Tests atteints par le diff seulement (bun test --changed)"
-exec bun run test:bun --changed="$base"
+exec bun run test --changed="$base"

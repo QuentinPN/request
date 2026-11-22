@@ -1,7 +1,7 @@
+import { Database } from 'bun:sqlite';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
@@ -24,7 +24,15 @@ import {
 import { type RequestDetail, resolveSendChoice, type SendOptions } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import type { FakeRoutes } from './fake-server.ts';
-import { addArrServer, loginAs, SLOW_TEST, trackFakeServers, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import {
+  addArrServer,
+  loginAs,
+  pragma,
+  SLOW_TEST,
+  trackFakeServers,
+  trackTempDirs,
+  truncatedMigrations,
+} from './helpers.ts';
 
 // Lot 8.8 : règles de surcharge (Seerr `OverrideRule`) : sémantique, migration 0015, routes, approbation et envoi.
 
@@ -402,7 +410,7 @@ describe('migration 0015 sur une base 0014 peuplée', () => {
   it('crée la table sans toucher aux serveurs ; contraintes et cascade', SLOW_TEST, () => {
     const dir = tempDir();
     const sqlite = new Database(join(dir, 'base.db'));
-    sqlite.pragma('foreign_keys = ON');
+    pragma(sqlite, 'foreign_keys = ON');
     migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(dir, 15) });
     sqlite
       .prepare(
@@ -429,6 +437,6 @@ describe('migration 0015 sur une base 0014 peuplée', () => {
     });
     sqlite.prepare('DELETE FROM arr_servers WHERE id = 1').run();
     expect(sqlite.prepare('SELECT count(*) AS n FROM override_rules').get()).toEqual({ n: 0 });
-    sqlite.close();
+    sqlite.close(true);
   });
 });

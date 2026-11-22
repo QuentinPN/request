@@ -6,7 +6,7 @@ import { decrypt, encrypt, loadOrCreateKey } from '../src/server/crypto.ts';
 import { openDataDir, openDb } from '../src/server/db/index.ts';
 import { getSetting, setSetting } from '../src/server/services/settings.ts';
 import { defaultAgentEventKinds } from '../src/shared/notifications.ts';
-import { trackTempDirs } from './helpers.ts';
+import { pragma, trackTempDirs } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 
@@ -18,13 +18,13 @@ describe('migrations', () => {
       .prepare("select name from sqlite_master where type = 'table' and name = 'settings'")
       .all();
     expect(tables).toHaveLength(1);
-    first.db.$client.close();
+    first.db.$client.close(true);
 
     const again = openDataDir(dir);
     const applied = again.db.$client.prepare('select count(*) as n from __drizzle_migrations').get() as { n: number };
     expect(applied.n).toBe(18);
-    expect(again.db.$client.pragma('journal_mode', { simple: true })).toBe('wal');
-    again.db.$client.close();
+    expect(pragma(again.db.$client, 'journal_mode', { simple: true })).toBe('wal');
+    again.db.$client.close(true);
   });
 });
 
@@ -115,6 +115,6 @@ describe('réglages', () => {
     const dir = tempDir();
     const data = openDataDir(dir);
     expect(Buffer.from(readFileSync(join(dir, 'secret.key'), 'utf8'), 'base64').equals(data.cryptoKey)).toBe(true);
-    data.db.$client.close();
+    data.db.$client.close(true);
   });
 });
