@@ -1,8 +1,8 @@
+import { Database } from 'bun:sqlite';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
 import { eq, type SQL } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
@@ -570,7 +570,7 @@ describe('droits par défaut des nouveaux membres', () => {
 describe('migration 0013 sur une base existante', () => {
   it('ajoute `permissions` à null : rôles et quotas inchangés, droits du rôle', SLOW_TEST, () => {
     const sqlite = new Database(join(tempDir(), 'avant.db'));
-    cleanups.push(() => sqlite.close());
+    cleanups.push(() => sqlite.close(true));
     migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 13) });
     sqlite.exec(`
       insert into users (id, name, role, quota_override) values ('m', 'M', 'manager', '{"movies":null,"seasons":null,"unlimited":true}');

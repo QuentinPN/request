@@ -297,7 +297,7 @@ describe('reprise des anciens réglages Radarr/Sonarr au démarrage', () => {
     });
     expect(uhd).toMatchObject({ url: 'http://autre:7878', is4k: true });
     expect(db.$client.prepare('select count(*) as n from settings').get()).toEqual({ n: 0 });
-    db.$client.close();
+    db.$client.close(true);
   });
 
   it('copie déjà à jour : serveur inchangé ; aucun serveur : créé ; réglage incomplet : laissé', () => {
@@ -316,6 +316,6 @@ describe('reprise des anciens réglages Radarr/Sonarr au démarrage', () => {
     insert.run('radarr', JSON.stringify({ url: 'http://x' }));
     adoptLegacyArrSettings(db);
     expect(db.$client.prepare('select key from settings').all()).toEqual([{ key: 'radarr' }]);
-    db.$client.close();
+    db.$client.close(true);
   });
 });

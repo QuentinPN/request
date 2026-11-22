@@ -1,8 +1,8 @@
+import { Database } from 'bun:sqlite';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
 import { eq, lte } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { migrationsFolder, openDataDir, openDb } from '../src/server/db/index.ts';
 import { sessions } from '../src/server/db/schema.ts';
@@ -15,7 +15,7 @@ import {
   upsertFromEmby,
 } from '../src/server/services/users.ts';
 import { roles } from '../src/shared/roles.ts';
-import { queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { pragma, queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 afterEach(() => vi.restoreAllMocks());
@@ -72,9 +72,9 @@ describe('users.quota_override', () => {
     expect(log).toHaveBeenCalledTimes(2);
 
     // Même un JSON invalide (contrainte contournée) ne fait pas échouer la lecture.
-    db.$client.pragma('ignore_check_constraints = ON');
+    pragma(db.$client, 'ignore_check_constraints = ON');
     insertUser(db, 'owner', '{pas du json');
-    db.$client.pragma('ignore_check_constraints = OFF');
+    pragma(db.$client, 'ignore_check_constraints = OFF');
     expect(getUser(db, 'u-owner')?.quotaOverride).toBeNull();
   });
 });
@@ -97,20 +97,20 @@ describe('users.last_login_at', () => {
 describe('PRAGMA', () => {
   it('sont appliqués à l’ouverture de la base', () => {
     const { db } = openDataDir(tempDir());
-    const pragma = (name: string) => db.$client.pragma(name, { simple: true });
-    expect(pragma('journal_mode')).toBe('wal');
-    expect(pragma('foreign_keys')).toBe(1);
-    expect(pragma('busy_timeout')).toBe(5000);
-    expect(pragma('synchronous')).toBe(1); // NORMAL
-    expect(pragma('journal_size_limit')).toBe(64 * 1024 * 1024);
-    db.$client.close();
+    const value = (name: string) => pragma(db.$client, name, { simple: true });
+    expect(value('journal_mode')).toBe('wal');
+    expect(value('foreign_keys')).toBe(1);
+    expect(value('busy_timeout')).toBe(5000);
+    expect(value('synchronous')).toBe(1); // NORMAL
+    expect(value('journal_size_limit')).toBe(64 * 1024 * 1024);
+    db.$client.close(true);
   });
 });
 
 describe('migration 0002 (durcissement)', () => {
   it('conserve les membres existants et leur rôle', () => {
     const sqlite = new Database(join(tempDir(), 'avant.db'));
-    sqlite.pragma('foreign_keys = ON');
+    pragma(sqlite, 'foreign_keys = ON');
     migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 2) });
     sqlite.exec(`
       insert into users (id, name, avatar, role, quota_override, last_login_at) values
@@ -142,6 +142,6 @@ describe('migration 0002 (durcissement)', () => {
     expect(() => sqlite.prepare("insert into users (id, name, role) values ('c', 'C', 'root')").run()).toThrow(
       /CHECK constraint failed/,
     );
-    sqlite.close();
+    sqlite.close(true);
   });
 });

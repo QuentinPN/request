@@ -3,7 +3,7 @@ import { JOB, jobDefinitions } from '../../shared/jobs.ts';
 import type { MediaKey } from '../../shared/media.ts';
 import { plural } from '../../shared/text.ts';
 import type { WebhookResult, WebhookService } from '../../shared/webhooks.ts';
-import type { Data, Db } from '../db/index.ts';
+import { changes, type Data, type Db } from '../db/index.ts';
 import { issues, media, requests } from '../db/schema.ts';
 import type { ArrWebhookEvent } from '../integrations/arr.ts';
 import { labelOf, type MediaServer } from '../integrations/media-server.ts';
@@ -56,18 +56,20 @@ const hasIssue = (db: Db) => exists(db.select({ one }).from(issues).where(eq(iss
  * partent en cascade.
  */
 export function purgeMedia(db: Db, before: Date): number {
-  return db
-    .delete(media)
-    .where(
-      and(
-        isNull(media.status),
-        isNull(media.status4k),
-        lt(media.statusUpdatedAt, before),
-        not(hasRequest(db)),
-        not(hasIssue(db)),
-      ),
-    )
-    .run().changes;
+  return changes(
+    db
+      .delete(media)
+      .where(
+        and(
+          isNull(media.status),
+          isNull(media.status4k),
+          lt(media.statusUpdatedAt, before),
+          not(hasRequest(db)),
+          not(hasIssue(db)),
+        ),
+      )
+      .run(),
+  );
 }
 
 /**

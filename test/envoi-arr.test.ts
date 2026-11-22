@@ -1,8 +1,8 @@
+import { Database } from 'bun:sqlite';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
@@ -14,7 +14,15 @@ import type { RequestDetail, SendOptions } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { type FakeRoutes, status } from './fake-server.ts';
 import { fakeTagRoutes } from './fake-tags.ts';
-import { addArrServer, loginAs, SLOW_TEST, trackFakeServers, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import {
+  addArrServer,
+  loginAs,
+  pragma,
+  SLOW_TEST,
+  trackFakeServers,
+  trackTempDirs,
+  truncatedMigrations,
+} from './helpers.ts';
 
 const startServer = trackFakeServers();
 const tempDir = trackTempDirs();
@@ -444,8 +452,8 @@ describe('migration 0012 sur une base existante', () => {
     SLOW_TEST,
     () => {
       const sqlite = new Database(join(tempDir(), 'avant.db'));
-      sqlite.pragma('foreign_keys = ON');
-      cleanups.push(() => sqlite.close());
+      pragma(sqlite, 'foreign_keys = ON');
+      cleanups.push(() => sqlite.close(true));
       migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 12) });
       sqlite.exec(`
       insert into arr_servers (id, type, name, url, api_key, is_default, quality_profile_id, root_folder_path, tags)

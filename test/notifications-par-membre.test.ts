@@ -1,7 +1,7 @@
+import { Database } from 'bun:sqlite';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { describe, expect, it } from 'vitest';
 import { migrationsFolder } from '../src/server/db/index.ts';
 import {
@@ -12,7 +12,7 @@ import {
   receivableKinds,
 } from '../src/shared/notifications.ts';
 import { roles } from '../src/shared/roles.ts';
-import { SLOW_TEST, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { pragma, SLOW_TEST, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 // Lot 8.10 : migration 0014 (types par membre, `auto_approved` dans `notifications.kind`, colonne de la demande
 // automatique depuis Ma liste), sur une base 0013 (14 migrations) déjà peuplée. Le comportement (cloche, courriel, push, API)
@@ -23,7 +23,7 @@ const tempDir = trackTempDirs();
 /** Base 0013 avec des notifications de chaque sorte (liées à une demande, à un signalement, ou à rien). */
 function before0014() {
   const sqlite = new Database(join(tempDir(), 'avant.db'));
-  sqlite.pragma('foreign_keys = ON');
+  pragma(sqlite, 'foreign_keys = ON');
   migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 14) });
   sqlite.exec(`
     insert into users (id, name, role, permissions) values
@@ -41,18 +41,18 @@ function before0014() {
   return sqlite;
 }
 
-const rows = (sqlite: Database.Database, query: string) => sqlite.prepare(query).all();
+const rows = (sqlite: Database, query: string): unknown[] => sqlite.prepare(query).all();
 
 describe('migration 0014 sur une base 0013 peuplée', () => {
   it('garde notifications, index, clés étrangères, membres et sessions ; ajoute les colonnes', SLOW_TEST, () => {
     const sqlite = before0014();
     const notificationRows = rows(sqlite, 'select * from notifications order by id');
-    const indexes = (db: Database.Database) =>
-      (db.pragma('index_list(notifications)') as Array<{ name: string; unique: number; partial: number }>)
+    const indexes = (db: Database) =>
+      (pragma(db, 'index_list(notifications)') as Array<{ name: string; unique: number; partial: number }>)
         .map(({ name, unique, partial }) => ({ name, unique, partial }))
         .sort((x, y) => x.name.localeCompare(y.name));
-    const keys = (db: Database.Database) =>
-      (db.pragma('foreign_key_list(notifications)') as Array<Record<string, unknown>>)
+    const keys = (db: Database) =>
+      (pragma(db, 'foreign_key_list(notifications)') as Array<Record<string, unknown>>)
         .map(({ table, from, to, on_delete: onDelete }) => ({ table, from, to, onDelete }))
         .sort((x, y) => String(x.from).localeCompare(String(y.from)));
     const indexesBefore = indexes(sqlite);
@@ -77,7 +77,7 @@ describe('migration 0014 sur une base 0013 peuplée', () => {
       { table: 'requests', from: 'request_id', to: 'id', onDelete: 'SET NULL' },
       { table: 'users', from: 'user_id', to: 'id', onDelete: 'CASCADE' },
     ]);
-    expect(sqlite.pragma('foreign_key_check')).toEqual([]);
+    expect(pragma(sqlite, 'foreign_key_check')).toEqual([]);
     // Index partiel des non lues toujours utilisé (la pastille de la cloche).
     const plan = rows(
       sqlite,
@@ -103,7 +103,7 @@ describe('migration 0014 sur une base 0013 peuplée', () => {
       },
       { id: 'c', role: 'member', permissions: null, notification_types: null, watchlist_auto_request: 0 },
     ]);
-    sqlite.close();
+    sqlite.close(true);
   });
 
   it(
@@ -121,8 +121,8 @@ describe('migration 0014 sur une base 0013 peuplée', () => {
       expect(rows(sqlite, 'select count(*) as n from notifications where request_id is not null')).toEqual([{ n: 0 }]);
       sqlite.exec("delete from users where id = 'b'");
       expect(rows(sqlite, "select count(*) as n from notifications where user_id = 'b'")).toEqual([{ n: 0 }]);
-      expect(sqlite.pragma('foreign_key_check')).toEqual([]);
-      sqlite.close();
+      expect(pragma(sqlite, 'foreign_key_check')).toEqual([]);
+      sqlite.close(true);
     },
   );
 
@@ -139,7 +139,7 @@ describe('migration 0014 sur une base 0013 peuplée', () => {
       for (const invalid of ['[1]', 'pas du json', '"texte"'])
         expect(() => setTypes(invalid)).toThrow(/CHECK constraint/);
       expect(() => sqlite.exec("update users set watchlist_auto_request = null where id = 'c'")).toThrow(/NOT NULL/);
-      sqlite.close();
+      sqlite.close(true);
     },
   );
 });

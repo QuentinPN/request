@@ -18,7 +18,7 @@ import {
 } from '../../shared/notifications.ts';
 import { autoApproves, capabilitiesOf } from '../../shared/roles.ts';
 import type { RequestEventType } from '../../shared/status.ts';
-import type { Data, Db } from '../db/index.ts';
+import { changes, type Data, type Db } from '../db/index.ts';
 import { issueComments, issues, media, notifications, requests, users } from '../db/schema.ts';
 import type { TmdbClient } from '../integrations/tmdb.ts';
 import { DAY_MS } from '../lib/time.ts';
@@ -327,15 +327,17 @@ export function notifyIssueEvent(tx: Pick<Db, 'select' | 'insert'>, { issueId, k
 export function purgeOldNotifications(db: Db, now: Date): number {
   const readBefore = new Date(+now - READ_NOTIFICATION_RETENTION_MS);
   const unreadBefore = new Date(+now - UNREAD_NOTIFICATION_RETENTION_MS);
-  return db
-    .delete(notifications)
-    .where(
-      or(
-        and(isNotNull(notifications.readAt), lt(notifications.readAt, readBefore)),
-        and(isNull(notifications.readAt), lt(notifications.createdAt, unreadBefore)),
-      ),
-    )
-    .run().changes;
+  return changes(
+    db
+      .delete(notifications)
+      .where(
+        or(
+          and(isNotNull(notifications.readAt), lt(notifications.readAt, readBefore)),
+          and(isNull(notifications.readAt), lt(notifications.createdAt, unreadBefore)),
+        ),
+      )
+      .run(),
+  );
 }
 
 // --- Lecture ---

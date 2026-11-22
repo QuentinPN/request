@@ -1,8 +1,8 @@
+import { type Changes, Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { loadOrCreateKey } from '../crypto.ts';
 import * as schema from './schema.ts';
 
@@ -15,18 +15,21 @@ const JOURNAL_SIZE_LIMIT = 64 * 1024 * 1024;
 export function openDb(file: string) {
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
   const sqlite = new Database(file);
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
-  sqlite.pragma('busy_timeout = 5000');
+  sqlite.run('PRAGMA journal_mode = WAL');
+  sqlite.run('PRAGMA foreign_keys = ON');
+  sqlite.run('PRAGMA busy_timeout = 5000');
   // WAL + NORMAL : pas de fsync à chaque commit (au pire les dernières écritures sont perdues sur coupure, jamais la cohérence).
-  sqlite.pragma('synchronous = NORMAL');
-  sqlite.pragma(`journal_size_limit = ${JOURNAL_SIZE_LIMIT}`);
+  sqlite.run('PRAGMA synchronous = NORMAL');
+  sqlite.run(`PRAGMA journal_size_limit = ${JOURNAL_SIZE_LIMIT}`);
   const db = drizzle({ client: sqlite, schema, casing: 'snake_case' });
   migrate(db, { migrationsFolder });
   return db;
 }
 
 export type Db = ReturnType<typeof openDb>;
+
+/** Lignes touchées par un `.run()` de Drizzle : bun:sqlite les renvoie, mais le pilote bun-sqlite de Drizzle le type `void`. */
+export const changes = (result: unknown): number => (result as Changes).changes;
 
 /** Fichier de la base SQLite dans le dossier de données. */
 export const DB_FILE_NAME = 'request.db';

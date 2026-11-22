@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { type JobId, type JobRunStatus, type JobRunSummary, jobDefinitions } from '../../shared/jobs.ts';
-import type { Db } from '../db/index.ts';
+import { changes, type Db } from '../db/index.ts';
 import { jobRuns } from '../db/schema.ts';
 
 /**
@@ -30,11 +30,13 @@ export function finishJob(db: Db, id: number, status: Exclude<JobRunStatus, 'run
 
 /** Au démarrage du serveur : une exécution encore `running` a été interrompue (arrêt, plantage) et ne finira jamais. */
 export function failOrphanJobs(db: Db): number {
-  return db
-    .update(jobRuns)
-    .set({ status: 'failed', finishedAt: new Date(), detail: 'Interrompue par un redémarrage du serveur' })
-    .where(eq(jobRuns.status, 'running'))
-    .run().changes;
+  return changes(
+    db
+      .update(jobRuns)
+      .set({ status: 'failed', finishedAt: new Date(), detail: 'Interrompue par un redémarrage du serveur' })
+      .where(eq(jobRuns.status, 'running'))
+      .run(),
+  );
 }
 
 /** Écrit dans le journal de l'appli (`app.log`) l'issue d'une tâche. */

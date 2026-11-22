@@ -1,6 +1,6 @@
+import type { Database } from 'bun:sqlite';
 import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import type Database from 'better-sqlite3';
 import { JOB } from '../../shared/jobs.ts';
 import type { Db } from '../db/index.ts';
 import { startPeriodic } from '../lib/periodic.ts';
@@ -27,12 +27,12 @@ export function parseBackupKeep(env: string | undefined): number {
 const backupFiles = (dir: string) => readdirSync(dir).filter((name) => BACKUP_FILE.test(name));
 
 /**
- * Sauvegarde en ligne cohérente (API de sauvegarde de SQLite : l'appli peut continuer d'écrire) dans `dir`, puis ne
- * garde que les `keep` copies les plus récentes. Écrite sous un nom temporaire puis renommée : une copie interrompue ne
- * ressemble jamais à une sauvegarde valide. Renvoie le chemin de la copie.
+ * Sauvegarde en ligne cohérente dans `dir` (`VACUUM INTO` : copie compacte lue dans une transaction, l'appli continue
+ * d'écrire en WAL pendant ce temps), puis ne garde que les `keep` copies les plus récentes. Écrite sous un nom
+ * temporaire puis renommée : une copie interrompue ne ressemble jamais à une sauvegarde valide. Renvoie son chemin.
  */
 export async function backupDatabase(
-  sqlite: Database.Database,
+  sqlite: Database,
   dir: string,
   { keep = DEFAULT_BACKUP_KEEP, now = Date.now }: { keep?: number; now?: () => number } = {},
 ): Promise<string> {
@@ -41,7 +41,7 @@ export async function backupDatabase(
   const target = join(dir, `request-${stamp}.db`);
   const temp = `${target}.tmp`;
   try {
-    await sqlite.backup(temp);
+    sqlite.run('VACUUM INTO ?', [temp]);
     renameSync(temp, target);
   } catch (err) {
     rmSync(temp, { force: true });

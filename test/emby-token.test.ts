@@ -1,8 +1,8 @@
+import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
-import Database from 'better-sqlite3';
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import { migrationsFolder } from '../src/server/db/index.ts';
@@ -395,6 +395,6 @@ describe('migration 0016_sessions_appareil', () => {
     sqlite.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES ('s', 'u', 9999999999)").run();
     migrate(db, { migrationsFolder });
     expect(sqlite.prepare('SELECT id, device_name FROM sessions').all()).toEqual([{ id: 's', device_name: null }]);
-    sqlite.close();
+    sqlite.close(true);
   });
 });

@@ -4,7 +4,7 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "module": "esnext",
     "moduleResolution": "bundler",
-    "types": ["node", "vite/client"],
+    "types": ["bun", "node", "vite/client"],
     "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": true,
