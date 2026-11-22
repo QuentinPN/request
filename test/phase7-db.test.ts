@@ -14,7 +14,7 @@ import { arrServerInputSchema } from '../src/shared/arr-servers.ts';
 import { issueCreateSchema } from '../src/shared/issues.ts';
 import { notificationKinds } from '../src/shared/notifications.ts';
 import { settingSchemas } from '../src/shared/settings.ts';
-import { queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { queryPlan, SLOW_TEST, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const cryptoKey = randomBytes(32);
@@ -43,7 +43,7 @@ const insertServer = (db: Db, type: string, is4k: number, isDefault: number, tag
   );
 
 // Ces tests rejouent toutes les migrations : plus de 5 s sur le runner de la CI, d'où un délai explicite de 20 s.
-describe('migration 0010 (phase 7) sur une base existante', { timeout: 20_000 }, () => {
+describe('migration 0010 (phase 7) sur une base existante', () => {
   const radarr = { url: 'http://radarr:7878', qualityProfileId: 4, rootFolderPath: '/films' };
   const sonarr = { url: 'http://sonarr:8989', qualityProfileId: 2, rootFolderPath: '/series', languageProfileId: 1 };
 
@@ -54,7 +54,7 @@ describe('migration 0010 (phase 7) sur une base existante', { timeout: 20_000 },
     return sqlite;
   }
 
-  it('conserve les données et reprend les réglages Radarr et Sonarr en serveurs par défaut', () => {
+  it('conserve les données et reprend les réglages Radarr et Sonarr en serveurs par défaut', SLOW_TEST, () => {
     const sqlite = beforePhase7();
     const settingsRow = sqlite.prepare('insert into settings (key, value) values (?, ?)');
     settingsRow.run('radarr', JSON.stringify({ ...radarr, apiKey: encrypt(cryptoKey, 'cle-radarr') }));
@@ -145,7 +145,7 @@ describe('migration 0010 (phase 7) sur une base existante', { timeout: 20_000 },
     sqlite.close();
   });
 
-  it('ne crée aucun serveur sans réglage Radarr/Sonarr, ni pour un réglage incomplet', () => {
+  it('ne crée aucun serveur sans réglage Radarr/Sonarr, ni pour un réglage incomplet', SLOW_TEST, () => {
     const sqlite = beforePhase7();
     sqlite.prepare('insert into settings (key, value) values (?, ?)').run('radarr', JSON.stringify({ url: 'x' }));
     migrate(drizzle({ client: sqlite }), { migrationsFolder });

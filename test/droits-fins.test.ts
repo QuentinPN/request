@@ -35,6 +35,7 @@ import {
   addArrServer,
   loginAs,
   loginAsOwner,
+  SLOW_TEST,
   trackFakeServers,
   trackTempDirs,
   truncatedMigrations,
@@ -227,8 +228,8 @@ async function setup() {
 const MOVIE = { type: 'movie', tmdbId: 603 };
 const TV = { type: 'tv', tmdbId: 1399, seasons: [1] };
 
-describe('demandes : droits du type, de la 4K et approbation automatique', { timeout: 20_000 }, () => {
-  it('403 en français sans le droit du type ou de la 4K, pour soi ou pour un autre', async () => {
+describe('demandes : droits du type, de la 4K et approbation automatique', () => {
+  it('403 en français sans le droit du type ou de la 4K, pour soi ou pour un autre', SLOW_TEST, async () => {
     const { as } = await setup();
     const noMovies = await as('member', 'sans-films', { canRequestMovies: false });
     const noTv = await as('member', 'sans-series', { canRequestTv: false });
@@ -252,7 +253,7 @@ describe('demandes : droits du type, de la 4K et approbation automatique', { tim
     expect(onBehalf.json().error).toBe(`Pas de droit de demander des films (${noMovies.user.name})`);
   });
 
-  it('approbation automatique séparée : films, séries, 4K', async () => {
+  it('approbation automatique séparée : films, séries, 4K', SLOW_TEST, async () => {
     const { db, as } = await setup();
     const manager = await as('manager');
     const moviesOnly = await as('member', 'films-auto', { autoApproveMovies: true });
@@ -273,14 +274,14 @@ describe('demandes : droits du type, de la 4K et approbation automatique', { tim
     expect(requested.sort()).toEqual([series.id, movie4k.id].sort());
   });
 
-  it('approbation automatique 4K seule : la 4K part, la version normale attend', async () => {
+  it('approbation automatique 4K seule : la 4K part, la version normale attend', SLOW_TEST, async () => {
     const { as } = await setup();
     const only4k = await as('member', '4k-auto', { autoApprove4k: true });
     expect((await only4k.post('/api/requests', { ...MOVIE, is4k: true })).json<RequestDetail>().status).toBe('sent');
     expect((await only4k.post('/api/requests', MOVIE)).json<RequestDetail>().status).toBe('pending');
   });
 
-  it('« Hors quota » au cas par cas : le droit, pas le rôle', async () => {
+  it('« Hors quota » au cas par cas : le droit, pas le rôle', SLOW_TEST, async () => {
     const { as } = await setup();
     const member = await as('member', 'hors-quota', { canRequestQuotaExempt: true });
     expect((await member.post('/api/requests', { ...MOVIE, quotaExempt: true })).statusCode).toBe(201);
@@ -291,8 +292,8 @@ describe('demandes : droits du type, de la 4K et approbation automatique', { tim
   });
 });
 
-describe('routes de gestion : droits effectifs', { timeout: 20_000 }, () => {
-  it('accordés à un membre, retirés à un gestionnaire', async () => {
+describe('routes de gestion : droits effectifs', () => {
+  it('accordés à un membre, retirés à un gestionnaire', SLOW_TEST, async () => {
     const { as } = await setup();
     const stats = await as('member', 'stats', { canViewStats: true, canManageBlocklist: true });
     expect((await stats.get('/api/stats')).statusCode).toBe(200);
@@ -306,7 +307,7 @@ describe('routes de gestion : droits effectifs', { timeout: 20_000 }, () => {
     expect((await approver.post(`/api/requests/${request.id}/decline`, { reason: 'non' })).statusCode).toBe(200);
   });
 
-  it('notifications « à traiter » : d’après les droits effectifs, pas le rôle', async () => {
+  it('notifications « à traiter » : d’après les droits effectifs, pas le rôle', SLOW_TEST, async () => {
     const { db, as } = await setup();
     const silenced = await as('manager', 'gestionnaire-muet', { canManageRequests: false, canManageIssues: false });
     const approver = await as('member', 'approbateur', { canManageRequests: true });
@@ -337,7 +338,7 @@ describe('routes de gestion : droits effectifs', { timeout: 20_000 }, () => {
     expect((await silenced.get(`/api/issues/${issue.id}`)).statusCode).toBe(404);
   });
 
-  it('liste des membres : demander pour un autre suffit, avec les droits propres de chacun', async () => {
+  it('liste des membres : demander pour un autre suffit, avec les droits propres de chacun', SLOW_TEST, async () => {
     const { as } = await setup();
     const onBehalf = await as('member', 'pour-autrui', { canRequestOnBehalf: true });
     const res = await onBehalf.get('/api/users');
@@ -351,28 +352,34 @@ describe('routes de gestion : droits effectifs', { timeout: 20_000 }, () => {
   });
 });
 
-describe('PUT /api/users/:id : droits et garde', { timeout: 20_000 }, () => {
-  it('le propriétaire enregistre l’écart au rôle ; changer de rôle sans droits remet le préréglage', async () => {
-    const { as } = await setup();
-    const owner = await as('owner', 'proprietaire');
-    const member = await as('member');
-    const url = `/api/users/${member.user.id}`;
-    const res = await owner.put(url, { role: 'member', permissions: { canViewStats: true, canRequestMovies: true } });
-    expect(res.statusCode).toBe(200);
-    expect(res.json<Member>().permissions).toEqual({ canViewStats: true });
-    // Quotas seuls : les droits restent.
-    expect((await owner.put(url, { quotaOverride: null })).json<Member>().permissions).toEqual({ canViewStats: true });
-    // Rôle changé sans `permissions` : préréglage du nouveau rôle.
-    expect((await owner.put(url, { role: 'auto_approve' })).json<Member>()).toMatchObject({
-      role: 'auto_approve',
-      permissions: null,
-    });
-    // « Revenir au rôle ».
-    await owner.put(url, { permissions: { canViewStats: true } });
-    expect((await owner.put(url, { permissions: null })).json<Member>().permissions).toBeNull();
-  });
+describe('PUT /api/users/:id : droits et garde', () => {
+  it(
+    'le propriétaire enregistre l’écart au rôle ; changer de rôle sans droits remet le préréglage',
+    SLOW_TEST,
+    async () => {
+      const { as } = await setup();
+      const owner = await as('owner', 'proprietaire');
+      const member = await as('member');
+      const url = `/api/users/${member.user.id}`;
+      const res = await owner.put(url, { role: 'member', permissions: { canViewStats: true, canRequestMovies: true } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<Member>().permissions).toEqual({ canViewStats: true });
+      // Quotas seuls : les droits restent.
+      expect((await owner.put(url, { quotaOverride: null })).json<Member>().permissions).toEqual({
+        canViewStats: true,
+      });
+      // Rôle changé sans `permissions` : préréglage du nouveau rôle.
+      expect((await owner.put(url, { role: 'auto_approve' })).json<Member>()).toMatchObject({
+        role: 'auto_approve',
+        permissions: null,
+      });
+      // « Revenir au rôle ».
+      await owner.put(url, { permissions: { canViewStats: true } });
+      expect((await owner.put(url, { permissions: null })).json<Member>().permissions).toBeNull();
+    },
+  );
 
-  it('un non-propriétaire qui gère les membres : garde serveur, quotas compris', async () => {
+  it('un non-propriétaire qui gère les membres : garde serveur, quotas compris', SLOW_TEST, async () => {
     const { db, as } = await setup();
     const admin = await as('member', 'admin', { canManageUsers: true, canViewStats: true });
     const member = await as('member');
@@ -403,24 +410,22 @@ describe('PUT /api/users/:id : droits et garde', { timeout: 20_000 }, () => {
   });
 });
 
-describe(
-  'garde contre l’escalade : quotas et rôle Gestionnaire réservés aux membres hors quota',
-  {
-    timeout: 20_000,
-  },
-  () => {
-    it('un gestionnaire des membres hors quota règle les quotas et attribue Gestionnaire', async () => {
-      const { as } = await setup();
-      const exempt = await as('manager', 'hors-quota', { canManageUsers: true });
-      const member = await as('member');
-      const url = `/api/users/${member.user.id}`;
-      expect(
-        (await exempt.put(url, { quotaOverride: { movies: null, seasons: null, unlimited: true } })).statusCode,
-      ).toBe(200);
-      expect((await exempt.put(url, { role: 'manager' })).statusCode).toBe(200);
-    });
+describe('garde contre l’escalade : quotas et rôle Gestionnaire réservés aux membres hors quota', () => {
+  it('un gestionnaire des membres hors quota règle les quotas et attribue Gestionnaire', SLOW_TEST, async () => {
+    const { as } = await setup();
+    const exempt = await as('manager', 'hors-quota', { canManageUsers: true });
+    const member = await as('member');
+    const url = `/api/users/${member.user.id}`;
+    expect(
+      (await exempt.put(url, { quotaOverride: { movies: null, seasons: null, unlimited: true } })).statusCode,
+    ).toBe(200);
+    expect((await exempt.put(url, { role: 'manager' })).statusCode).toBe(200);
+  });
 
-    it('refuse Gestionnaire, seul ou en masse, à qui a tous les droits mais est soumis aux quotas', async () => {
+  it(
+    'refuse Gestionnaire, seul ou en masse, à qui a tous les droits mais est soumis aux quotas',
+    SLOW_TEST,
+    async () => {
       const { as } = await setup();
       const owner = await as('owner', 'proprietaire');
       // Tous les droits d'un gestionnaire par remplacements, mais rôle « membre » : soumis aux quotas.
@@ -436,12 +441,12 @@ describe(
       expect(bulk.statusCode).toBe(403);
       expect(bulk.json().error).toMatch(/hors quota/);
       expect((await owner.put(`/api/users/${member.user.id}`, { role: 'manager' })).statusCode).toBe(200);
-    });
-  },
-);
+    },
+  );
+});
 
-describe('POST /api/users/bulk', { timeout: 20_000 }, () => {
-  it('rôle et droits pour plusieurs membres, en une transaction', async () => {
+describe('POST /api/users/bulk', () => {
+  it('rôle et droits pour plusieurs membres, en une transaction', SLOW_TEST, async () => {
     const { db, as } = await setup();
     const owner = await as('owner', 'proprietaire');
     const a = await as('member', 'a', { canViewStats: true });
@@ -469,7 +474,7 @@ describe('POST /api/users/bulk', { timeout: 20_000 }, () => {
     expect((await owner.post('/api/users/bulk', { ids: [a.user.id] })).statusCode).toBe(400);
   });
 
-  it('un membre refusé : rien n’est écrit, le refus le nomme', async () => {
+  it('un membre refusé : rien n’est écrit, le refus le nomme', SLOW_TEST, async () => {
     const { db, as } = await setup();
     const admin = await as('member', 'admin', { canManageUsers: true, canViewStats: true });
     const a = await as('member', 'a');
@@ -485,10 +490,10 @@ describe('POST /api/users/bulk', { timeout: 20_000 }, () => {
   });
 });
 
-describe('droits par défaut des nouveaux membres', { timeout: 20_000 }, () => {
+describe('droits par défaut des nouveaux membres', () => {
   const defaultsUrl = '/api/users/defaults';
 
-  it('propriétaire seulement ; enregistrés sous forme d’écart au rôle', async () => {
+  it('propriétaire seulement ; enregistrés sous forme d’écart au rôle', SLOW_TEST, async () => {
     const { as } = await setup();
     const owner = await as('owner', 'proprietaire');
     const admin = await as('member', 'admin', { canManageUsers: true });
@@ -502,50 +507,54 @@ describe('droits par défaut des nouveaux membres', { timeout: 20_000 }, () => {
     expect(saved.json()).toEqual({ role: 'auto_approve', permissions: { canRequestTv: false } });
   });
 
-  it('appliqués à la première connexion et à l’import, jamais à un membre existant ni au premier propriétaire', async () => {
-    const data = openDataDir(tempDir());
-    const emby = await startServer({
-      'POST /Users/AuthenticateByName': (req, res) => {
-        const { Username } = req.body as { Username: string };
-        if (Username === 'alice') return status(200, authenticateFixture)(req, res);
-        return status(200, { User: { Id: 'u-new', Name: Username, Policy: { IsAdministrator: false } } })(req, res);
-      },
-      'GET /Users/Query': usersFixture,
-    });
-    setSetting(data.db, data.cryptoKey, 'emby', { url: emby.url, apiKey: 'CLE-EMBY' });
-    const defaults = { role: 'auto_approve' as const, permissions: { canRequestTv: false } };
-    setSetting(data.db, data.cryptoKey, 'memberDefaults', defaults);
-    const app: FastifyInstance = await buildApp({ data });
-    cleanups.push(() => app.close());
-    const login = (username: string) =>
-      app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: CSRF_HEADERS,
-        payload: { username, password: 'bon' },
+  it(
+    'appliqués à la première connexion et à l’import, jamais à un membre existant ni au premier propriétaire',
+    SLOW_TEST,
+    async () => {
+      const data = openDataDir(tempDir());
+      const emby = await startServer({
+        'POST /Users/AuthenticateByName': (req, res) => {
+          const { Username } = req.body as { Username: string };
+          if (Username === 'alice') return status(200, authenticateFixture)(req, res);
+          return status(200, { User: { Id: 'u-new', Name: Username, Policy: { IsAdministrator: false } } })(req, res);
+        },
+        'GET /Users/Query': usersFixture,
       });
+      setSetting(data.db, data.cryptoKey, 'emby', { url: emby.url, apiKey: 'CLE-EMBY' });
+      const defaults = { role: 'auto_approve' as const, permissions: { canRequestTv: false } };
+      setSetting(data.db, data.cryptoKey, 'memberDefaults', defaults);
+      const app: FastifyInstance = await buildApp({ data });
+      cleanups.push(() => app.close());
+      const login = (username: string) =>
+        app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          headers: CSRF_HEADERS,
+          payload: { username, password: 'bon' },
+        });
 
-    // Premier administrateur Emby : propriétaire, sans droits par défaut.
-    expect((await login('alice')).statusCode).toBe(200);
-    const alice = data.db.select().from(users).where(eq(users.role, 'owner')).get();
-    expect(alice?.permissions).toBeNull();
-    // Nouveau membre : droits par défaut.
-    expect((await login('bob')).statusCode).toBe(200);
-    expect(getUser(data.db, 'u-new')).toMatchObject(defaults);
-    // Membre existant : ses droits restent à la reconnexion.
-    setPermissions(data.db, 'u-new', null);
-    await login('bob');
-    expect(getUser(data.db, 'u-new')?.permissions).toBeNull();
+      // Premier administrateur Emby : propriétaire, sans droits par défaut.
+      expect((await login('alice')).statusCode).toBe(200);
+      const alice = data.db.select().from(users).where(eq(users.role, 'owner')).get();
+      expect(alice?.permissions).toBeNull();
+      // Nouveau membre : droits par défaut.
+      expect((await login('bob')).statusCode).toBe(200);
+      expect(getUser(data.db, 'u-new')).toMatchObject(defaults);
+      // Membre existant : ses droits restent à la reconnexion.
+      setPermissions(data.db, 'u-new', null);
+      await login('bob');
+      expect(getUser(data.db, 'u-new')?.permissions).toBeNull();
 
-    // Import : les comptes créés reçoivent les droits par défaut.
-    const owner = await loginAsOwner(app);
-    expect((await app.inject({ method: 'POST', url: '/api/users/import', headers: owner.headers })).statusCode).toBe(
-      200,
-    );
-    expect(getUser(data.db, 'u-3')).toMatchObject(defaults);
-  });
+      // Import : les comptes créés reçoivent les droits par défaut.
+      const owner = await loginAsOwner(app);
+      expect((await app.inject({ method: 'POST', url: '/api/users/import', headers: owner.headers })).statusCode).toBe(
+        200,
+      );
+      expect(getUser(data.db, 'u-3')).toMatchObject(defaults);
+    },
+  );
 
-  it('import direct : un membre déjà connu garde rôle et droits', () => {
+  it('import direct : un membre déjà connu garde rôle et droits', SLOW_TEST, () => {
     const db = openDb(':memory:');
     const defaults = { role: 'manager' as const, permissions: null };
     const identity = { id: 'a', name: 'A', avatar: null };
@@ -558,8 +567,8 @@ describe('droits par défaut des nouveaux membres', { timeout: 20_000 }, () => {
   });
 });
 
-describe('migration 0013 sur une base existante', { timeout: 20_000 }, () => {
-  it('ajoute `permissions` à null : rôles et quotas inchangés, droits du rôle', () => {
+describe('migration 0013 sur une base existante', () => {
+  it('ajoute `permissions` à null : rôles et quotas inchangés, droits du rôle', SLOW_TEST, () => {
     const sqlite = new Database(join(tempDir(), 'avant.db'));
     cleanups.push(() => sqlite.close());
     migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 13) });

@@ -12,7 +12,7 @@ import {
   receivableKinds,
 } from '../src/shared/notifications.ts';
 import { roles } from '../src/shared/roles.ts';
-import { trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { SLOW_TEST, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 // Lot 8.10 : migration 0014 (types par membre, `auto_approved` dans `notifications.kind`, colonne de la demande
 // automatique depuis Ma liste), sur une base 0013 (14 migrations) déjà peuplée. Le comportement (cloche, courriel, push, API)
@@ -43,8 +43,8 @@ function before0014() {
 
 const rows = (sqlite: Database.Database, query: string) => sqlite.prepare(query).all();
 
-describe('migration 0014 sur une base 0013 peuplée', { timeout: 20_000 }, () => {
-  it('garde notifications, index, clés étrangères, membres et sessions ; ajoute les colonnes', () => {
+describe('migration 0014 sur une base 0013 peuplée', () => {
+  it('garde notifications, index, clés étrangères, membres et sessions ; ajoute les colonnes', SLOW_TEST, () => {
     const sqlite = before0014();
     const notificationRows = rows(sqlite, 'select * from notifications order by id');
     const indexes = (db: Database.Database) =>
@@ -106,34 +106,42 @@ describe('migration 0014 sur une base 0013 peuplée', { timeout: 20_000 }, () =>
     sqlite.close();
   });
 
-  it('`auto_approved` est accepté ; un type inconnu, refusé ; la cascade et le « SET NULL » fonctionnent encore', () => {
-    const sqlite = before0014();
-    migrate(drizzle({ client: sqlite }), { migrationsFolder });
-    const insert = (kind: string) =>
-      sqlite.prepare("insert into notifications (user_id, kind, request_id) values ('b', ?, 1)").run(kind);
-    for (const kind of notificationKinds) expect(() => insert(kind)).not.toThrow();
-    expect(() => insert('inconnu')).toThrow(/CHECK constraint failed/);
+  it(
+    '`auto_approved` est accepté ; un type inconnu, refusé ; la cascade et le « SET NULL » fonctionnent encore',
+    SLOW_TEST,
+    () => {
+      const sqlite = before0014();
+      migrate(drizzle({ client: sqlite }), { migrationsFolder });
+      const insert = (kind: string) =>
+        sqlite.prepare("insert into notifications (user_id, kind, request_id) values ('b', ?, 1)").run(kind);
+      for (const kind of notificationKinds) expect(() => insert(kind)).not.toThrow();
+      expect(() => insert('inconnu')).toThrow(/CHECK constraint failed/);
 
-    sqlite.exec('delete from requests where id = 1');
-    expect(rows(sqlite, 'select count(*) as n from notifications where request_id is not null')).toEqual([{ n: 0 }]);
-    sqlite.exec("delete from users where id = 'b'");
-    expect(rows(sqlite, "select count(*) as n from notifications where user_id = 'b'")).toEqual([{ n: 0 }]);
-    expect(sqlite.pragma('foreign_key_check')).toEqual([]);
-    sqlite.close();
-  });
+      sqlite.exec('delete from requests where id = 1');
+      expect(rows(sqlite, 'select count(*) as n from notifications where request_id is not null')).toEqual([{ n: 0 }]);
+      sqlite.exec("delete from users where id = 'b'");
+      expect(rows(sqlite, "select count(*) as n from notifications where user_id = 'b'")).toEqual([{ n: 0 }]);
+      expect(sqlite.pragma('foreign_key_check')).toEqual([]);
+      sqlite.close();
+    },
+  );
 
-  it('`notification_types` : un objet JSON ou rien ; `watchlist_auto_request` : un booléen, faux par défaut', () => {
-    const sqlite = before0014();
-    migrate(drizzle({ client: sqlite }), { migrationsFolder });
-    const setTypes = (value: string | null) =>
-      sqlite.prepare("update users set notification_types = ? where id = 'c'").run(value);
-    expect(() => setTypes('{"auto_approved":true}')).not.toThrow();
-    expect(() => setTypes(null)).not.toThrow();
-    for (const invalid of ['[1]', 'pas du json', '"texte"'])
-      expect(() => setTypes(invalid)).toThrow(/CHECK constraint/);
-    expect(() => sqlite.exec("update users set watchlist_auto_request = null where id = 'c'")).toThrow(/NOT NULL/);
-    sqlite.close();
-  });
+  it(
+    '`notification_types` : un objet JSON ou rien ; `watchlist_auto_request` : un booléen, faux par défaut',
+    SLOW_TEST,
+    () => {
+      const sqlite = before0014();
+      migrate(drizzle({ client: sqlite }), { migrationsFolder });
+      const setTypes = (value: string | null) =>
+        sqlite.prepare("update users set notification_types = ? where id = 'c'").run(value);
+      expect(() => setTypes('{"auto_approved":true}')).not.toThrow();
+      expect(() => setTypes(null)).not.toThrow();
+      for (const invalid of ['[1]', 'pas du json', '"texte"'])
+        expect(() => setTypes(invalid)).toThrow(/CHECK constraint/);
+      expect(() => sqlite.exec("update users set watchlist_auto_request = null where id = 'c'")).toThrow(/NOT NULL/);
+      sqlite.close();
+    },
+  );
 });
 
 describe('types de notification : règles partagées', () => {
