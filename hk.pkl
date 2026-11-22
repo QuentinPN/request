@@ -1,0 +1,32 @@
+amends "package://github.com/jdx/hk/releases/download/v2.13.0/hk@2.13.0#/Config.pkl"
+
+// Mêmes commandes que la CI (.gitea/workflows/ci.yml), mais sur les seuls fichiers indexés au pre-commit.
+// Le pre-commit corrige puis réindexe (fix = true) ; une erreur restante bloque le commit.
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps {
+      ["biome"] {
+        glob = List("**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,css}")
+        check = "bun run biome check --no-errors-on-unmatched --files-ignore-unknown=true {{files}}"
+        fix = "bun run biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {{files}}"
+      }
+      ["bun-fmt"] {
+        glob = List("**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,css,html,yaml,yml,md,mdx}")
+        depends = "biome"
+        check = "bun fmt --check {{files}}"
+        fix = "bun fmt {{files}}"
+      }
+    }
+  }
+  // Les contrôles de la CI (jobs checks et tests), sur tout le dépôt.
+  ["pre-push"] {
+    steps {
+      ["biome"] { check = "bun run lint" }
+      ["bun-fmt"] { check = "bun run format:check" }
+      ["typecheck"] { check = "bun run check" }
+      ["tests"] { check = "bun run test" }
+    }
+  }
+}
