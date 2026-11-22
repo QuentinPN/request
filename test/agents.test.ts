@@ -329,8 +329,11 @@ describe('annulation et signalements', () => {
     });
     expect(created.statusCode).toBe(201);
     const issue = created.json<IssueDetail>();
+    // Les envois sont relus après la validation (`issue.status` est l'état au moment de l'envoi) : celui de « créé »
+    // finit avant la résolution, celui de « résolu » avant la réouverture. Sans attente, une machine chargée envoyait
+    // `issue_opened` après la résolution, avec `status: 'resolved'`.
+    await sent();
     expect((await manager.post(`/api/issues/${issue.id}/resolve`)).statusCode).toBe(200);
-    // Les envois sont relus après la validation : celui de « résolu » finit avant la réouverture.
     await sent();
     expect((await manager.post(`/api/issues/${issue.id}/reopen`)).statusCode).toBe(200);
 
