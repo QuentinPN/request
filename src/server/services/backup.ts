@@ -41,6 +41,8 @@ export async function backupDatabase(
   const target = join(dir, `request-${stamp}.db`);
   const temp = `${target}.tmp`;
   try {
+    // `VACUUM INTO` échoue si le fichier existe : on écarte celui d'une copie interrompue (crash, arrêt brutal).
+    rmSync(temp, { force: true });
     sqlite.run('VACUUM INTO ?', [temp]);
     renameSync(temp, target);
   } catch (err) {

@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { openDataDir } from '../src/server/db/index.ts';
@@ -33,6 +33,20 @@ describe('backupDatabase', () => {
     const copy = new Database(file, { readonly: true });
     expect(copy.prepare('select v from probe').all()).toEqual([{ v: 'avant' }]);
     expect(pragma(copy, 'integrity_check', { simple: true })).toBe('ok');
+    copy.close(true);
+    sqlite.close(true);
+  });
+
+  it("réussit malgré un fichier temporaire resté d'une copie interrompue", async () => {
+    const { sqlite, dir } = openWithRow();
+    mkdirSync(dir, { recursive: true });
+    const stale = join(dir, 'request-20260102-030405.db.tmp');
+    writeFileSync(stale, 'reste_dun_crash');
+    const file = await backupDatabase(sqlite, dir, { now: () => Date.UTC(2026, 0, 2, 3, 4, 5) });
+
+    expect(existsSync(stale)).toBe(false);
+    const copy = new Database(file, { readonly: true });
+    expect(copy.prepare('select v from probe').all()).toEqual([{ v: 'avant' }]);
     copy.close(true);
     sqlite.close(true);
   });
