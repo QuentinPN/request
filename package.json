@@ -14,6 +14,7 @@
     "format": "biome check --write .",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "test:bun": "bun test --isolate --parallel=6 --randomize",
     "verify": "bun run lint && bun run check && bun run test && bun run build",
     "backup": "node scripts/backup.ts",
     "openapi": "node scripts/openapi.ts",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
+    "@sinonjs/fake-timers": "15.4.0",
     "@tailwindcss/vite": "^4.3.5",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.6",

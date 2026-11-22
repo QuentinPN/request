@@ -1,0 +1,5 @@
+# bun test : les fichiers *.test.ts de test/, avec la compatibilité Vitest préchargée (test/vitest-compat.ts).
+# Isolation, parallélisme et ordre aléatoire : drapeaux du script `test:bun` de package.json.
+[test]
+root = "test"
+preload = ["./test/vitest-compat.ts"]
