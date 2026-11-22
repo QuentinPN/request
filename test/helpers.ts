@@ -41,6 +41,12 @@ export function trackTempDirs() {
   };
 }
 
+/**
+ * Délai des tests lents (migrations sur une base peuplée, routes qui créent plusieurs membres) : 20 s au lieu de 5.
+ * Sur chaque test, pas sur leur `describe` : bun test 1.4.5 ignore le `timeout` des options d'un `describe`.
+ */
+export const SLOW_TEST = { timeout: 20_000 };
+
 /** Crée des applications sur un dossier de données neuf, fermées (et nettoyées) après chaque test. */
 export function trackApps() {
   const tempDir = trackTempDirs();

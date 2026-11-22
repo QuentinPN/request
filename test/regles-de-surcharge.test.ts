@@ -24,7 +24,7 @@ import {
 import { type RequestDetail, resolveSendChoice, type SendOptions } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import type { FakeRoutes } from './fake-server.ts';
-import { addArrServer, loginAs, trackFakeServers, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { addArrServer, loginAs, SLOW_TEST, trackFakeServers, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 // Lot 8.8 : règles de surcharge (Seerr `OverrideRule`) : sémantique, migration 0015, routes, approbation et envoi.
 
@@ -208,8 +208,8 @@ async function setup({ radarr = {}, tmdb = {} }: { radarr?: Partial<ArrServerInp
 const posted = (server: { requests: Array<{ method: string; path: string; body: unknown }> }, path: string) =>
   server.requests.filter((r) => r.method === 'POST' && r.path === path).map((r) => r.body as Record<string, unknown>);
 
-describe('routes /api/override-rules', { timeout: 20_000 }, () => {
-  it('réservées au propriétaire', async () => {
+describe('routes /api/override-rules', () => {
+  it('réservées au propriétaire', SLOW_TEST, async () => {
     const { as, actionRule } = await setup();
     for (const role of ['member', 'manager'] as const) {
       const actor = await as(role);
@@ -218,7 +218,7 @@ describe('routes /api/override-rules', { timeout: 20_000 }, () => {
     }
   });
 
-  it('ajout, liste ordonnée, nouvel ordre, modification et suppression', async () => {
+  it('ajout, liste ordonnée, nouvel ordre, modification et suppression', SLOW_TEST, async () => {
     const { owner, actionRule, servers } = await setup();
     const created = await owner.send('POST', OVERRIDE_RULES_PATH, actionRule);
     expect(created.statusCode).toBe(201);
@@ -242,19 +242,23 @@ describe('routes /api/override-rules', { timeout: 20_000 }, () => {
     expect((await owner.get(OVERRIDE_RULES_PATH)).json<OverrideRule[]>().map((r) => r.id)).toEqual([second.id]);
   });
 
-  it('refuse un serveur d’un autre type, un profil ou un dossier inconnu du serveur, une règle sans condition', async () => {
-    const { owner, actionRule, sonarrServer } = await setup();
-    const refused = async (patch: Partial<OverrideRuleInput>) =>
-      (await owner.send('POST', OVERRIDE_RULES_PATH, { ...actionRule, ...patch })).statusCode;
-    expect(await refused({ serverId: sonarrServer.id })).toBe(400);
-    expect(await refused({ serverId: 999 })).toBe(400);
-    expect(await refused({ qualityProfileId: 99 })).toBe(400);
-    expect(await refused({ rootFolderPath: '/nulle-part' })).toBe(400);
-    expect(await refused({ genres: [] })).toBe(400);
-    expect((await owner.get(OVERRIDE_RULES_PATH)).json()).toEqual([]);
-  });
+  it(
+    'refuse un serveur d’un autre type, un profil ou un dossier inconnu du serveur, une règle sans condition',
+    SLOW_TEST,
+    async () => {
+      const { owner, actionRule, sonarrServer } = await setup();
+      const refused = async (patch: Partial<OverrideRuleInput>) =>
+        (await owner.send('POST', OVERRIDE_RULES_PATH, { ...actionRule, ...patch })).statusCode;
+      expect(await refused({ serverId: sonarrServer.id })).toBe(400);
+      expect(await refused({ serverId: 999 })).toBe(400);
+      expect(await refused({ qualityProfileId: 99 })).toBe(400);
+      expect(await refused({ rootFolderPath: '/nulle-part' })).toBe(400);
+      expect(await refused({ genres: [] })).toBe(400);
+      expect((await owner.get(OVERRIDE_RULES_PATH)).json()).toEqual([]);
+    },
+  );
 
-  it('supprimer le serveur supprime ses règles', async () => {
+  it('supprimer le serveur supprime ses règles', SLOW_TEST, async () => {
     const { owner, actionRule, radarr4k } = await setup();
     await owner.send('POST', OVERRIDE_RULES_PATH, { ...actionRule, serverId: radarr4k.id });
     await owner.send('POST', OVERRIDE_RULES_PATH, actionRule);
@@ -263,8 +267,8 @@ describe('routes /api/override-rules', { timeout: 20_000 }, () => {
   });
 });
 
-describe('approbation et envoi avec une règle', { timeout: 20_000 }, () => {
-  it('approbation manuelle : profil, dossier de la règle, étiquettes fusionnées sans doublon', async () => {
+describe('approbation et envoi avec une règle', () => {
+  it('approbation manuelle : profil, dossier de la règle, étiquettes fusionnées sans doublon', SLOW_TEST, async () => {
     const { owner, as, servers, actionRule } = await setup();
     await owner.send('POST', OVERRIDE_RULES_PATH, actionRule);
     const member = await as('member');
@@ -276,7 +280,7 @@ describe('approbation et envoi avec une règle', { timeout: 20_000 }, () => {
     ]);
   });
 
-  it('le choix de l’approbateur passe avant la règle', async () => {
+  it('le choix de l’approbateur passe avant la règle', SLOW_TEST, async () => {
     const { owner, as, servers, actionRule } = await setup();
     await owner.send('POST', OVERRIDE_RULES_PATH, actionRule);
     const member = await as('member');
@@ -285,38 +289,48 @@ describe('approbation et envoi avec une règle', { timeout: 20_000 }, () => {
     expect(posted(servers.radarr, '/api/v3/movie')).toMatchObject([{ qualityProfileId: 1, rootFolderPath: '/anime' }]);
   });
 
-  it('approbation automatique : la règle choisit le serveur, le type de série et les étiquettes', async () => {
-    const { owner, servers, sonarrServer, data } = await setup();
-    const sonarrBis = addArrServer(data, { type: 'sonarr', url: servers.sonarr.url, name: 'Sonarr animés' });
-    expect(sonarrServer.isDefault).toBe(true);
-    const created = await owner.send('POST', OVERRIDE_RULES_PATH, {
-      name: 'Animés japonais',
-      type: 'tv',
-      serverId: sonarrBis.id,
-      languages: ['ja'],
-      keywords: [ANIME_KEYWORD],
-      seriesType: 'anime',
-      rootFolderPath: '/anime',
-      tags: [4],
-    });
-    expect(created.statusCode).toBe(201);
-    const request = await owner.send('POST', '/api/requests', { type: 'tv', tmdbId: 209867, seasons: [1] });
-    expect(request.json<RequestDetail>()).toMatchObject({ status: 'sent', server: { id: sonarrBis.id } });
-    expect(posted(servers.sonarr, '/api/v3/series')).toMatchObject([
-      { seriesType: 'anime', rootFolderPath: '/anime', tags: [4] },
-    ]);
-  });
+  it(
+    'approbation automatique : la règle choisit le serveur, le type de série et les étiquettes',
+    SLOW_TEST,
+    async () => {
+      const { owner, servers, sonarrServer, data } = await setup();
+      const sonarrBis = addArrServer(data, { type: 'sonarr', url: servers.sonarr.url, name: 'Sonarr animés' });
+      expect(sonarrServer.isDefault).toBe(true);
+      const created = await owner.send('POST', OVERRIDE_RULES_PATH, {
+        name: 'Animés japonais',
+        type: 'tv',
+        serverId: sonarrBis.id,
+        languages: ['ja'],
+        keywords: [ANIME_KEYWORD],
+        seriesType: 'anime',
+        rootFolderPath: '/anime',
+        tags: [4],
+      });
+      expect(created.statusCode).toBe(201);
+      const request = await owner.send('POST', '/api/requests', { type: 'tv', tmdbId: 209867, seasons: [1] });
+      expect(request.json<RequestDetail>()).toMatchObject({ status: 'sent', server: { id: sonarrBis.id } });
+      expect(posted(servers.sonarr, '/api/v3/series')).toMatchObject([
+        { seriesType: 'anime', rootFolderPath: '/anime', tags: [4] },
+      ]);
+    },
+  );
 
-  it('demande avancée sans serveur choisi : le profil choisi est gardé avec le serveur de la règle', async () => {
-    const { owner, servers, data, actionRule } = await setup();
-    const radarrBis = addArrServer(data, { type: 'radarr', url: servers.radarr.url, name: 'Radarr bis' });
-    await owner.send('POST', OVERRIDE_RULES_PATH, { ...actionRule, serverId: radarrBis.id, tags: [] });
-    const request = await owner.send('POST', '/api/requests', { type: 'movie', tmdbId: 603, qualityProfileId: 1 });
-    expect(request.json<RequestDetail>()).toMatchObject({ status: 'sent', server: { id: radarrBis.id } });
-    expect(posted(servers.radarr, '/api/v3/movie')).toMatchObject([{ qualityProfileId: 1, rootFolderPath: '/anime' }]);
-  });
+  it(
+    'demande avancée sans serveur choisi : le profil choisi est gardé avec le serveur de la règle',
+    SLOW_TEST,
+    async () => {
+      const { owner, servers, data, actionRule } = await setup();
+      const radarrBis = addArrServer(data, { type: 'radarr', url: servers.radarr.url, name: 'Radarr bis' });
+      await owner.send('POST', OVERRIDE_RULES_PATH, { ...actionRule, serverId: radarrBis.id, tags: [] });
+      const request = await owner.send('POST', '/api/requests', { type: 'movie', tmdbId: 603, qualityProfileId: 1 });
+      expect(request.json<RequestDetail>()).toMatchObject({ status: 'sent', server: { id: radarrBis.id } });
+      expect(posted(servers.radarr, '/api/v3/movie')).toMatchObject([
+        { qualityProfileId: 1, rootFolderPath: '/anime' },
+      ]);
+    },
+  );
 
-  it('une règle désactivée, d’un autre type ou qui ne correspond pas ne joue pas', async () => {
+  it('une règle désactivée, d’un autre type ou qui ne correspond pas ne joue pas', SLOW_TEST, async () => {
     const { owner, as, servers, actionRule } = await setup();
     await owner.send('POST', OVERRIDE_RULES_PATH, { ...actionRule, enabled: false });
     await owner.send('POST', OVERRIDE_RULES_PATH, { ...actionRule, genres: [ANIMATION] });
@@ -328,7 +342,7 @@ describe('approbation et envoi avec une règle', { timeout: 20_000 }, () => {
     ]);
   });
 
-  it('les options d’approbation montrent la règle et ses valeurs', async () => {
+  it('les options d’approbation montrent la règle et ses valeurs', SLOW_TEST, async () => {
     const { owner, actionRule, radarrServer } = await setup();
     const { id } = (await owner.send('POST', OVERRIDE_RULES_PATH, actionRule)).json<OverrideRule>();
     const options = (await owner.get('/api/requests/send-options/movie?is4k=false&tmdbId=603')).json<SendOptions>();
@@ -342,7 +356,7 @@ describe('approbation et envoi avec une règle', { timeout: 20_000 }, () => {
     expect(plain).toMatchObject({ defaultProfileId: 1, defaultFolder: '/media', rules: [] });
   });
 
-  it('approbation par lot : profil, dossier et étiquettes de la règle', async () => {
+  it('approbation par lot : profil, dossier et étiquettes de la règle', SLOW_TEST, async () => {
     const { owner, as, servers, actionRule } = await setup();
     await owner.send('POST', OVERRIDE_RULES_PATH, actionRule);
     const member = await as('member');
@@ -353,24 +367,28 @@ describe('approbation et envoi avec une règle', { timeout: 20_000 }, () => {
     ]);
   });
 
-  it('options d’envoi en cache par serveur : un appel pour des demandes simultanées, oublié à la modification', async () => {
-    const { owner, servers, radarrServer, data } = await setup();
-    const profileCalls = () =>
-      servers.radarr.requests.filter((r) => r.method === 'GET' && r.path === '/api/v3/qualityprofile').length;
-    const options = () => owner.get('/api/requests/send-options/movie?is4k=false&tmdbId=603');
-    const before = profileCalls();
-    const responses = await Promise.all(Array.from({ length: 10 }, options));
-    expect(responses.every((res) => res.statusCode === 200)).toBe(true);
-    expect(profileCalls()).toBe(before + 1);
+  it(
+    'options d’envoi en cache par serveur : un appel pour des demandes simultanées, oublié à la modification',
+    SLOW_TEST,
+    async () => {
+      const { owner, servers, radarrServer, data } = await setup();
+      const profileCalls = () =>
+        servers.radarr.requests.filter((r) => r.method === 'GET' && r.path === '/api/v3/qualityprofile').length;
+      const options = () => owner.get('/api/requests/send-options/movie?is4k=false&tmdbId=603');
+      const before = profileCalls();
+      const responses = await Promise.all(Array.from({ length: 10 }, options));
+      expect(responses.every((res) => res.statusCode === 200)).toBe(true);
+      expect(profileCalls()).toBe(before + 1);
 
-    const { id, apiKey, ...values } = radarrServer;
-    saveArrServer(data, arrServerInputSchema.parse({ ...values, apiKey, name: 'Radarr renommé' }), id);
-    const afterUpdate = profileCalls();
-    await options();
-    expect(profileCalls()).toBe(afterUpdate + 1);
-  });
+      const { id, apiKey, ...values } = radarrServer;
+      saveArrServer(data, arrServerInputSchema.parse({ ...values, apiKey, name: 'Radarr renommé' }), id);
+      const afterUpdate = profileCalls();
+      await options();
+      expect(profileCalls()).toBe(afterUpdate + 1);
+    },
+  );
 
-  it('TMDB injoignable : on continue sans les règles', async () => {
+  it('TMDB injoignable : on continue sans les règles', SLOW_TEST, async () => {
     const { data, actionRule } = await setup();
     createOverrideRule(data.db, overrideRuleInputSchema.parse(actionRule));
     const down = (() => {
@@ -380,8 +398,8 @@ describe('approbation et envoi avec une règle', { timeout: 20_000 }, () => {
   });
 });
 
-describe('migration 0015 sur une base 0014 peuplée', { timeout: 20_000 }, () => {
-  it('crée la table sans toucher aux serveurs ; contraintes et cascade', () => {
+describe('migration 0015 sur une base 0014 peuplée', () => {
+  it('crée la table sans toucher aux serveurs ; contraintes et cascade', SLOW_TEST, () => {
     const dir = tempDir();
     const sqlite = new Database(join(dir, 'base.db'));
     sqlite.pragma('foreign_keys = ON');

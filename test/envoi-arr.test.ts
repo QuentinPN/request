@@ -14,7 +14,7 @@ import type { RequestDetail, SendOptions } from '../src/shared/requests.ts';
 import type { Role } from '../src/shared/roles.ts';
 import { type FakeRoutes, status } from './fake-server.ts';
 import { fakeTagRoutes } from './fake-tags.ts';
-import { addArrServer, loginAs, trackFakeServers, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { addArrServer, loginAs, SLOW_TEST, trackFakeServers, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 const startServer = trackFakeServers();
 const tempDir = trackTempDirs();
@@ -438,13 +438,16 @@ describe('adresse externe', () => {
   });
 });
 
-describe('migration 0012 sur une base existante', { timeout: 20_000 }, () => {
-  it('garde les serveurs et leurs demandes (server_id), avec les valeurs par défaut des nouveaux réglages', () => {
-    const sqlite = new Database(join(tempDir(), 'avant.db'));
-    sqlite.pragma('foreign_keys = ON');
-    cleanups.push(() => sqlite.close());
-    migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 12) });
-    sqlite.exec(`
+describe('migration 0012 sur une base existante', () => {
+  it(
+    'garde les serveurs et leurs demandes (server_id), avec les valeurs par défaut des nouveaux réglages',
+    SLOW_TEST,
+    () => {
+      const sqlite = new Database(join(tempDir(), 'avant.db'));
+      sqlite.pragma('foreign_keys = ON');
+      cleanups.push(() => sqlite.close());
+      migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 12) });
+      sqlite.exec(`
       insert into arr_servers (id, type, name, url, api_key, is_default, quality_profile_id, root_folder_path, tags)
         values (1, 'sonarr', 'Sonarr', 'http://sonarr:8989', 'chiffree', 1, 2, '/series', '[4]');
       insert into users (id, name) values ('u', 'U');
@@ -452,30 +455,31 @@ describe('migration 0012 sur une base existante', { timeout: 20_000 }, () => {
       insert into requests (id, media_id, user_id, status, server_id) values (1, 1, 'u', 'sent', 1);
     `);
 
-    migrate(drizzle({ client: sqlite }), { migrationsFolder });
+      migrate(drizzle({ client: sqlite }), { migrationsFolder });
 
-    expect(sqlite.prepare('select server_id from requests').all()).toEqual([{ server_id: 1 }]);
-    expect(sqlite.prepare('select * from arr_servers').all()).toEqual([
-      expect.objectContaining({
-        id: 1,
-        api_key: 'chiffree',
-        tags: '[4]',
-        tag_requester: 0,
-        search_on_add: 1,
-        external_url: null,
-        anime_quality_profile_id: null,
-        anime_root_folder_path: null,
-        anime_series_type: null,
-        anime_language_profile_id: null,
-        anime_tags: '[]',
-      }),
-    ]);
-    // Les contrôles des nouvelles colonnes sont en place.
-    const insert = (columns: string, value: string) =>
-      sqlite.prepare(
-        `insert into arr_servers (type, name, url, api_key, quality_profile_id, root_folder_path, ${columns}) values ('sonarr', 'x', 'u', 'k', 1, '/', ${value})`,
-      );
-    expect(() => insert('anime_series_type', "'inconnu'").run()).toThrow(/CHECK/);
-    expect(() => insert('anime_tags', "'{}'").run()).toThrow(/CHECK/);
-  });
+      expect(sqlite.prepare('select server_id from requests').all()).toEqual([{ server_id: 1 }]);
+      expect(sqlite.prepare('select * from arr_servers').all()).toEqual([
+        expect.objectContaining({
+          id: 1,
+          api_key: 'chiffree',
+          tags: '[4]',
+          tag_requester: 0,
+          search_on_add: 1,
+          external_url: null,
+          anime_quality_profile_id: null,
+          anime_root_folder_path: null,
+          anime_series_type: null,
+          anime_language_profile_id: null,
+          anime_tags: '[]',
+        }),
+      ]);
+      // Les contrôles des nouvelles colonnes sont en place.
+      const insert = (columns: string, value: string) =>
+        sqlite.prepare(
+          `insert into arr_servers (type, name, url, api_key, quality_profile_id, root_folder_path, ${columns}) values ('sonarr', 'x', 'u', 'k', 1, '/', ${value})`,
+        );
+      expect(() => insert('anime_series_type', "'inconnu'").run()).toThrow(/CHECK/);
+      expect(() => insert('anime_tags', "'{}'").run()).toThrow(/CHECK/);
+    },
+  );
 });
