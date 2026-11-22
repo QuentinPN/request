@@ -26,11 +26,8 @@ export function smtpRoutes(app: FastifyInstance, email: EmailService) {
     return maskSetting('smtp', value);
   });
 
-  app.put(
-    SMTP_SETTINGS_PATH,
-    ownerOnly,
-    async (req): Promise<MaskedSetting<'smtp'>> =>
-      maskSetting('smtp', setSetting(db, cryptoKey, 'smtp', fromForm(req.body))),
+  app.put(SMTP_SETTINGS_PATH, ownerOnly, async (req): Promise<MaskedSetting<'smtp'>> =>
+    maskSetting('smtp', setSetting(db, cryptoKey, 'smtp', fromForm(req.body))),
   );
 
   /** Essai vers l'adresse du propriétaire, avec le réglage saisi (sans l'enregistrer), sinon l'enregistré. */

@@ -51,10 +51,8 @@ export function webhookRoutes(app: FastifyInstance, sync: SyncService) {
     if (!isValidWebhookToken(app.data, receivedToken(req))) throw new HttpError(401, 'Jeton de webhook invalide');
   };
   for (const service of webhookServices)
-    app.post(
-      webhookPath(service),
-      { onRequest: checkToken },
-      async (req): Promise<WebhookResult> => sync.handleWebhook(service, req.body, senderOf(req)),
+    app.post(webhookPath(service), { onRequest: checkToken }, async (req): Promise<WebhookResult> =>
+      sync.handleWebhook(service, req.body, senderOf(req)),
     );
 
   app.get(WEBHOOK_SETTINGS_PATH, ownerOnly, async (req) => settingsOf(req, webhookToken(app.data), app.data));

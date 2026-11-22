@@ -104,10 +104,11 @@ interface Movie {
 
 /** 230 films (plus d'une page de 200) dans la section 1, une série dans la 2. */
 const SECTION_1: Movie[] = [
-  ...Array.from(
-    { length: 230 },
-    (_, i): Movie => ({ ratingKey: `${i}`, type: 'movie', Guid: [{ id: `tmdb://${5000 + i}` }] }),
-  ),
+  ...Array.from({ length: 230 }, (_, i): Movie => ({
+    ratingKey: `${i}`,
+    type: 'movie',
+    Guid: [{ id: `tmdb://${5000 + i}` }],
+  })),
   // Ancien agent, sans `Guid`.
   { ratingKey: 'ancien', type: 'movie', guid: 'com.plexapp.agents.themoviedb://603?lang=fr', addedAt: 1_794_700_000 },
   {

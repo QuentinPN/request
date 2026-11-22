@@ -643,14 +643,12 @@ export function createAvailability(
   function seriesState4k(hit: ReturnType<typeof findSeries>): QualityUpdate {
     if (!hit) return { state: null, seasons: [] };
     const queue = hit.source.queue.get(hit.series.sonarrId) ?? [];
-    const facts = hit.series.seasons.map(
-      (s): SeasonFacts => ({
-        seasonNumber: s.seasonNumber,
-        present: s.episodeFileCount,
-        expected: s.episodeCount,
-        queue: progressOf(queue.filter((q) => q.seasonNumber === s.seasonNumber)),
-      }),
-    );
+    const facts = hit.series.seasons.map((s): SeasonFacts => ({
+      seasonNumber: s.seasonNumber,
+      present: s.episodeFileCount,
+      expected: s.episodeCount,
+      queue: progressOf(queue.filter((q) => q.seasonNumber === s.seasonNumber)),
+    }));
     return {
       state: libraryState('tv', { inEmby: false, queue: progressOf(queue), seasons: facts }),
       sonarrId: hit.series.sonarrId,

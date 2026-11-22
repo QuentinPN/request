@@ -30,28 +30,23 @@ export function issuesRoutes(app: FastifyInstance) {
     return issue;
   });
 
-  app.get(
-    ISSUES_PATH,
-    async (req): Promise<IssuePage> => service.list(viewerOf(req), parseRequest(issueListQuerySchema, req.query)),
+  app.get(ISSUES_PATH, async (req): Promise<IssuePage> =>
+    service.list(viewerOf(req), parseRequest(issueListQuerySchema, req.query)),
   );
 
   app.get(ISSUE_COUNTS_PATH, async (req): Promise<IssueCounts> => service.counts(viewerOf(req)));
 
   app.get(issuePath(':id'), async (req): Promise<IssueDetail> => service.get(viewerOf(req), idOf(req.params)));
 
-  app.post(
-    issuePath(':id', 'comments'),
-    async (req): Promise<IssueDetail> =>
-      service.comment(viewerOf(req), idOf(req.params), parseRequest(issueCommentInputSchema, req.body)),
+  app.post(issuePath(':id', 'comments'), async (req): Promise<IssueDetail> =>
+    service.comment(viewerOf(req), idOf(req.params), parseRequest(issueCommentInputSchema, req.body)),
   );
 
-  app.post(
-    issuePath(':id', 'resolve'),
-    async (req): Promise<IssueDetail> => service.resolve(viewerOf(req), idOf(req.params)),
+  app.post(issuePath(':id', 'resolve'), async (req): Promise<IssueDetail> =>
+    service.resolve(viewerOf(req), idOf(req.params)),
   );
 
-  app.post(
-    issuePath(':id', 'reopen'),
-    async (req): Promise<IssueDetail> => service.reopen(viewerOf(req), idOf(req.params)),
+  app.post(issuePath(':id', 'reopen'), async (req): Promise<IssueDetail> =>
+    service.reopen(viewerOf(req), idOf(req.params)),
   );
 }

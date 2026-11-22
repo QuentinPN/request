@@ -1,8 +1,8 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
-@import "@fontsource-variable/inter";
-@import "./tokens.css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/inter';
+@import './tokens.css';
 
 /* Thème sombre par défaut (tokens d'Hub), clair via data-theme="light". */
 @custom-variant dark (&:where(:root:not([data-theme="light"]) *));

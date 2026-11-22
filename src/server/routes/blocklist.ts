@@ -32,10 +32,8 @@ export function blocklistRoutes(app: FastifyInstance) {
 
   app.get(BLOCKLIST_PATH, canManage, async (): Promise<Blocklist> => service.list());
 
-  app.post(
-    BLOCKED_TITLES_PATH,
-    canManage,
-    async (req): Promise<Blocklist> => service.block(viewerOf(req).user.id, parseRequest(blockTitleSchema, req.body)),
+  app.post(BLOCKED_TITLES_PATH, canManage, async (req): Promise<Blocklist> =>
+    service.block(viewerOf(req).user.id, parseRequest(blockTitleSchema, req.body)),
   );
 
   app.delete(BLOCKED_TITLE_ROUTE, canManage, async (req): Promise<Blocklist> => {
@@ -43,17 +41,12 @@ export function blocklistRoutes(app: FastifyInstance) {
     return service.unblock({ type, tmdbId: id });
   });
 
-  app.put(
-    BLOCKED_KEYWORDS_PATH,
-    canManage,
-    async (req): Promise<Blocklist> => service.setKeywords(parseRequest(keywordsInputSchema, req.body).keywords),
+  app.put(BLOCKED_KEYWORDS_PATH, canManage, async (req): Promise<Blocklist> =>
+    service.setKeywords(parseRequest(keywordsInputSchema, req.body).keywords),
   );
 
-  app.get(
-    KEYWORD_SEARCH_PATH,
-    canManage,
-    async (req): Promise<BlockedKeyword[]> =>
-      service.searchKeywords(parseRequest(keywordSearchQuerySchema, req.query).q),
+  app.get(KEYWORD_SEARCH_PATH, canManage, async (req): Promise<BlockedKeyword[]> =>
+    service.searchKeywords(parseRequest(keywordSearchQuerySchema, req.query).q),
   );
 
   app.get(
@@ -63,10 +56,7 @@ export function blocklistRoutes(app: FastifyInstance) {
       getSetting(db, cryptoKey, 'discover') ?? settingSchemas.discover.parse({}),
   );
 
-  app.put(
-    DISCOVER_SETTINGS_PATH,
-    ownerOnly,
-    async (req): Promise<Setting<'discover'>> =>
-      setSetting(db, cryptoKey, 'discover', parseRequest(settingSchemas.discover, req.body)),
+  app.put(DISCOVER_SETTINGS_PATH, ownerOnly, async (req): Promise<Setting<'discover'>> =>
+    setSetting(db, cryptoKey, 'discover', parseRequest(settingSchemas.discover, req.body)),
   );
 }

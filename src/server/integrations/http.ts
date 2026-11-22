@@ -175,8 +175,10 @@ const definedOnly = <O extends object>(options: O): O =>
   Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as O;
 
 /** Valeurs communes à tous les appels d'un service (adresse, en-têtes d'authentification, paramètres fixes). */
-export interface ClientConfig
-  extends Pick<RequestOptions, 'headers' | 'query' | 'timeoutMs' | 'retries' | 'retryDelayMs' | 'messages'> {
+export interface ClientConfig extends Pick<
+  RequestOptions,
+  'headers' | 'query' | 'timeoutMs' | 'retries' | 'retryDelayMs' | 'messages'
+> {
   service: string;
   baseUrl: string;
 }

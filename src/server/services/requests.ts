@@ -439,8 +439,7 @@ export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date)
 }
 
 type SendOutcome =
-  | { ok: true; detail: string; is4k: boolean; arrId: number; tvdbId?: number }
-  | { ok: false; detail: string };
+  { ok: true; detail: string; is4k: boolean; arrId: number; tvdbId?: number } | { ok: false; detail: string };
 
 /** Erreurs au message lisible (service injoignable, non configuré, réponse inattendue) : affichées telles quelles. */
 const readable = (error: unknown) =>

@@ -415,8 +415,7 @@ export const requestCountsSchema = z.object({
 export type RequestCounts = z.output<typeof requestCountsSchema>;
 
 export type BatchItemResult =
-  | { id: number; ok: true; request: RequestDetail }
-  | { id: number; ok: false; error: string };
+  { id: number; ok: true; request: RequestDetail } | { id: number; ok: false; error: string };
 export interface BatchResult {
   results: BatchItemResult[];
 }
