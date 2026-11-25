@@ -6,7 +6,7 @@
 
 [English](README.md) | Français
 
-Request permet à ceux qui partagent votre serveur Emby, Jellyfin ou Plex de demander les films et séries qu'ils
+Request permet à ceux qui partagent votre serveur Emby (Jellyfin et Plex en expérimental) de demander les films et séries qu'ils
 veulent, en deux clics. Vous approuvez, vos outils de bibliothèque font le reste, et chacun est prévenu quand le titre
 est prêt à regarder.
 

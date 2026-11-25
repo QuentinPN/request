@@ -6,7 +6,7 @@
 
 English | [Français](README.fr.md)
 
-Request lets the people who share your Emby, Jellyfin or Plex server ask for the films and series they want, in two
+Request lets the people who share your Emby server (Jellyfin and Plex support is experimental) ask for the films and series they want, in two
 clicks. You approve, your library tools take care of the rest, and everyone is told when the title is ready to watch.
 
 <img src="docs/screenshots/request.webp" alt="The Request home page: a featured title, the requests in progress with their steps, and rows of trending films" width="900">
