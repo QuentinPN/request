@@ -29,6 +29,8 @@ est prêt à regarder.
   membres sont prévenus sans avoir à demander.
 - **Le compte que l'on a déjà.** Les membres se connectent avec leur compte du serveur multimédia, sans rien créer ni
   retenir de nouveau.
+- **Applis natives : Viewer.** Les membres de votre serveur qui utilisent [Viewer](https://github.com/QuentinPN/viewer)
+  sur Windows ou Android TV peuvent demander des titres depuis l'appli, connectés avec leur compte Emby.
 - **S'installe comme une appli, tourne partout.** Un seul conteneur Docker, avec sa base de données intégrée et des
   sauvegardes quotidiennes automatiques. Elle s'installe aussi sur un téléphone comme une application web.
 
@@ -46,12 +48,24 @@ flowchart LR
     B -->|Refusée, avec un motif| E
     C --> D[Ajoutée à la bibliothèque<br/>du serveur multimédia]
     D --> E[Le membre est prévenu]
+    V[Appli Viewer<br/>Windows, Android TV] -.->|connexion native| A
 ```
 
 1. Un membre se connecte avec son compte du serveur multimédia, trouve un film ou une série et le demande.
 2. Selon son rôle et son quota, la demande est approuvée tout de suite ou attend dans la file du propriétaire.
 3. Une fois approuvée, elle est confiée à Radarr (films) ou Sonarr (séries), qui l'ajoutent à la bibliothèque.
 4. Request voit arriver le titre, met à jour son statut partout et prévient le membre.
+
+## Applis natives : Viewer
+
+[Viewer](https://github.com/QuentinPN/viewer) est un client multimédia pour Emby, sur Windows et Android TV, avec un
+onglet « Demander » intégré relié à votre serveur Request. Request propose une connexion dédiée aux applis natives :
+les membres demandent des titres sans quitter l'appli.
+
+- **Le même compte, sans mot de passe en plus.** Viewer échange la connexion Emby du membre contre une session Request.
+  Chaque appareil apparaît comme sa propre session, qui peut être révoquée.
+- **Les fonctions habituelles.** Parcourir par type et par genre, chercher, voir les détails et les bandes-annonces,
+  demander un film ou une série avec le quota du membre affiché, suivre « Mes demandes » et en annuler une.
 
 ## Démarrage rapide
 

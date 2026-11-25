@@ -26,6 +26,8 @@ clicks. You approve, your library tools take care of the rest, and everyone is t
 - **Notified wherever you are.** In-app bell, email, web push and Discord, so members hear back without asking.
 - **Sign in with the account you already have.** Members use their media server login, with nothing new to create or
   remember.
+- **Native apps: Viewer.** Members of your server who use [Viewer](https://github.com/QuentinPN/viewer) on Windows or
+  Android TV can request titles from inside the app, signed in with their Emby account.
 - **Installs like an app, runs anywhere.** A single Docker container with a built-in database and automatic daily
   backups. It also installs on a phone as a web app.
 
@@ -43,12 +45,24 @@ flowchart LR
     B -->|Refused, with a reason| E
     C --> D[Added to the<br/>media server library]
     D --> E[Member is notified]
+    V[Viewer app<br/>Windows, Android TV] -.->|native sign-in| A
 ```
 
 1. A member signs in with their media server account, finds a film or a series and requests it.
 2. Depending on their role and quota, the request is approved on the spot or waits in the owner's queue.
 3. Once approved, it is handed to Radarr (films) or Sonarr (series), which put it in the library.
 4. Request notices the title has arrived, updates its status everywhere and notifies the member.
+
+## Native apps: Viewer
+
+[Viewer](https://github.com/QuentinPN/viewer) is a media client for Emby, on Windows and Android TV, with a built-in
+"Request" tab connected to your Request server. Request offers a dedicated sign-in for native apps, so members
+request titles without leaving the app:
+
+- **Same account, no extra password.** Viewer exchanges the member's Emby sign-in for a Request session. Each device
+  appears as its own session, which can be revoked.
+- **The usual features.** Browse by type and genre, search, see title details and trailers, request a film or a series
+  with the member's quota shown, follow "my requests" and cancel one.
 
 ## Quick start
 
