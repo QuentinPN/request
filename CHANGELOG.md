@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1 — 2026-11-25
+
+### Corrections
+
+- remove a stale temp file before VACUUM INTO (backup)
+- put the temp dir of the test jobs on tmpfs (ci)
+- keep the release token out of PR runs (ci)
+- type the request transaction outcome (requests)
+- point unreachable services at a port no parallel fake server can take (test)
+
 ## 1.0.0 — 2026-11-20
 
 ### Nouveautés
