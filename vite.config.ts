@@ -1,4 +1,3 @@
-/// <reference types="vitest/config" />
 import { resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -29,6 +28,4 @@ export default defineConfig({
   resolve: { alias: { '@': resolve(root, 'src/client'), '@shared': resolve(root, 'src/shared') } },
   server: { port: 3000, strictPort: true },
   build: { outDir: resolve(root, 'dist/client'), emptyOutDir: true },
-  // 6 workers (un par cœur physique) : borne la RAM quand plusieurs sessions testent en même temps.
-  test: { root, include: ['test/**/*.test.ts'], maxWorkers: 6 },
 });

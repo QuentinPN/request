@@ -74,11 +74,9 @@ export function watchlistRoutes(app: FastifyInstance, upstreams: { traktUrl?: st
 
   // Option du membre ; sans le droit (retiré ou jamais accordé), lecture et écriture sont refusées (403).
   const canAutoRequest = { preHandler: requireCapability('canAutoRequestWatchlist') };
-  app.get(
-    WATCHLIST_AUTO_REQUEST_PATH,
-    canAutoRequest,
-    async (req): Promise<AutoRequestSetting> => ({ enabled: viewerOf(req).user.watchlistAutoRequest }),
-  );
+  app.get(WATCHLIST_AUTO_REQUEST_PATH, canAutoRequest, async (req): Promise<AutoRequestSetting> => ({
+    enabled: viewerOf(req).user.watchlistAutoRequest,
+  }));
   app.put(WATCHLIST_AUTO_REQUEST_PATH, canAutoRequest, async (req): Promise<AutoRequestSetting> => {
     const { enabled } = parseRequest(autoRequestSettingSchema, req.body);
     return { enabled: setWatchlistAutoRequest(db, userOf(req), enabled).watchlistAutoRequest };

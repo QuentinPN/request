@@ -1,7 +1,7 @@
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '../src/server/crypto.ts';
@@ -335,7 +335,7 @@ describe('portée des clés', () => {
         )
         .run(),
     ).toThrow(/CHECK/);
-    sqlite.close();
+    sqlite.close(true);
   });
 
   it('une clé d’avant les portées reste « complète » à l’authentification', async () => {

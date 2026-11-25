@@ -439,8 +439,7 @@ export function markAvailable(tx: Writer, mediaIds: readonly number[], at: Date)
 }
 
 type SendOutcome =
-  | { ok: true; detail: string; is4k: boolean; arrId: number; tvdbId?: number }
-  | { ok: false; detail: string };
+  { ok: true; detail: string; is4k: boolean; arrId: number; tvdbId?: number } | { ok: false; detail: string };
 
 /** Erreurs au message lisible (service injoignable, non configuré, réponse inattendue) : affichées telles quelles. */
 const readable = (error: unknown) =>
@@ -947,7 +946,8 @@ export function createRequests(
     }
 
     const outcome = db.transaction(
-      (tx) => {
+      // `merged` : saisons ajoutées à sa demande en cours, absent sinon.
+      (tx): { id: number; created: boolean; merged?: boolean } => {
         const at = new Date(now());
         const mediaId = upsertMedia(tx, {
           type: details.type,

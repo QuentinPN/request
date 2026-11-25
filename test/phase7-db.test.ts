@@ -1,9 +1,9 @@
+import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
 import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { describe, expect, it } from 'vitest';
 import { decrypt, encrypt } from '../src/server/crypto.ts';
 import { migrationsFolder, openDb } from '../src/server/db/index.ts';
@@ -14,13 +14,13 @@ import { arrServerInputSchema } from '../src/shared/arr-servers.ts';
 import { issueCreateSchema } from '../src/shared/issues.ts';
 import { notificationKinds } from '../src/shared/notifications.ts';
 import { settingSchemas } from '../src/shared/settings.ts';
-import { queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import { pragma, queryPlan, SLOW_TEST, trackTempDirs, truncatedMigrations } from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const cryptoKey = randomBytes(32);
 
 type Db = ReturnType<typeof openDb>;
-const run = (db: Db, statement: string, ...params: unknown[]) => db.$client.prepare(statement).run(...params);
+const run = (db: Db, statement: string, ...params: SQLQueryBindings[]) => db.$client.prepare(statement).run(...params);
 const all = (db: Db, statement: string) => db.$client.prepare(statement).all();
 
 /** Base neuve avec un membre `u` et un film `media.id = 1`. */
@@ -43,18 +43,18 @@ const insertServer = (db: Db, type: string, is4k: number, isDefault: number, tag
   );
 
 // Ces tests rejouent toutes les migrations : plus de 5 s sur le runner de la CI, d'où un délai explicite de 20 s.
-describe('migration 0010 (phase 7) sur une base existante', { timeout: 20_000 }, () => {
+describe('migration 0010 (phase 7) sur une base existante', () => {
   const radarr = { url: 'http://radarr:7878', qualityProfileId: 4, rootFolderPath: '/films' };
   const sonarr = { url: 'http://sonarr:8989', qualityProfileId: 2, rootFolderPath: '/series', languageProfileId: 1 };
 
   function beforePhase7() {
     const sqlite = new Database(join(tempDir(), 'avant.db'));
-    sqlite.pragma('foreign_keys = ON');
+    pragma(sqlite, 'foreign_keys = ON');
     migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 10) });
     return sqlite;
   }
 
-  it('conserve les données et reprend les réglages Radarr et Sonarr en serveurs par défaut', () => {
+  it('conserve les données et reprend les réglages Radarr et Sonarr en serveurs par défaut', SLOW_TEST, () => {
     const sqlite = beforePhase7();
     const settingsRow = sqlite.prepare('insert into settings (key, value) values (?, ?)');
     settingsRow.run('radarr', JSON.stringify({ ...radarr, apiKey: encrypt(cryptoKey, 'cle-radarr') }));
@@ -141,16 +141,16 @@ describe('migration 0010 (phase 7) sur une base existante', { timeout: 20_000 },
     expect(sqlite.prepare("select count(*) as n from settings where key in ('radarr', 'sonarr')").get()).toEqual({
       n: 2,
     });
-    expect(sqlite.pragma('foreign_key_check')).toEqual([]);
-    sqlite.close();
+    expect(pragma(sqlite, 'foreign_key_check')).toEqual([]);
+    sqlite.close(true);
   });
 
-  it('ne crée aucun serveur sans réglage Radarr/Sonarr, ni pour un réglage incomplet', () => {
+  it('ne crée aucun serveur sans réglage Radarr/Sonarr, ni pour un réglage incomplet', SLOW_TEST, () => {
     const sqlite = beforePhase7();
     sqlite.prepare('insert into settings (key, value) values (?, ?)').run('radarr', JSON.stringify({ url: 'x' }));
     migrate(drizzle({ client: sqlite }), { migrationsFolder });
     expect(sqlite.prepare('select count(*) as n from arr_servers').get()).toEqual({ n: 0 });
-    sqlite.close();
+    sqlite.close(true);
   });
 });
 

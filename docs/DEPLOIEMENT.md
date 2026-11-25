@@ -1,6 +1,6 @@
 # Déploiement
 
-Request tourne dans un seul conteneur Docker (`linux/amd64`, Node 26), derrière Caddy pour le HTTPS. Tout ce qui doit survivre vit dans le volume `/data` : la base SQLite (`request.db`), la clé de chiffrement des secrets (`secret.key`), le cache d'images (`cache/images/`) et les sauvegardes (`backups/`).
+Request tourne dans un seul conteneur Docker (`linux/amd64`, Bun 1.4.5), derrière Caddy pour le HTTPS. Tout ce qui doit survivre vit dans le volume `/data` : la base SQLite (`request.db`), la clé de chiffrement des secrets (`secret.key`), le cache d'images (`cache/images/`) et les sauvegardes (`backups/`).
 
 ## Installer
 
@@ -31,7 +31,7 @@ Variables de l'appli, déjà fixées par l'image : `PORT=3000`, `DATA_DIR=/data`
 - **Push** : rien à régler côté serveur (clés VAPID créées au premier besoin). Il exige l'appli en HTTPS (Caddy s'en charge) ; chaque membre l'active sur chacun de ses appareils dans Compte. Sur iPhone et iPad (iOS 16.4 et plus), il faut d'abord ajouter l'appli à l'écran d'accueil (Partager › Sur l'écran d'accueil).
 - **Appli installable** : Chrome, Edge et Android proposent « Installer l'application » ; le manifeste et le service worker sont servis par l'appli, sans réglage.
 
-Le conteneur est durci : système de fichiers en lecture seule (hors `/data` et `/tmp`), `cap_drop: [ALL]`, `no-new-privileges`, utilisateur `node` (uid 1000), aucun port publié (seul Caddy joint l'appli).
+Le conteneur est durci : système de fichiers en lecture seule (hors `/data` et `/tmp`), `cap_drop: [ALL]`, `no-new-privileges`, utilisateur `bun` (uid 1000, comme `node` dans les images Node d'avant : un volume existant reste lisible), aucun port publié (seul Caddy joint l'appli).
 
 ### Clé de chiffrement des secrets
 
@@ -101,7 +101,7 @@ Si un Caddy tourne déjà sur l'hôte (ports 80/443 pris), ne démarrez pas le s
 La base est sauvegardée **à chaud** (API de sauvegarde de SQLite, cohérente même pendant des écritures) dans `/data/backups/request-AAAAMMJJ-HHMMSS.db` (UTC) :
 
 - automatiquement une fois par jour (la dernière a plus de 24 h), en gardant les `BACKUP_KEEP` dernières ;
-- à la demande : `docker compose exec request node scripts/backup.ts` (en local, hors Docker : `npm run backup`).
+- à la demande : `docker compose exec request bun scripts/backup.ts` (en local, hors Docker : `bun run backup`).
 
 Une copie dans le même volume ne protège pas d'un disque perdu : copiez régulièrement `backups/` **et** `secret.key` ailleurs.
 

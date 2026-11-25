@@ -15,17 +15,17 @@ La stack de départ (Vite avec Rolldown et deux entrées client, React SSR en st
 | Deux entrées client (connecté / déconnecté) | **Retirer**                  | Une seule SPA avec chargement différé par route suffit.                                                                                                             |
 | Platformatic Watt (workers)                 | **Retirer**                  | Un seul processus Node tient largement la charge ; Watt ajoute une couche à configurer et à déboguer.                                                               |
 | Relay + GraphQL                             | **Retirer**                  | Schéma, compilateur Relay et résolveurs pour une API d'une vingtaine de routes. Remplacé par une API REST typée de bout en bout.                                    |
-| Type-check via tsrs                         | **Facultatif**               | `tsc --noEmit` suffit à cette taille ; à reprendre si le check devient lent.                                                                                        |
+| Type-check via tsrs                         | **Facultatif**               | `bun check` (TypeScript 7) vérifie tout le projet en moins d'une seconde.                                                                                           |
 
 ## Stack retenue
 
-- **Node 26** (`.nvmrc`), TypeScript strict partout, ESM.
+- **Bun 1.4.5** (runtime du serveur, de Vite et des tests), TypeScript strict partout, ESM. Node 26 (`.nvmrc`) ne sert plus qu'aux outils lancés par un script Node (Biome, drizzle-kit).
 - **Front** : Vite, React 19, TanStack Router (routes typées, chargement différé) et TanStack Query (cache, Suspense, invalidation), shadcn/ui sur Base UI, Tailwind v4, icônes `lucide-react`, police Inter Variable (Fontsource, locale).
 - **Serveur** : Fastify 5, validation et types partagés avec **Zod** (schémas dans `shared/`, réutilisés par le front), sessions par cookie `httpOnly` signé, protection CSRF par en-tête et contrôle d'origine.
-- **Base** : **SQLite** (un fichier, `better-sqlite3`) via **Drizzle ORM** et ses migrations. Raison : un seul conteneur, une seule sauvegarde, zéro configuration, comme Seerr. Drizzle permet de passer à PostgreSQL plus tard si besoin.
+- **Base** : **SQLite** (un fichier, `bun:sqlite`, intégré à Bun) via **Drizzle ORM** et ses migrations. Raison : un seul conteneur, une seule sauvegarde, zéro configuration, comme Seerr. Drizzle permet de passer à PostgreSQL plus tard si besoin.
 - **Tâches planifiées** : dans le même processus (`setInterval`, sans dépendance, `services/sync.ts`), avec verrou en base (`job_runs`) pour ne jamais lancer deux balayages en parallèle ; arrêtées à la fermeture de l'appli, désactivées dans les tests. Fréquence des balayages réglable (réglage `jobs`, `services/job-center.ts`) et « Lancer maintenant » (202, 409 si le verrou est pris) ; journal en mémoire de 1 000 entrées (pino → `lib/log-buffer.ts`, secrets expurgés avant d'être gardés), lu par Réglages › Journaux (propriétaire).
 - **Secrets** (clés Radarr, Sonarr, Emby ou Jellyfin, jeton Plex du propriétaire, TMDB) : stockés chiffrés en base avec une clé générée au premier lancement dans le dossier de données.
-- **Qualité** : Biome (lint et format), Vitest (unitaires et routes Fastify avec `inject`), MSW ou faux serveurs pour Emby, Radarr, Sonarr et TMDB.
+- **Qualité** : Biome (lint et tri des imports), `bun fmt` (format), `bun check` (types, TypeScript 7), bun test avec l'API de Vitest (unitaires et routes Fastify avec `inject`), MSW ou faux serveurs pour Emby, Radarr, Sonarr et TMDB.
 
 ## Organisation du dépôt
 
@@ -68,11 +68,11 @@ Chaque intégration est un module unique, typé, avec délai d'expiration, nouve
 
 Procédure complète : [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).
 
-- **Image** : `Dockerfile` multi-étapes, `linux/amd64`, `node:26-slim` (glibc). Le binaire natif de better-sqlite3 est compilé dans une étape à part avec les outils de build, puis vérifié ; l'image finale n'a que les dépendances de production, `src/server`, `src/shared`, `scripts/` et `dist/client`. Elle tourne en utilisateur `node` (uid 1000) avec `node src/server/index.ts` (SIGTERM/SIGINT ferment l'appli proprement : balayage fini, base fermée). Construite en CI (build seul, sans publication).
+- **Image** : `Dockerfile` multi-étapes, `linux/amd64`, `oven/bun:1.4.5` (Debian, glibc). Aucun module natif à compiler (SQLite est dans Bun) ; l'image finale n'a que les dépendances de production, `src/server`, `src/shared`, `scripts/` et `dist/client`. Elle tourne en utilisateur `bun` (uid 1000) avec `bun src/server/index.ts` (SIGTERM/SIGINT ferment l'appli proprement : balayage fini, base fermée). Construite en CI (build seul, sans publication).
 - **`compose.yml`** : le service `request` (`read_only`, tmpfs `/tmp`, `cap_drop: [ALL]`, `no-new-privileges`, `restart: unless-stopped`, volume nommé `/data`, `expose` sans port publié) et `caddy` (HTTPS automatique pour `DOMAIN`, ports 80/443, `Caddyfile` à la racine). Healthcheck de l'image : `GET /api/health` (public, hors garde de session), qui exécute aussi une requête triviale sur la base (503 sinon).
 - **Volume `/data`** : `request.db` (SQLite WAL), `secret.key` (clé de chiffrement des secrets, créée au premier lancement, indispensable pour lire une sauvegarde), `cache/images/` et `backups/`.
 - **Variables** : `PORT` (3000), `DATA_DIR` (`/data`), `HOST`, `TRUST_PROXY`, `IMAGE_CACHE_MAX_MB` (500), `BACKUP_KEEP` (7, 0 = pas de sauvegarde planifiée), `PUBLIC_URL` (adresse publique de l'appli : lien des courriels, contact VAPID ; `compose.yml` la fixe à `https://${DOMAIN}`).
-- **Sauvegarde** : API de sauvegarde en ligne de SQLite (`services/backup.ts`) vers `/data/backups/request-AAAAMMJJ-HHMMSS.db`, planifiée une fois par jour dans le processus (comme les balayages, jamais dans les tests) et à la demande par `scripts/backup.ts` (`npm run backup`). Seules les `BACKUP_KEEP` plus récentes sont gardées.
+- **Sauvegarde** : API de sauvegarde en ligne de SQLite (`services/backup.ts`) vers `/data/backups/request-AAAAMMJJ-HHMMSS.db`, planifiée une fois par jour dans le processus (comme les balayages, jamais dans les tests) et à la demande par `scripts/backup.ts` (`bun run backup`). Seules les `BACKUP_KEEP` plus récentes sont gardées.
 - **Cache d'images borné** : `services/images.ts` garde le cache sous `IMAGE_CACHE_MAX_MB`. Chaque lecture rafraîchit la date de modification du fichier, et après une écriture (au plus une fois par minute) les fichiers les moins récemment utilisés sont supprimés ; les fichiers temporaires sont ignorés.
 - Joint Radarr, Sonarr et Emby de l'hôte par `host.docker.internal`. Migration depuis Seerr : import facultatif des demandes existantes (lecture de sa base SQLite) en fin de MVP.
 

@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
-import { type Db, openDataDir, openDb } from '../src/server/db/index.ts';
+import { changes, type Db, openDataDir, openDb } from '../src/server/db/index.ts';
 import { media, requestSeasons, requests, seasons } from '../src/server/db/schema.ts';
 import { deleteArrServer, saveArrServer } from '../src/server/services/arr-servers.ts';
 import { requestStatesFor } from '../src/server/services/availability.ts';
@@ -509,7 +509,9 @@ describe('demandes 4K', () => {
 
   it('série 4K : saisons envoyées au Sonarr 4K, sans toucher au Sonarr normal', async () => {
     const { as, servers } = await setup({ sonarr4k: sonarrRoutes() });
-    const res = await (await as('auto_approve')).post('/api/requests', {
+    const res = await (
+      await as('auto_approve')
+    ).post('/api/requests', {
       type: 'tv',
       tmdbId: 1396,
       seasons: [1],
@@ -715,14 +717,14 @@ describe('quotas', () => {
     db.insert(requestSeasons).values({ requestId: old.id, seasonNumber: 2 }).run();
     const since = new Date(Date.now() - 7 * DAY_MS);
     expect(quotaUsageQuery(db, 'a', 'seasons', since).get()?.n).toBe(1);
-    db.$client.close();
+    db.$client.close(true);
   });
 
   it('les requêtes de quota passent par l’index (user_id, created_at)', () => {
     const db = openDb(':memory:');
     for (const kind of ['movies', 'seasons'] as const)
       expect(queryPlan(db, quotaUsageQuery(db, 'u', kind, new Date()))).toContain('requests_user_id_created_at_idx');
-    db.$client.close();
+    db.$client.close(true);
   });
 });
 
@@ -1179,7 +1181,7 @@ describe('statut affiché des titres', () => {
       'movie:2': { status: 'requested' },
       'movie:4': { status: 'declined' },
     });
-    db.$client.close();
+    db.$client.close(true);
   });
 });
 
@@ -1197,17 +1199,17 @@ describe('tables des demandes', () => {
         .onConflictDoUpdate(ACTIVE_CONFLICT)
         .run();
 
-    expect(insert().changes).toBe(0);
+    expect(changes(insert())).toBe(0);
     expect(() => db.insert(requests).values({ mediaId: first.mediaId, userId: 'a', status: 'approved' }).run()).toThrow(
       /UNIQUE constraint failed/,
     );
     // Refusée ou annulée : hors de l'index, une nouvelle demande est possible.
     db.update(requests).set({ status: 'declined' }).where(eq(requests.id, first.id)).run();
-    expect(insert().changes).toBe(1);
+    expect(changes(insert())).toBe(1);
     // Envoyée : hors de l'index aussi, elle ne bloque pas une nouvelle demande (saisons suivantes d'une série).
     db.update(requests).set({ status: 'sent' }).where(eq(requests.status, 'pending')).run();
-    expect(insert().changes).toBe(1);
-    db.$client.close();
+    expect(changes(insert())).toBe(1);
+    db.$client.close(true);
   });
 
   it('refuse un statut ou un type d’évènement inconnu', () => {
@@ -1220,7 +1222,7 @@ describe('tables des demandes', () => {
     expect(() =>
       db.$client.prepare("insert into request_events (request_id, type) values (?, 'perdu')").run(id),
     ).toThrow(/CHECK constraint failed/);
-    db.$client.close();
+    db.$client.close(true);
   });
 });
 
@@ -1238,7 +1240,7 @@ describe('markAvailable', () => {
     db.update(media).set({ status: 'available' }).where(eq(media.id, mediaId)).run();
     expect(markAvailable(db, [mediaId], new Date())).toEqual([id]);
     expect(statusOf(db, id)).toBe('available');
-    db.$client.close();
+    db.$client.close(true);
   });
 
   it('ne touche ni une demande en attente ni une demande 4K non envoyée', () => {
@@ -1248,7 +1250,7 @@ describe('markAvailable', () => {
     db.update(requests).set({ is4k: true }).where(eq(requests.id, fourK.id)).run();
     db.update(media).set({ status: 'available', status4k: 'available' }).run();
     expect(markAvailable(db, [pending.mediaId, fourK.mediaId], new Date())).toEqual([]);
-    db.$client.close();
+    db.$client.close(true);
   });
 
   it('une série n’est disponible que si chaque saison demandée l’est', () => {
@@ -1261,6 +1263,6 @@ describe('markAvailable', () => {
     expect(markAvailable(db, [mediaId], new Date())).toEqual([]);
     db.insert(seasons).values({ mediaId, seasonNumber: 3, status: 'available' }).run();
     expect(markAvailable(db, [mediaId], new Date())).toEqual([id]);
-    db.$client.close();
+    db.$client.close(true);
   });
 });

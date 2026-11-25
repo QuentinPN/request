@@ -25,16 +25,12 @@ export function notificationsRoutes(
   app: FastifyInstance,
   { service, email, push }: { service: NotificationService; email: EmailService; push: PushService },
 ) {
-  app.get(
-    NOTIFICATIONS_PATH,
-    async (req): Promise<NotificationPage> =>
-      service.list(viewerOf(req).user.id, parseRequest(notificationListQuerySchema, req.query)),
+  app.get(NOTIFICATIONS_PATH, async (req): Promise<NotificationPage> =>
+    service.list(viewerOf(req).user.id, parseRequest(notificationListQuerySchema, req.query)),
   );
 
-  app.post(
-    NOTIFICATIONS_READ_PATH,
-    async (req): Promise<NotificationsRead> =>
-      service.markRead(viewerOf(req).user.id, parseRequest(markNotificationsReadSchema, req.body)),
+  app.post(NOTIFICATIONS_READ_PATH, async (req): Promise<NotificationsRead> =>
+    service.markRead(viewerOf(req).user.id, parseRequest(markNotificationsReadSchema, req.body)),
   );
 
   const preferencesOf = (user: User): NotificationPreferencesView => ({

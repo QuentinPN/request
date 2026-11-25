@@ -171,15 +171,22 @@ describe('réglage SMTP', () => {
         events: [...notificationKinds],
       };
       const attempt = email.test(config, 'proprio@exemple.fr');
-      const outcome = expect(attempt).rejects.toMatchObject({
-        statusCode: 422,
-        message: 'Le serveur SMTP n’a pas répondu à temps',
-      });
+      // Issue relevée sans attendre la promesse : sous Bun, `expect(promesse).rejects` attend sur place une promesse
+      // encore en cours, sans délai de test, et un délai SMTP cassé bloquerait la suite au lieu d'échouer.
+      let outcome: unknown = 'toujours en cours';
+      attempt.then(
+        () => {
+          outcome = 'réussi';
+        },
+        (error: unknown) => {
+          outcome = error;
+        },
+      );
       await vi.advanceTimersByTimeAsync(SMTP_TEST_DEADLINE_MS);
-      await outcome;
+      expect(outcome).toMatchObject({ statusCode: 422, message: 'Le serveur SMTP n’a pas répondu à temps' });
     } finally {
       vi.useRealTimers();
-      data.db.$client.close();
+      data.db.$client.close(true);
     }
   });
 });

@@ -1,0 +1,12 @@
+# bun test : les fichiers *.test.ts de test/, avec la compatibilité Vitest préchargée (test/vitest-compat.ts).
+# Isolation, parallélisme et ordre aléatoire : drapeaux du script `test:bun` de package.json.
+[test]
+root = "test"
+preload = ["./test/vitest-compat.ts"]
+
+# bun fmt (Prettier) : les réglages du formateur de Biome qu'il remplace (2 espaces, 120 colonnes, apostrophes en TS,
+# guillemets en JSX) ; mêmes exclusions que biome.json, en plus de .gitignore.
+[fmt]
+printWidth = 120
+singleQuote = true
+ignorePatterns = [".claude/", "docs/maquettes/", "docs/openapi.json", "src/client/styles/tokens.css"]

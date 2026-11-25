@@ -1,7 +1,7 @@
+import { Database } from 'bun:sqlite';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.ts';
 import { migrationsFolder, openDataDir, openDb } from '../src/server/db/index.ts';
@@ -14,7 +14,15 @@ import { upsertFromEmby } from '../src/server/services/users.ts';
 import type { MediaKey } from '../src/shared/media.ts';
 import { WATCH_LINK_PATH } from '../src/shared/media-server.ts';
 import { type FakeRequest, type FakeRoutes, startFakeServer, status } from './fake-server.ts';
-import { addArrServer, loginAs, loginAsOwner, queryPlan, trackTempDirs, truncatedMigrations } from './helpers.ts';
+import {
+  addArrServer,
+  loginAs,
+  loginAsOwner,
+  pragma,
+  queryPlan,
+  trackTempDirs,
+  truncatedMigrations,
+} from './helpers.ts';
 
 const tempDir = trackTempDirs();
 const cleanups: Array<() => unknown> = [];
@@ -155,7 +163,7 @@ async function setupData({ emby, radarr, sonarr, tmdb = {}, libraryIds = [], pub
 /** Service seul, avec une horloge réglable. */
 async function setup(upstreams: Upstreams = {}) {
   const { data, servers } = await setupData(upstreams);
-  cleanups.push(() => data.db.$client.close());
+  cleanups.push(() => data.db.$client.close(true));
   const clock = { now: NOW };
   const availability = createAvailability(data, {
     tmdb: createTmdbProvider(data, servers.tmdb.url),
@@ -754,7 +762,7 @@ describe('table media', () => {
     expect(queryPlan(db, selectCached(db, page))).toContain(
       'USING INDEX media_type_tmdb_id_unique (type=? AND tmdb_id=?)',
     );
-    db.$client.close();
+    db.$client.close(true);
   });
 
   it('refuse un type ou un statut inconnu', () => {
@@ -767,12 +775,12 @@ describe('table media', () => {
     expect(() => insert('movie', 'perdu')).toThrow(/CHECK constraint failed/);
     expect(() => insert('movie', null)).not.toThrow();
     expect(() => insert('movie', 'available')).toThrow(/UNIQUE constraint failed/);
-    db.$client.close();
+    db.$client.close(true);
   });
 
   it('migration 0003 sur une base existante : membres et sessions conservés', () => {
     const sqlite = new Database(join(tempDir(), 'avant.db'));
-    sqlite.pragma('foreign_keys = ON');
+    pragma(sqlite, 'foreign_keys = ON');
     migrate(drizzle({ client: sqlite }), { migrationsFolder: truncatedMigrations(tempDir(), 3) });
     sqlite.exec(`
       insert into users (id, name, role) values ('a', 'Alice', 'owner');
@@ -785,7 +793,7 @@ describe('table media', () => {
     expect(sqlite.prepare('select role from users').get()).toEqual({ role: 'owner' });
     const tables = sqlite.prepare("select name from sqlite_master where type = 'table' order by name").all();
     expect(tables).toEqual(expect.arrayContaining([{ name: 'media' }, { name: 'seasons' }, { name: 'job_runs' }]));
-    sqlite.close();
+    sqlite.close(true);
   });
 });
 
@@ -799,14 +807,14 @@ describe('job_runs', () => {
 
     finishJob(db, first as number, 'success');
     expect(startJob(db, 'balayage')).toBeTypeOf('number');
-    db.$client.close();
+    db.$client.close(true);
   });
 
   it('au démarrage du serveur, une exécution orpheline passe en échec et libère le verrou', async () => {
     const dir = tempDir();
     const before = openDataDir(dir);
     startJob(before.db, 'balayage');
-    before.db.$client.close();
+    before.db.$client.close(true);
 
     const data = openDataDir(dir);
     const app = await buildApp({ data });
